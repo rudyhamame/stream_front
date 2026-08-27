@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: rh-stream-frontend
+    runtime: static
+    repo: https://github.com/rudyhamame/stream_front.git
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://rh-stream-backend.onrender.com
