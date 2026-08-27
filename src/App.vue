@@ -3,6 +3,10 @@ import { computed, onMounted, ref, watch } from "vue";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
+const imageUrl = value => {
+  const url = String(value || '').trim();
+  return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
+};
 async function request(path, options = {}) {
   const response = await fetch(api(path), options);
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
@@ -213,7 +217,7 @@ onMounted(async () => {
           <div v-else-if="!visibleItems.length" class="loading empty-catalog"><span class="empty-icon">⌕</span><span>No matching {{ typeLabel(kind).toLowerCase() }} found.</span></div>
           <div v-else class="xtream-item-list">
             <label v-for="item in visibleItems" :key="item.key" :class="{enabled:selectedKeys.includes(item.key)}">
-              <input type="checkbox" :checked="selectedKeys.includes(item.key)" @change="toggle(item)"><span class="item-poster"><img v-if="item.logo" :src="item.logo" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
+              <input type="checkbox" :checked="selectedKeys.includes(item.key)" @change="toggle(item)"><span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
               <span class="item-copy"><strong>{{item.title}}</strong><small>{{item.categoryId || 'Uncategorized'}}</small></span><em>{{selectedKeys.includes(item.key)?"On Roku":"Not selected"}}</em>
             </label>
           </div>
@@ -222,7 +226,7 @@ onMounted(async () => {
             <div class="saved-tabs" role="tablist" aria-label="Saved Roku content">
               <button type="button" v-for="value in ['series','movie','channel']" :key="value" :class="{active:savedKind===value}" @click="savedKind=value"><span>{{ typeIcon(value) }}</span>{{ typeLabel(value) }} <b>{{ typeCounts[value] || 0 }}</b></button>
             </div>
-            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="item.logo" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="source-action" :disabled="busy" @click="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click="removeSaved(item)">Remove</button></div></div></div>
+            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="source-action" :disabled="busy" @click="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click="removeSaved(item)">Remove</button></div></div></div>
             <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(savedKind).toLowerCase() }} items enabled.</strong><span>Select items above, then press “Save to Roku”.</span></div>
           </section>
         </template>
@@ -230,7 +234,7 @@ onMounted(async () => {
         <section v-else class="xtream-enabled-section archive-section">
           <div class="section-heading"><div><p class="eyebrow">STORED SAFELY · NOT ON ROKU</p><h2>Archive</h2><p class="section-copy">Keep items out of the Roku feed without deleting them. Restore them whenever you need.</p></div><span class="section-count accent-count">{{ archivedItems.length }}</span></div>
           <div v-if="archivedItems.length" class="archive-summary"><span v-for="value in ['series','movie','channel']" :key="value"><b>{{archiveCounts[value] || 0}}</b> {{typeLabel(value)}}</span></div>
-          <div v-if="archivedItems.length" class="xtream-enabled-table"><div v-for="item in archivedItems" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="item.logo" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-save" :disabled="busy" @click="restoreArchived(item)">Restore to Roku</button></div></div></div>
+          <div v-if="archivedItems.length" class="xtream-enabled-table"><div v-for="item in archivedItems" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-save" :disabled="busy" @click="restoreArchived(item)">Restore to Roku</button></div></div></div>
           <div v-else class="empty xtream-enabled-empty"><strong>Your archive is empty.</strong><span>Archive an enabled item to keep it available without showing it on Roku.</span></div>
         </section>
       </template>
