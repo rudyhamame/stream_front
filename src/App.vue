@@ -3,28 +3,60 @@ import { computed, onMounted, ref, watch } from "vue";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
+const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
+const deviceToken = ref(storedToken());
+const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
+const pairing = ref(Boolean(pairCode) || !deviceToken.value);
+const pairingReady = ref(false);
+const pairingNeedsPassword = ref(false);
+const pairingPassword = ref("");
+const pairingPasswordConfirmation = ref("");
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
 };
 async function request(path, options = {}) {
-  const response = await fetch(api(path), options);
+  const headers = new Headers(options.headers || {});
+  if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
+  const response = await fetch(api(path), { ...options, headers });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(data?.error || `Request failed (${response.status})`);
   return data;
 }
 
+async function loadPairingInfo() {
+  if (!pairCode) return;
+  const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+  pairingNeedsPassword.value = Boolean(data.needsPassword);
+  pairingReady.value = true;
+}
+
+async function claimPairing() {
+  try {
+    if (!pairCode) return;
+    if (pairingNeedsPassword.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
+    const path = pairingNeedsPassword.value ? "/api/device-session/setup" : "/api/device-session/login";
+    const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, password: pairingPassword.value }) });
+    deviceToken.value = data.token;
+    window.localStorage.setItem("rh-device-token", data.token);
+    pairing.value = false;
+    window.history.replaceState({}, "", window.location.pathname);
+    await request("/api/health"); online.value = true; await loadSources();
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+}
+
 const online = ref(false), sources = ref([]), sourceId = ref("");
-const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref("");
+const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0);
 const sortBy = ref("name"), selectionFilter = ref("all");
-const savedKind = ref("series");
 const selectedCount = computed(() => selectedKeys.value.length);
+const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
+const savedCount = computed(() => savedItems.value.length);
 const visibleItems = computed(() => {
   const filtered = items.value.filter(item => selectionFilter.value === "all"
     || (selectionFilter.value === "selected" && selectedKeys.value.includes(item.key))
-    || (selectionFilter.value === "available" && !selectedKeys.value.includes(item.key)));
+    || (selectionFilter.value === "available" && !selectedKeys.value.includes(item.key) && !savedKeys.value.has(item.key)));
   return [...filtered].sort((a, b) => {
     if (sortBy.value === "recent") return String(b.added || "").localeCompare(String(a.added || ""));
     if (sortBy.value === "category") return String(a.categoryId || "").localeCompare(String(b.categoryId || "")) || a.title.localeCompare(b.title);
@@ -33,14 +65,13 @@ const visibleItems = computed(() => {
 });
 const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
 const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
-const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === savedKind.value));
+const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
 
 function applySource(source) {
   if (!source) return;
-  selectedKeys.value = [...(source.enabledKeys || [])];
   savedItems.value = [...(source.enabledItems || [])];
   archivedItems.value = [...(source.archivedItems || [])];
   rememberItems([...savedItems.value, ...archivedItems.value]);
@@ -58,7 +89,7 @@ async function loadSources(preferred = sourceId.value) {
   sources.value = data.items || [];
   sourceId.value = sources.value.some(item => item.id === preferred) ? preferred : (sources.value[0]?.id || "");
   const source = sources.value.find(item => item.id === sourceId.value);
-  selectedKeys.value = [...(source?.enabledKeys || [])];
+  selectedKeys.value = [];
   savedItems.value = [...(source?.enabledItems || [])];
   archivedItems.value = [...(source?.archivedItems || [])];
   rememberItems([...savedItems.value, ...archivedItems.value]);
@@ -66,14 +97,22 @@ async function loadSources(preferred = sourceId.value) {
   else { items.value = []; savedItems.value = []; archivedItems.value = []; }
 }
 
+let catalogRequestId = 0;
+let catalogController = null;
 async function loadCatalog(reset = true) {
   if (!sourceId.value) return;
   if (reset) page.value = 1;
+  const requestId = ++catalogRequestId;
+  if (catalogController) catalogController.abort();
+  catalogController = new AbortController();
+  const requestedSourceId = sourceId.value;
+  const requestedKind = kind.value;
   loading.value = true;
   message.value = "";
   try {
-    const params = new URLSearchParams({ sourceId: sourceId.value, kind: kind.value, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(page.value), limit: "50" });
-    const data = await request(`/api/xtream/catalog?${params}`);
+    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(page.value), limit: "50" });
+    const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
+    if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     items.value = data.items || [];
     rememberItems(items.value);
     categories.value = data.categories || [];
@@ -81,9 +120,10 @@ async function loadCatalog(reset = true) {
     page.value = data.pagination?.page || 1;
     pages.value = data.pagination?.pageCount || 1;
     total.value = data.pagination?.total || 0;
-    selectedKeys.value = [...(data.source?.enabledKeys || selectedKeys.value)];
-  } catch (error) { message.value = error.message; }
-  finally { loading.value = false; }
+  } catch (error) {
+    if (error.name !== "AbortError" && requestId === catalogRequestId) { message.value = error.message; messageType.value = "error"; }
+  }
+  finally { if (requestId === catalogRequestId) loading.value = false; }
 }
 
 async function loadSaved() {
@@ -103,8 +143,9 @@ async function saveSource() {
     });
     name.value = ""; url.value = ""; editing.value = null;
     await loadSources(data.id);
+    messageType.value = "success";
     message.value = "Source saved.";
-  } catch (error) { message.value = error.message; }
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { busy.value = false; }
 }
 
@@ -112,44 +153,67 @@ function editSource(source) { editing.value = source.id; name.value = source.nam
 function cancelEdit() { editing.value = null; name.value = ""; url.value = ""; }
 async function deleteSource(source) {
   if (!confirm(`Delete “${source.name}”?`)) return;
-  await request(`/api/xtream/sources/${source.id}`, { method: "DELETE" });
-  await loadSources();
+  try {
+    await request(`/api/xtream/sources/${source.id}`, { method: "DELETE" });
+    await loadSources();
+    messageType.value = "success";
+    message.value = `Deleted “${source.name}”.`;
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; await loadSources(id); }
-async function chooseKind(value) { kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
-function toggle(item) { rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
-function selectPage() { rememberItems(items.value); selectedKeys.value = [...new Set([...selectedKeys.value, ...items.value.map(item => item.key)])]; }
+async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
+function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
+function selectPage() { const available = items.value.filter(item => !savedKeys.value.has(item.key)); rememberItems(available); selectedKeys.value = [...new Set([...selectedKeys.value, ...available.map(item => item.key)])]; }
 function clearType() { const prefix = `${kind.value}:`; selectedKeys.value = selectedKeys.value.filter(key => !key.startsWith(prefix)); }
 async function movePage(delta) { page.value += delta; await loadCatalog(false); }
 async function saveSelection() {
+  if (!selectedKeys.value.length) return;
   busy.value = true;
   try {
-    const enabledItems = selectedKeys.value.map(key => knownItems.value[key]).filter(Boolean);
-    const missing = selectedKeys.value.length - enabledItems.length;
+    const pendingItems = selectedKeys.value.map(key => knownItems.value[key]).filter(Boolean);
+    const missing = selectedKeys.value.length - pendingItems.length;
     if (missing) throw new Error(`${missing} selected item(s) are no longer available. Reload their catalog page and save again.`);
+    const enabledItems = [...new Map([...savedItems.value, ...pendingItems].map(item => [item.key, item])).values()];
+    const addedCount = pendingItems.filter(item => !savedKeys.value.has(item.key)).length;
     const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: selectedKeys.value, enabledItems }),
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(item => item.key), enabledItems }),
     });
     applySource(data);
-    message.value = `${data.selectedCount} item(s) enabled on Roku.`;
-  } catch (error) { message.value = error.message; }
+    selectedKeys.value = [];
+    messageType.value = "success";
+    message.value = `Saved successfully. ${addedCount} item(s) added; ${data.selectedCount} total enabled on Roku.`;
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { busy.value = false; }
 }
-async function removeSaved(item) { selectedKeys.value = selectedKeys.value.filter(key => key !== item.key); await saveSelection(); }
+async function removeSaved(item) {
+  busy.value = true;
+  try {
+    const enabledItems = savedItems.value.filter(entry => entry.key !== item.key);
+    const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(entry => entry.key), enabledItems }),
+    });
+    applySource(data);
+    messageType.value = "success";
+    message.value = `Removed “${item.title}” from Roku.`;
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { busy.value = false; }
+}
 async function archiveSaved(item) {
   busy.value = true;
   try {
     applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}`, { method: "POST" }));
+    messageType.value = "success";
     message.value = "Item archived and removed from Roku.";
-  } catch (error) { message.value = error.message; }
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { busy.value = false; }
 }
 async function restoreArchived(item) {
   busy.value = true;
   try {
     applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}/restore`, { method: "POST" }));
+    messageType.value = "success";
     message.value = "Item restored to the Roku library.";
-  } catch (error) { message.value = error.message; }
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { busy.value = false; }
 }
 
@@ -158,15 +222,27 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
-  try { await request("/api/health"); online.value = true; await loadSources(); }
-  catch (error) { online.value = false; message.value = error.message; }
+  try {
+    if (pairCode) {
+      deviceToken.value = "";
+      window.localStorage.removeItem("rh-device-token");
+      await loadPairingInfo();
+      return;
+    }
+    if (!deviceToken.value) return;
+    await request("/api/health"); online.value = true; await loadSources();
+  } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; }
 });
 </script>
 
 <template>
   <main class="shell">
+    <section v-if="pairing" class="pairing-gate">
+      <div class="pairing-card"><p class="eyebrow">PRIVATE DEVICE PROFILE</p><h1 v-if="pairingNeedsPassword">Secure your Roku</h1><h1 v-else>Unlock your Roku</h1><p v-if="pairCode && !pairingReady">Checking the secure QR code…</p><template v-else-if="pairCode"><p v-if="pairingNeedsPassword">Create a password for this Roku. It protects this device’s private playlist profile.</p><p v-else>Enter this Roku’s password to open its private playlist profile.</p><form @submit.prevent="claimPairing"><label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="At least 8 characters"></label><label v-if="pairingNeedsPassword">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ pairingNeedsPassword ? 'Create device profile' : 'Unlock device profile' }}</button></form></template><p v-else class="section-copy">This playlist manager is private. Scan the QR code displayed in your Roku Settings page to access your device profile.</p><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
+    </section>
+    <template v-else>
     <nav class="topbar">
-      <div class="brand"><span class="brand-mark">RH</span><span>Stream</span></div>
+      <div class="brand"><span class="brand-mark">RH</span><span>IPTV Player</span></div>
       <span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span>
     </nav>
     <header class="manager-hero">
@@ -195,14 +271,14 @@ onMounted(async () => {
 
       <template v-if="sourceId">
         <div class="xtream-view-tabs">
-          <button type="button" :class="{active:view==='library'}" @click="view='library'"><span class="tab-icon">▣</span>Roku library <span>{{ selectedCount }}</span></button>
+          <button type="button" :class="{active:view==='library'}" @click="view='library'"><span class="tab-icon">▣</span>Roku library <span>{{ savedCount }}</span></button>
           <button type="button" :class="{active:view==='archive'}" @click="view='archive'"><span class="tab-icon">⌁</span>Archive <span>{{ archivedItems.length }}</span></button>
         </div>
 
         <template v-if="view==='library'">
-          <div class="workspace-heading"><div><p class="eyebrow">STEP 02 · CURATE CONTENT</p><h2>What should Roku show?</h2></div><div class="selection-summary"><strong>{{ selectedCount }}</strong><span>enabled on Roku</span></div></div>
-          <div class="type-cards">
-            <button type="button" v-for="value in ['series','movie','channel']" :key="value" :class="['type-card', {active:kind===value}]" @click="chooseKind(value)"><span class="type-icon">{{ typeIcon(value) }}</span><span><strong>{{ typeLabel(value) }}</strong><small>{{ typeCounts[value] || 0 }} enabled · {{ archiveCounts[value] || 0 }} archived</small></span><b>›</b></button>
+          <div class="workspace-heading"><div><p class="eyebrow">STEP 02 · CURATE CONTENT</p><h2>What should Roku show?</h2></div><div class="selection-summary"><strong>{{ savedCount }}</strong><span>enabled on Roku</span></div></div>
+          <div class="content-type-tabs" role="tablist" aria-label="Roku content type">
+            <button type="button" v-for="value in ['series','movie','channel']" :key="value" role="tab" :aria-selected="kind===value" :class="{active:kind===value}" @click="chooseKind(value)"><span class="type-icon">{{ typeIcon(value) }}</span><span><strong>{{ typeLabel(value) }}</strong><small>{{ typeCounts[value] || 0 }} enabled</small></span><b>{{ archiveCounts[value] || 0 }} archived</b></button>
           </div>
           <div class="xtream-toolbar">
             <label class="catalog-search"><span>⌕</span><input v-model="query" placeholder="Search this catalog…"></label>
@@ -211,23 +287,21 @@ onMounted(async () => {
             <select v-model="sortBy"><option value="name">Sort: A–Z</option><option value="recent">Sort: Recently added</option><option value="category">Sort: Category</option></select>
             <select v-model="selectionFilter"><option value="all">Show: All items</option><option value="available">Show: Not selected</option><option value="selected">Show: Selected only</option></select>
             <div class="toolbar-actions"><button type="button" class="source-action" @click="selectPage">Select visible</button><button type="button" class="source-delete" @click="clearType">Clear {{ typeLabel(kind) }}</button></div>
-            <button type="button" class="xtream-save" :disabled="busy" @click="saveSelection">Save {{ selectedCount }} to Roku</button>
+            <button type="button" class="xtream-save" :disabled="busy || !selectedCount" @click="saveSelection">Save {{ selectedCount }} selected to Roku</button>
           </div>
           <div v-if="loading" class="loading"><span class="loading-ring"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="!visibleItems.length" class="loading empty-catalog"><span class="empty-icon">⌕</span><span>No matching {{ typeLabel(kind).toLowerCase() }} found.</span></div>
           <div v-else class="xtream-item-list">
-            <label v-for="item in visibleItems" :key="item.key" :class="{enabled:selectedKeys.includes(item.key)}">
-              <input type="checkbox" :checked="selectedKeys.includes(item.key)" @change="toggle(item)"><span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
-              <span class="item-copy"><strong>{{item.title}}</strong><small>{{item.categoryId || 'Uncategorized'}}</small></span><em>{{selectedKeys.includes(item.key)?"On Roku":"Not selected"}}</em>
+            <label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key), pending:selectedKeys.includes(item.key)}">
+              <input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
+              <span class="item-copy"><strong>{{item.title}}</strong><small>{{item.categoryId || 'Uncategorized'}}</small></span><em>{{savedKeys.has(item.key)?"On Roku":selectedKeys.includes(item.key)?"Selected":"Not selected"}}</em>
             </label>
           </div>
           <div class="xtream-pagination"><button type="button" :disabled="page<=1" @click="movePage(-1)">‹ Previous</button><span>Page {{page}} / {{pages}} <b>·</b> {{total}} {{ typeLabel(kind).toLowerCase() }}</span><button type="button" :disabled="page>=pages" @click="movePage(1)">Next ›</button></div>
           <section class="xtream-enabled-section">
-            <div class="saved-tabs" role="tablist" aria-label="Saved Roku content">
-              <button type="button" v-for="value in ['series','movie','channel']" :key="value" :class="{active:savedKind===value}" @click="savedKind=value"><span>{{ typeIcon(value) }}</span>{{ typeLabel(value) }} <b>{{ typeCounts[value] || 0 }}</b></button>
-            </div>
+            <div class="section-heading compact"><div><p class="eyebrow">SAVED ON ROKU</p><h2>{{ typeLabel(kind) }}</h2></div><span class="section-count accent-count">{{ typeCounts[kind] || 0 }}</span></div>
             <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="source-action" :disabled="busy" @click="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click="removeSaved(item)">Remove</button></div></div></div>
-            <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(savedKind).toLowerCase() }} items enabled.</strong><span>Select items above, then press “Save to Roku”.</span></div>
+            <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(kind).toLowerCase() }} items enabled.</strong><span>Select items above, then press “Save to Roku”.</span></div>
           </section>
         </template>
 
@@ -238,12 +312,8 @@ onMounted(async () => {
           <div v-else class="empty xtream-enabled-empty"><strong>Your archive is empty.</strong><span>Archive an enabled item to keep it available without showing it on Roku.</span></div>
         </section>
       </template>
-      <p v-if="message" class="xtream-message">{{message}}</p>
+      <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
     </section>
+    </template>
   </main>
 </template>
-
-<style>
-.saved-tabs{display:flex;gap:8px;margin:0 0 12px;padding:4px;border-bottom:1px solid #303c2d}.saved-tabs button{display:flex;align-items:center;gap:7px;border:1px solid transparent;border-radius:8px;background:transparent;color:#899786;padding:9px 13px;font-weight:700;cursor:pointer}.saved-tabs button:hover{color:#e8f0e4;background:#182218}.saved-tabs button.active{border-color:#668c3e;background:#263820;color:#d4f06a}.saved-tabs button span{color:#a7d65a;font-size:16px}.saved-tabs button b{min-width:18px;padding:2px 5px;border-radius:99px;background:#172117;color:#9ba997;font-size:11px}.saved-tabs button.active b{background:#b7ff32;color:#10150f}
-@media(max-width:600px){.saved-tabs{overflow:auto}.saved-tabs button{flex:1;justify-content:center;min-width:104px;white-space:nowrap;padding:9px 7px}}
-</style>
