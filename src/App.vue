@@ -322,6 +322,11 @@ onMounted(async () => {
       <div class="hero-note"><span class="hero-note-icon">✓</span><strong>One focused workflow</strong><small>Choose · Filter · Save</small></div>
     </header>
 
+    <section v-if="linkedDevices.length" class="linked-devices" aria-label="Linked Roku devices">
+      <div><p class="eyebrow">YOUR DEVICES</p><h2>Linked Rokus</h2></div>
+      <div class="linked-device-list"><article v-for="device in linkedDevices" :key="device.id"><span class="linked-device-icon">▣</span><span><strong>{{ device.label }}</strong><small>Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</small></span></article></div>
+    </section>
+
     <section class="xtream-control-panel">
       <div class="section-heading"><div><p class="eyebrow">STEP 01 · CONNECTION</p><h2>Choose a catalog source</h2><p class="section-copy">Connect an Xtream source once, then manage exactly what Roku can see.</p></div><span class="section-count">{{ sources.length }} source{{ sources.length === 1 ? '' : 's' }}</span></div>
       <form class="xtream-source-form" @submit.prevent="saveSource">
