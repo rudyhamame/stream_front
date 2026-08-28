@@ -643,7 +643,12 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
-  if (pairing.value) await setAndroidLoginWindow(true);
+  if (pairing.value) {
+    await setAndroidLoginWindow(true);
+    // Capacitor can restore its WebView window flags just after mount.
+    // Reapply login edge-to-edge once the native view has settled.
+    if (androidApp.value) window.setTimeout(() => setAndroidLoginWindow(true), 350);
+  }
   try {
     if (pairCode) {
       await loadPairingInfo();
