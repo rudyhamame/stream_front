@@ -643,7 +643,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell" :class="{ 'android-app-mode': androidApp }">
+  <main class="shell" :class="{ 'android-app-mode': androidApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="login-art" aria-hidden="true">
         <img class="login-city" src="/login/city-background.png" alt="">
