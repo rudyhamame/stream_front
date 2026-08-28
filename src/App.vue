@@ -1,9 +1,18 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Html5Qrcode } from "html5-qrcode";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
+const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
+const androidPage = ref("welcome");
+const androidVideo = ref(null);
+const androidNowPlaying = ref(null);
+const androidPlaying = ref(false);
+const androidMuted = ref(false);
+const androidCurrentTime = ref(0);
+const androidDuration = ref(0);
+const androidPlayerError = ref("");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
@@ -161,6 +170,69 @@ const visibleItems = computed(() => {
 const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
 const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
 const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
+function savedItemsForTabFor(value) { return savedItems.value.filter(item => item.kind === value); }
+
+const androidPlayerSrc = computed(() => {
+  const item = androidNowPlaying.value;
+  if (!item) return "";
+  const fallback = item.sourceId && item.id
+    ? `/api/xtream/hls/${encodeURIComponent(item.sourceId)}/movie/${encodeURIComponent(item.id)}/master.m3u8`
+    : "";
+  const raw = item.playbackUrl || item.url || fallback;
+  if (!raw) return "";
+  const target = new URL(raw, base);
+  if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
+  return target.toString();
+});
+
+function formatTime(value) {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+async function playAndroidMovie(item) {
+  androidNowPlaying.value = item;
+  androidPlaying.value = false;
+  androidMuted.value = false;
+  androidCurrentTime.value = 0;
+  androidDuration.value = 0;
+  androidPlayerError.value = "";
+  await nextTick();
+  try {
+    await androidVideo.value?.play();
+    androidPlaying.value = true;
+  } catch { /* The user can start playback with the play button. */ }
+}
+
+function closeAndroidPlayer() {
+  androidVideo.value?.pause();
+  androidNowPlaying.value = null;
+  androidPlaying.value = false;
+  androidPlayerError.value = "";
+}
+
+async function toggleAndroidPlayback() {
+  if (!androidVideo.value) return;
+  if (androidVideo.value.paused) {
+    try { await androidVideo.value.play(); } catch { androidPlayerError.value = "Playback could not start."; }
+  } else androidVideo.value.pause();
+}
+
+function seekAndroidMovie(event) {
+  if (!androidVideo.value) return;
+  androidVideo.value.currentTime = Number(event.target.value);
+  androidCurrentTime.value = androidVideo.value.currentTime;
+}
+
+function toggleAndroidMute() {
+  if (!androidVideo.value) return;
+  androidVideo.value.muted = !androidVideo.value.muted;
+  androidMuted.value = androidVideo.value.muted;
+}
+
+async function fullscreenAndroidMovie() {
+  try { await androidVideo.value?.requestFullscreen?.(); } catch { /* Fullscreen is optional on some WebViews. */ }
+}
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
@@ -334,7 +406,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell">
+  <main class="shell" :class="{ 'android-app-mode': androidApp }">
     <section v-if="pairing" class="pairing-gate">
       <div class="pairing-card"><p class="eyebrow">ROKU LIBRARY</p><h1 v-if="pairCode && isPairingSignup">Create your account</h1><h1 v-else-if="pairCode">Open your Roku library</h1><h1 v-else>Sign in to your library</h1><p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p><template v-else-if="pairCode"><p v-if="isPairingSignup">Create an account to activate this Roku and manage its library from your phone.</p><p v-else>Sign in to link this Roku and open its library. The TV will connect automatically.</p><form @submit.prevent="claimPairing"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="At least 8 characters"></label><label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</button><button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button></form></template><template v-else><form @submit.prevent="signIn"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label><label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label><button type="submit" class="primary-action">Sign in</button></form><p class="section-copy">To link a new Roku, scan its QR code.</p><button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div><p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p></template><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
     </section>
@@ -343,6 +415,20 @@ onMounted(async () => {
       <div class="brand"><span class="brand-mark">RH</span><span>IPTV Player</span></div>
       <div class="topbar-actions"><span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
+    <section v-if="androidApp" class="android-page-shell">
+      <article v-if="androidPage === 'welcome'" class="android-page"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your Roku library, browse your selected content, and keep your devices connected from one place.</p><div class="android-stat"><strong>{{ linkedDevices.length }}</strong><span>linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</span></div></article>
+      <article v-else-if="androidPage === 'playlist'" class="android-page android-playlist-page"><p class="eyebrow">PLAYLIST</p><h1>Feed your<br><em>library.</em></h1><form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form><template v-else><div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="android-playlist-tabs"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></div><label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label><div v-if="visibleItems.length" class="android-playlist-items"><label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}"><input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Ready' : 'Add' }}</em></label></div><p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected to library</button></template></article>
+      <article v-else-if="androidPage === 'series'" class="android-page"><p class="eyebrow">SERIES</p><h1>Series</h1><div v-if="savedItemsForTabFor('series').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('series')" :key="item.key"><span>▦</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No series are enabled yet. Add them from the library manager.</p></article>
+      <article v-else-if="androidPage === 'movies'" class="android-page"><p class="eyebrow">MOVIES</p><h1>Movies</h1><div v-if="savedItemsForTabFor('movie').length" class="android-item-list"><button v-for="item in savedItemsForTabFor('movie')" :key="item.key" type="button" class="android-movie-item" @click="playAndroidMovie(item)"><span>▶</span><strong>{{ item.title }}</strong><small>Play movie</small></button></div><p v-else class="android-empty">No movies are enabled yet. Add them from the library manager.</p></article>
+      <article v-else-if="androidPage === 'channels'" class="android-page"><p class="eyebrow">CHANNELS</p><h1>Channels</h1><div v-if="savedItemsForTabFor('channel').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('channel')" :key="item.key"><span>◉</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No channels are enabled yet. Add them from the library manager.</p></article>
+      <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
+      <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
+      <section v-if="androidNowPlaying" class="android-player" role="dialog" aria-label="Movie player">
+        <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
+        <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
+        <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
+      </section>
+    </section>
     <header class="manager-hero">
       <div>
         <p class="eyebrow">ROKU PLAYLIST BUILDER</p>
