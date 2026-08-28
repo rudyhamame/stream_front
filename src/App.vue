@@ -645,7 +645,42 @@ onMounted(async () => {
 <template>
   <main class="shell" :class="{ 'android-app-mode': androidApp }">
     <section v-if="pairing" class="pairing-gate">
-      <div class="pairing-card"><p class="eyebrow">ROKU LIBRARY</p><h1 v-if="pairCode && isPairingSignup">Create your account</h1><h1 v-else-if="pairCode">Open your Roku library</h1><h1 v-else>Sign in to your library</h1><p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p><template v-else-if="pairCode"><p v-if="isPairingSignup">Create an account to activate this Roku and manage its library from your phone.</p><p v-else>Sign in to link this Roku and open its library. The TV will connect automatically.</p><form @submit.prevent="claimPairing"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="At least 8 characters"></label><label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</button><button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button></form></template><template v-else><form @submit.prevent="signIn"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label><label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label><button type="submit" class="primary-action">Sign in</button></form><p class="section-copy">To link a new Roku, scan its QR code.</p><button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div><p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p></template><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
+      <div class="login-art" aria-hidden="true">
+        <img class="login-city" src="/login/city-background.png" alt="">
+        <img class="login-couple" src="/login/couple-foreground.png" alt="">
+        <div class="login-art-fade"></div>
+      </div>
+      <div class="pairing-card login-card">
+        <div class="login-brand"><span class="brand-mark">RH</span><span>IPTV PLAYER</span></div>
+        <p class="eyebrow">{{ pairCode ? 'ROKU LIBRARY' : 'WELCOME BACK' }}</p>
+        <h1 v-if="pairCode && isPairingSignup">Create your account</h1>
+        <h1 v-else-if="pairCode">Open your Roku library</h1>
+        <h1 v-else>Sign in to your library</h1>
+        <p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p>
+        <template v-else-if="pairCode">
+          <p>{{ isPairingSignup ? 'Create an account to activate this Roku and manage its library from your phone.' : 'Sign in to link this Roku and open its library. The TV will connect automatically.' }}</p>
+          <form @submit.prevent="claimPairing">
+            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="Your password"></label>
+            <label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
+            <button type="submit" class="primary-action login-submit">{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</button>
+            <button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button>
+          </form>
+        </template>
+        <template v-else>
+          <form @submit.prevent="signIn">
+            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
+            <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
+            <button type="submit" class="primary-action login-submit">Sign in</button>
+          </form>
+          <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
+          <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
+          <div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div>
+          <p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p>
+        </template>
+        <p v-if="message" class="xtream-message is-error">{{ message }}</p>
+      </div>
     </section>
     <template v-else>
     <nav class="topbar">
