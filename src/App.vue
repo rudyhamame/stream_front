@@ -363,7 +363,7 @@ async function closeAndroidPlayer() {
   if (document.fullscreenElement) {
     try { await document.exitFullscreen(); } catch { /* Fullscreen may already be closing. */ }
   }
-  if (androidFullscreen.value && Immersive) {
+  if (androidApp.value && Immersive) {
     try { await Immersive.exit(); } catch { /* Native immersive mode may already be closed. */ }
   }
   androidVideo.value?.pause();
