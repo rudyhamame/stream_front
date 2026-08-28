@@ -44,6 +44,7 @@ const scannerError = ref("");
 let qrScanner = null;
 let loginViewportFrame = null;
 let nativeKeyboardHeight = 0;
+let loginKeyboardLift = 0;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -173,6 +174,7 @@ function updateLoginKeyboardLift() {
     const root = document.documentElement;
     const active = document.activeElement;
     if (!pairing.value || !active?.matches?.(".login-card input, .login-card select")) {
+      loginKeyboardLift = 0;
       root.style.setProperty("--login-keyboard-lift", "0px");
       return;
     }
@@ -181,9 +183,12 @@ function updateLoginKeyboardLift() {
       ? window.innerHeight - nativeKeyboardHeight
       : viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
     const submit = active.closest("form")?.querySelector(".login-submit");
-    const targetBottom = Math.max(active.getBoundingClientRect().bottom, submit?.getBoundingClientRect().bottom || 0);
+    // Measurements include the previous CSS transform. Add the old lift back
+    // before calculating the next lift, otherwise email -> password snaps down.
+    const targetBottom = Math.max(active.getBoundingClientRect().bottom, submit?.getBoundingClientRect().bottom || 0) + loginKeyboardLift;
     const lift = Math.min(window.innerHeight * .45, Math.max(0, targetBottom + 18 - viewportBottom));
-    root.style.setProperty("--login-keyboard-lift", `${Math.ceil(lift)}px`);
+    loginKeyboardLift = Math.ceil(lift);
+    root.style.setProperty("--login-keyboard-lift", `${loginKeyboardLift}px`);
   });
 }
 
