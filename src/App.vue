@@ -10,6 +10,7 @@ const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
 const pairingNeedsSignup = ref(false);
+const pairingMode = ref("signup");
 const pairingEmail = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
@@ -113,6 +114,7 @@ const kind = ref("channel"), items = ref([]), categories = ref([]), languages = 
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const selectedCount = computed(() => selectedKeys.value.length);
+const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
 const savedCount = computed(() => savedItems.value.length);
 const visibleItems = computed(() => {
