@@ -262,7 +262,16 @@ function onAndroidWaiting() {
 
 function onAndroidReady(event) {
   androidBuffering.value = false;
-  if (event?.type === "playing") androidMediaReady.value = true;
+  if (event?.type === "playing" && !androidMediaReady.value) {
+    const video = event.target;
+    const reveal = () => {
+      if (video !== androidVideo.value || androidMediaReady.value) return;
+      video.style.opacity = "1";
+      androidMediaReady.value = true;
+    };
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(reveal);
+    else setTimeout(reveal, 500);
+  }
   scheduleAndroidControlsHide();
 }
 
@@ -292,6 +301,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     androidHls = null;
   }
   video.removeAttribute("src");
+  video.style.opacity = "0";
   video.load();
   try {
     if (Hls.isSupported()) {
