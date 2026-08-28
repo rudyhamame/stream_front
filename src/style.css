@@ -81,7 +81,7 @@
  .android-player-header h2 { margin:0; overflow:hidden; color:#f3f4f1; font:600 clamp(20px,5vw,30px)/1.1 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
  .android-player-back,.android-player-close { flex:0 0 auto; width:42px; height:42px; border:1px solid #394236; border-radius:12px; background:#191d17; color:#d4f06a; cursor:pointer; font:32px/1 'DM Sans'; }
  .android-player-close { margin-left:auto; color:#aeb7a0; font-size:28px; }
- .android-video-frame { position:relative; display:grid; place-items:center; min-height:0; overflow:hidden; border:1px solid #394236; border-radius:16px; background:#080a08; }
+ .android-video-frame { position:relative; display:grid; place-items:center; align-self:center; width:100%; height:min(56.25vw, calc(100dvh - 250px)); aspect-ratio:16/9; min-height:0; overflow:hidden; border:1px solid #394236; border-radius:16px; background:#080a08; }
  .android-video-frame video { width:100%; height:100%; object-fit:contain; background:#080a08; }
  .android-player-error { position:absolute; inset:0; display:grid; place-items:center; padding:24px; color:#e58b82; text-align:center; background:#080a08cc; }
  .android-player-controls { padding-top:18px; }
