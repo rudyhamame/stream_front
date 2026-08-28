@@ -66,7 +66,7 @@ async function loadPairingInfo() {
   pairingReady.value = true;
   if (data.authenticated) {
     pairing.value = false;
-    await setAndroidLoginWindow(false);
+    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   }
@@ -81,7 +81,7 @@ async function claimPairing() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
-    await setAndroidLoginWindow(false);
+    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -99,7 +99,7 @@ async function signIn() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
-    await setAndroidLoginWindow(false);
+    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -424,7 +424,7 @@ async function restoreAndroidWindow() {
   await unlockAndroidOrientation();
   await new Promise(resolve => setTimeout(resolve, 180));
   if (androidApp.value && Immersive) {
-    try { await Immersive.exit(); } catch { /* Native immersive mode may already be closed. */ }
+    try { await Immersive.enter(); } catch { /* Native immersive mode may already be active. */ }
   }
 }
 
@@ -698,6 +698,9 @@ onMounted(async () => {
     // Capacitor can restore its WebView window flags just after mount.
     // Reapply login edge-to-edge once the native view has settled.
     if (androidApp.value) window.setTimeout(() => setAndroidLoginWindow(true), 350);
+  } else if (androidApp.value) {
+    await setAndroidLoginWindow(true);
+    window.setTimeout(() => setAndroidLoginWindow(true), 350);
   }
   try {
     if (pairCode) {
