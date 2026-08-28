@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Html5Qrcode } from "html5-qrcode";
 import Hls from "hls.js";
+import { registerPlugin } from "@capacitor/core";
 import { ScreenOrientation } from "@capacitor/screen-orientation";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
@@ -15,7 +16,9 @@ const androidMuted = ref(false);
 const androidCurrentTime = ref(0);
 const androidDuration = ref(0);
 const androidPlayerError = ref("");
+const androidFullscreen = ref(false);
 let androidHls = null;
+const Immersive = registerPlugin("Immersive");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
@@ -229,8 +232,8 @@ async function configureMoviePlayback() {
 }
 
 async function playAndroidMovie(item) {
-  await lockAndroidLandscape();
   androidNowPlaying.value = item;
+  androidFullscreen.value = false;
   androidPlaying.value = false;
   androidMuted.value = false;
   androidCurrentTime.value = 0;
@@ -262,12 +265,19 @@ async function closeAndroidPlayer() {
     androidHls.destroy();
     androidHls = null;
   }
+  if (document.fullscreenElement) {
+    try { await document.exitFullscreen(); } catch { /* Fullscreen may already be closing. */ }
+  }
+  if (androidFullscreen.value && Immersive) {
+    try { await Immersive.exit(); } catch { /* Native immersive mode may already be closed. */ }
+  }
   androidVideo.value?.pause();
   androidVideo.value?.removeAttribute("src");
   androidVideo.value?.load();
   androidNowPlaying.value = null;
   androidPlaying.value = false;
   androidPlayerError.value = "";
+  androidFullscreen.value = false;
   await unlockAndroidOrientation();
 }
 
@@ -292,15 +302,30 @@ function toggleAndroidMute() {
 
 async function fullscreenAndroidMovie() {
   try {
+    androidFullscreen.value = true;
+    if (Immersive) await Immersive.enter();
     await lockAndroidLandscape();
     await androidVideo.value?.requestFullscreen?.();
-  } catch { /* Fullscreen is optional on some WebViews. */ }
+  } catch {
+    androidFullscreen.value = false;
+    /* Fullscreen is optional on some WebViews. */
+  }
 }
 
 onBeforeUnmount(() => {
   if (androidHls) androidHls.destroy();
+  document.removeEventListener("fullscreenchange", handleFullscreenChange);
   unlockAndroidOrientation();
 });
+
+function handleFullscreenChange() {
+  if (document.fullscreenElement || !androidFullscreen.value) return;
+  androidFullscreen.value = false;
+  if (Immersive) Immersive.exit().catch(() => {});
+  unlockAndroidOrientation();
+}
+
+document.addEventListener("fullscreenchange", handleFullscreenChange);
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
@@ -491,7 +516,7 @@ onMounted(async () => {
       <article v-else-if="androidPage === 'channels'" class="android-page"><p class="eyebrow">CHANNELS</p><h1>Channels</h1><div v-if="savedItemsForTabFor('channel').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('channel')" :key="item.key"><span>◉</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No channels are enabled yet. Add them from the library manager.</p></article>
       <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
-      <section v-if="androidNowPlaying" class="android-player" role="dialog" aria-label="Movie player">
+      <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
         <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
         <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
@@ -571,7 +596,7 @@ onMounted(async () => {
       </template>
       <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
     </section>
-    <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" role="dialog" aria-label="Movie player">
+    <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
       <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
       <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
       <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
