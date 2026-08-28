@@ -18,10 +18,14 @@ const androidDuration = ref(0);
 const androidPlaybackOffset = ref(0);
 const androidPendingSeek = ref(-1);
 const androidMediaReady = ref(false);
+const androidBuffering = ref(false);
+const androidControlsVisible = ref(true);
+const androidQuality = ref("Auto");
 const androidPlayerError = ref("");
 const androidFullscreen = ref(false);
 let androidHls = null;
 let androidSeekTimer = null;
+let androidControlsTimer = null;
 const Immersive = registerPlugin("Immersive");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
@@ -205,7 +209,63 @@ function formatTime(value) {
 function handleAndroidMetadata(event) {
   const duration = Number(event.target.duration) || 0;
   androidMediaReady.value = true;
+  androidBuffering.value = false;
   if (androidPlaybackOffset.value === 0 || androidDuration.value === 0) androidDuration.value = androidPlaybackOffset.value + duration;
+  scheduleAndroidControlsHide();
+}
+
+const androidRemainingTime = computed(() => Math.max(0, androidDuration.value - androidCurrentTime.value));
+const androidTimelineStyle = computed(() => {
+  const percent = androidDuration.value ? Math.min(100, Math.max(0, (androidCurrentTime.value / androidDuration.value) * 100)) : 0;
+  return { "--android-progress": `${percent}%` };
+});
+const androidUpNext = computed(() => {
+  const movies = savedItemsForTabFor("movie");
+  const index = movies.findIndex(item => item.key === androidNowPlaying.value?.key);
+  return index >= 0 ? movies[index + 1] || null : null;
+});
+
+function clearAndroidControlsTimer() {
+  if (androidControlsTimer) clearTimeout(androidControlsTimer);
+  androidControlsTimer = null;
+}
+
+function scheduleAndroidControlsHide() {
+  clearAndroidControlsTimer();
+  if (!androidPlaying.value || androidBuffering.value || androidPlayerError.value) return;
+  androidControlsTimer = setTimeout(() => { androidControlsVisible.value = false; }, 3600);
+}
+
+function showAndroidControls() {
+  androidControlsVisible.value = true;
+  scheduleAndroidControlsHide();
+}
+
+function toggleAndroidControls(event) {
+  if (event?.target?.closest?.("button, input")) return;
+  androidControlsVisible.value = !androidControlsVisible.value;
+  if (androidControlsVisible.value) scheduleAndroidControlsHide(); else clearAndroidControlsTimer();
+}
+
+function onAndroidPlay() {
+  androidPlaying.value = true;
+  androidBuffering.value = false;
+  scheduleAndroidControlsHide();
+}
+
+function onAndroidPause() {
+  androidPlaying.value = false;
+  showAndroidControls();
+}
+
+function onAndroidWaiting() {
+  androidBuffering.value = true;
+  showAndroidControls();
+}
+
+function onAndroidReady() {
+  androidBuffering.value = false;
+  scheduleAndroidControlsHide();
 }
 
 function movieStreamUrl(startSeconds = 0) {
@@ -259,6 +319,9 @@ async function playAndroidMovie(item) {
   androidPlaybackOffset.value = 0;
   androidPendingSeek.value = -1;
   androidMediaReady.value = false;
+  androidBuffering.value = true;
+  androidControlsVisible.value = true;
+  androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   await configureMoviePlayback(0);
 }
@@ -272,6 +335,9 @@ async function playWebMovie(item) {
   androidPlaybackOffset.value = 0;
   androidPendingSeek.value = -1;
   androidMediaReady.value = false;
+  androidBuffering.value = true;
+  androidControlsVisible.value = true;
+  androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   await configureMoviePlayback(0);
 }
@@ -285,6 +351,7 @@ async function unlockAndroidOrientation() {
 }
 
 async function closeAndroidPlayer() {
+  clearAndroidControlsTimer();
   if (androidSeekTimer) {
     clearTimeout(androidSeekTimer);
     androidSeekTimer = null;
@@ -308,6 +375,7 @@ async function closeAndroidPlayer() {
   androidFullscreen.value = false;
   androidPendingSeek.value = -1;
   androidMediaReady.value = false;
+  androidBuffering.value = false;
   await unlockAndroidOrientation();
 }
 
@@ -328,6 +396,7 @@ function seekAndroidTo(target) {
   const next = Math.max(0, Math.min(Number(target) || 0, duration));
   androidPendingSeek.value = next;
   androidCurrentTime.value = next;
+  showAndroidControls();
   if (androidSeekTimer) clearTimeout(androidSeekTimer);
   androidSeekTimer = setTimeout(() => restartAndroidAt(next), 650);
 }
@@ -344,6 +413,8 @@ async function restartAndroidAt(target) {
   androidPlaybackOffset.value = target;
   androidCurrentTime.value = target;
   androidPlayerError.value = "";
+  androidBuffering.value = true;
+  showAndroidControls();
   await configureMoviePlayback(target);
 }
 
