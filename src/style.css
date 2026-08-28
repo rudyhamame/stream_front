@@ -17,6 +17,9 @@
  .linked-device-list { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:10px; }
  .linked-device-list article { display:flex; align-items:center; gap:10px; min-width:170px; padding:10px 13px; border:1px solid #394236; border-radius:9px; background:#0b0f0a; }
  .linked-device-icon { display:grid; place-items:center; width:29px; height:29px; border-radius:7px; background:#b7ff32; color:#111; }
+ .topbar-actions { display:flex; align-items:center; gap:18px; }
+ .logout-button { border:1px solid #4a5040; border-radius:8px; padding:9px 13px; background:#191d17; color:#f3f4f1; cursor:pointer; font:500 12px 'DM Sans'; }
+ .logout-button:hover { border-color:#b7ff32; color:#b7ff32; }
  .linked-device-list strong,.linked-device-list small { display:block; }
  .linked-device-list small { margin-top:2px; color:#8f958c; font-size:11px; }
  @media(max-width:700px){.linked-devices{align-items:flex-start;flex-direction:column}.linked-device-list{justify-content:flex-start}}
