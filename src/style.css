@@ -90,6 +90,12 @@
  .android-player-control-row span { margin-right:auto; }
  .android-player-control-row button { border:1px solid #394236; border-radius:8px; padding:9px 11px; background:#191d17; color:#f3f4f1; cursor:pointer; font:500 11px 'DM Sans'; }
  .android-player-control-row button:hover { border-color:#d4f06a; color:#d4f06a; }
+ .xtream-play-button { border:1px solid #d4f06a; border-radius:8px; padding:8px 12px; background:#d4f06a; color:#111210; cursor:pointer; font:700 12px 'DM Sans'; }
+ .xtream-play-button:hover { background:#e3ff88; }
+ .web-player { padding:clamp(24px,5vw,70px); }
+ .web-player .android-video-frame { width:min(1200px,100%); justify-self:center; }
+ .web-player .android-player-header,.web-player .android-player-controls { width:min(1200px,100%); justify-self:center; }
+ @media(max-width:700px){.web-player{padding:20px}.web-player .android-player-control-row{flex-wrap:wrap}.web-player .android-player-control-row span{width:100%;margin:0 0 4px}.web-player .android-player-control-row button{flex:1}}
  .linked-device-list strong,.linked-device-list small { display:block; }
  .linked-device-list small { margin-top:2px; color:#8f958c; font-size:11px; }
  @media(max-width:700px){.linked-devices{align-items:flex-start;flex-direction:column}.linked-device-list{justify-content:flex-start}}

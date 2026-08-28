@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Html5Qrcode } from "html5-qrcode";
+import Hls from "hls.js";
+import { ScreenOrientation } from "@capacitor/screen-orientation";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
@@ -13,6 +15,7 @@ const androidMuted = ref(false);
 const androidCurrentTime = ref(0);
 const androidDuration = ref(0);
 const androidPlayerError = ref("");
+let androidHls = null;
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
@@ -175,8 +178,10 @@ function savedItemsForTabFor(value) { return savedItems.value.filter(item => ite
 const androidPlayerSrc = computed(() => {
   const item = androidNowPlaying.value;
   if (!item) return "";
-  const fallback = item.sourceId && item.id
-    ? `/api/xtream/hls/${encodeURIComponent(item.sourceId)}/movie/${encodeURIComponent(item.id)}/master.m3u8`
+  const playableSourceId = item.sourceId || sourceId.value;
+  const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
+  const fallback = playableSourceId && item.id
+    ? `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/movie/${encodeURIComponent(item.id)}/master.m3u8${extension}`
     : "";
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
@@ -190,25 +195,80 @@ function formatTime(value) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+async function configureMoviePlayback() {
+  await nextTick();
+  const video = androidVideo.value;
+  const source = androidPlayerSrc.value;
+  if (!video || !source) {
+    androidPlayerError.value = "This movie does not have a playable stream.";
+    return;
+  }
+  if (androidHls) {
+    androidHls.destroy();
+    androidHls = null;
+  }
+  video.removeAttribute("src");
+  video.load();
+  try {
+    if (Hls.isSupported()) {
+      androidHls = new Hls({ enableWorker: true, lowLatencyMode: false });
+      androidHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) androidPlayerError.value = "This movie could not be played right now.";
+      });
+      androidHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
+        try { await video.play(); androidPlaying.value = true; } catch { /* The user can press Play. */ }
+      });
+      androidHls.loadSource(source);
+      androidHls.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = source;
+      await video.play();
+      androidPlaying.value = true;
+    } else androidPlayerError.value = "HLS playback is not supported on this device.";
+  } catch { androidPlayerError.value = "This movie could not be played right now."; }
+}
+
 async function playAndroidMovie(item) {
+  await lockAndroidLandscape();
   androidNowPlaying.value = item;
   androidPlaying.value = false;
   androidMuted.value = false;
   androidCurrentTime.value = 0;
   androidDuration.value = 0;
   androidPlayerError.value = "";
-  await nextTick();
-  try {
-    await androidVideo.value?.play();
-    androidPlaying.value = true;
-  } catch { /* The user can start playback with the play button. */ }
+  await configureMoviePlayback();
 }
 
-function closeAndroidPlayer() {
+async function playWebMovie(item) {
+  androidNowPlaying.value = item;
+  androidPlaying.value = false;
+  androidMuted.value = false;
+  androidCurrentTime.value = 0;
+  androidDuration.value = 0;
+  androidPlayerError.value = "";
+  await configureMoviePlayback();
+}
+
+async function lockAndroidLandscape() {
+  try { await ScreenOrientation.lock({ orientation: "landscape" }); } catch { /* Browser preview may not expose orientation locking. */ }
+}
+
+async function unlockAndroidOrientation() {
+  try { await ScreenOrientation.unlock(); } catch { /* Browser preview may not expose orientation unlocking. */ }
+}
+
+async function closeAndroidPlayer() {
+  if (androidHls) {
+    androidHls.destroy();
+    androidHls = null;
+  }
   androidVideo.value?.pause();
+  androidVideo.value?.removeAttribute("src");
+  androidVideo.value?.load();
   androidNowPlaying.value = null;
   androidPlaying.value = false;
   androidPlayerError.value = "";
+  await unlockAndroidOrientation();
 }
 
 async function toggleAndroidPlayback() {
@@ -231,8 +291,16 @@ function toggleAndroidMute() {
 }
 
 async function fullscreenAndroidMovie() {
-  try { await androidVideo.value?.requestFullscreen?.(); } catch { /* Fullscreen is optional on some WebViews. */ }
+  try {
+    await lockAndroidLandscape();
+    await androidVideo.value?.requestFullscreen?.();
+  } catch { /* Fullscreen is optional on some WebViews. */ }
 }
+
+onBeforeUnmount(() => {
+  if (androidHls) androidHls.destroy();
+  unlockAndroidOrientation();
+});
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
@@ -489,7 +557,7 @@ onMounted(async () => {
           <div class="xtream-pagination"><button type="button" :disabled="page<=1" @click="movePage(-1)">‹ Previous</button><span>Page {{page}} / {{pages}} <b>·</b> {{total}} {{ typeLabel(kind).toLowerCase() }}</span><button type="button" :disabled="page>=pages" @click="movePage(1)">Next ›</button></div>
           <section class="xtream-enabled-section">
             <div class="section-heading compact"><div><p class="eyebrow">SAVED ON ROKU</p><h2>{{ typeLabel(kind) }}</h2></div><span class="section-count accent-count">{{ typeCounts[kind] || 0 }}</span></div>
-            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="source-action" :disabled="busy" @click="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click="removeSaved(item)">Remove</button></div></div></div>
+            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button v-if="item.kind === 'movie'" type="button" class="xtream-play-button" @click="playWebMovie(item)">Play</button><button type="button" class="source-action" :disabled="busy" @click="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click="removeSaved(item)">Remove</button></div></div></div>
             <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(kind).toLowerCase() }} items enabled.</strong><span>Select items above, then press “Save to Roku”.</span></div>
           </section>
         </template>
@@ -502,6 +570,11 @@ onMounted(async () => {
         </section>
       </template>
       <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
+    </section>
+    <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" role="dialog" aria-label="Movie player">
+      <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
+      <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
+      <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
     </section>
     </template>
   </main>
