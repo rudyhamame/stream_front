@@ -21,7 +21,7 @@
  .logout-button { border:1px solid #4a5040; border-radius:8px; padding:9px 13px; background:#191d17; color:#f3f4f1; cursor:pointer; font:500 12px 'DM Sans'; }
  .logout-button:hover { border-color:#b7ff32; color:#b7ff32; }
  .android-app-mode { max-width:none; width:100%; height:100dvh; min-height:100dvh; padding:0; overflow:hidden; background:#111210; }
- .android-app-mode .topbar { height:68px; padding:0 22px; border-bottom:1px solid #30322d; }
+ .android-app-mode .topbar { height:68px; padding:0 22px; border-bottom:0; }
  .android-app-mode > .topbar .status { display:none; }
  .android-app-mode > .topbar .logout-button { display:none; }
  .android-page-shell { height:calc(100dvh - 68px); padding:26px 22px 94px; overflow:hidden; }
@@ -41,6 +41,25 @@
  .android-empty { color:#8f958c; margin-top:32px; }
  .android-settings-card { justify-content:space-between; max-width:500px; color:#aeb7a0; }
  .android-settings-card strong { color:#f3f4f1; }
+ .android-linked-settings { max-width:500px; margin-top:22px; }
+ .android-linked-settings > .eyebrow { margin:0 0 9px; }
+ .android-linked-settings-list { display:grid; gap:8px; }
+ .android-linked-settings-list article { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 12px; border:1px solid #394236; border-radius:9px; background:#191d17; }
+ .android-linked-settings-list strong,.android-linked-settings-list small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .android-linked-settings-list strong { color:#f3f4f1; font-size:13px; }
+ .android-linked-settings-list small { margin-top:3px; color:#8f958c; font:10px monospace; }
+ .android-unlink-button { flex:0 0 auto; border:1px solid #71443b; border-radius:7px; padding:7px 9px; background:transparent; color:#e58b82; cursor:pointer; font:500 11px 'DM Sans'; }
+ .android-unlink-button:disabled { opacity:.4; cursor:not-allowed; }
+ .android-change-password-toggle { width:100%; max-width:500px; margin-top:14px; }
+ .android-password-form { display:grid; gap:10px; max-width:500px; margin-top:12px; }
+ .android-password-form label { display:grid; gap:6px; color:#aeb7a0; font-size:12px; }
+ .android-password-form input { width:100%; height:42px; padding:0 12px; border:1px solid #394236; border-radius:9px; outline:none; background:#191d17; color:#f3f4f1; font:inherit; }
+ .android-password-form input:focus { border-color:#d4f06a; }
+ .android-password-form .primary-action { min-height:42px; margin-top:4px; }
+ .android-password-message { margin:2px 0 0; font-size:12px; }
+ .android-password-message.is-success { color:#d4f06a; }
+ .android-password-message.is-error { color:#e58b82; }
+ .app-brand-mark { width:30px; height:30px; flex:0 0 30px; object-fit:contain; }
  .android-logout { margin-top:24px; min-width:110px; }
  .android-playlist-page { display:flex; flex-direction:column; }
  .android-playlist-page h1 { flex:0 0 auto; }

@@ -39,6 +39,12 @@ const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
 const loginDevices = ref([]);
 const selectedLoginDevice = ref("");
+const changePasswordOpen = ref(false);
+const currentPassword = ref("");
+const newPassword = ref("");
+const newPasswordConfirmation = ref("");
+const passwordMessage = ref("");
+const passwordMessageType = ref("info");
 const scannerOpen = ref(false);
 const scannerError = ref("");
 let qrScanner = null;
@@ -115,6 +121,38 @@ function logout() {
   pairingPasswordConfirmation.value = "";
   setAndroidLoginWindow(true);
   window.history.replaceState({}, "", window.location.pathname);
+}
+
+async function changePassword() {
+  passwordMessage.value = "";
+  if (newPassword.value !== newPasswordConfirmation.value) {
+    passwordMessageType.value = "error";
+    passwordMessage.value = "New passwords do not match.";
+    return;
+  }
+  try {
+    await request("/api/account/password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ currentPassword: currentPassword.value, newPassword: newPassword.value }) });
+    currentPassword.value = "";
+    newPassword.value = "";
+    newPasswordConfirmation.value = "";
+    passwordMessageType.value = "success";
+    passwordMessage.value = "Password changed successfully.";
+  } catch (error) {
+    passwordMessageType.value = "error";
+    passwordMessage.value = error.message;
+  }
+}
+
+async function unlinkDevice(device) {
+  if (!window.confirm(`Unlink ${device.label}?`)) return;
+  try {
+    busy.value = true;
+    await request(`/api/account/devices/${encodeURIComponent(device.deviceId)}`, { method: "DELETE" });
+    await loadLinkedDevices();
+    messageType.value = "success";
+    message.value = `${device.label} was unlinked.`;
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { busy.value = false; }
 }
 
 async function stopQrScanner() {
@@ -757,7 +795,7 @@ onMounted(async () => {
     </section>
     <template v-else>
     <nav class="topbar">
-      <div class="brand"><span class="brand-mark">RH</span><span>IPTV Player</span></div>
+      <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
       <div class="topbar-actions"><span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
     <section v-if="androidApp" class="android-page-shell">
@@ -766,7 +804,7 @@ onMounted(async () => {
       <article v-else-if="androidPage === 'series'" class="android-page"><p class="eyebrow">SERIES</p><h1>Series</h1><div v-if="savedItemsForTabFor('series').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('series')" :key="item.key"><span>▦</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No series are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'movies'" class="android-page"><p class="eyebrow">MOVIES</p><h1>Movies</h1><div v-if="savedItemsForTabFor('movie').length" class="android-item-list"><button v-for="item in savedItemsForTabFor('movie')" :key="item.key" type="button" class="android-movie-item" @click="playAndroidMovie(item)"><span>▶</span><strong>{{ item.title }}</strong><small>Play movie</small></button></div><p v-else class="android-empty">No movies are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'channels'" class="android-page"><p class="eyebrow">CHANNELS</p><h1>Channels</h1><div v-if="savedItemsForTabFor('channel').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('channel')" :key="item.key"><span>◉</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No channels are enabled yet. Add them from the library manager.</p></article>
-      <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
+      <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p></section><button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button><form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
       <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
