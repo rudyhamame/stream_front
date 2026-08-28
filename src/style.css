@@ -98,6 +98,8 @@
  .android-player.is-fullscreen .android-player-controls input[type='range'] { filter:drop-shadow(0 1px 4px #000); }
  .xtream-play-button { border:1px solid #d4f06a; border-radius:8px; padding:8px 12px; background:#d4f06a; color:#111210; cursor:pointer; font:700 12px 'DM Sans'; }
  .xtream-play-button:hover { background:#e3ff88; }
+ .web-playable-row { cursor:pointer; }
+ .web-playable-row:hover { border-color:#d4f06a; background:#20271c; }
  .web-player { padding:clamp(24px,5vw,70px); }
  .web-player .android-video-frame { width:min(1200px,100%); justify-self:center; }
  .web-player .android-player-header,.web-player .android-player-controls { width:min(1200px,100%); justify-self:center; }
