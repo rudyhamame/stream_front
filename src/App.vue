@@ -447,7 +447,9 @@ async function fullscreenAndroidMovie() {
     androidFullscreen.value = true;
     if (Immersive) await Immersive.enter();
     await lockAndroidLandscape();
-    await androidVideo.value?.requestFullscreen?.();
+    // Android uses the CSS overlay plus the native immersive window. Calling
+    // the WebView video fullscreen API here can reintroduce a landscape inset.
+    if (!androidApp.value) await androidVideo.value?.requestFullscreen?.();
     if (Immersive) await Immersive.enter();
   } catch {
     androidFullscreen.value = false;
