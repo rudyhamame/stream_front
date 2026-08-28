@@ -448,6 +448,7 @@ async function fullscreenAndroidMovie() {
     if (Immersive) await Immersive.enter();
     await lockAndroidLandscape();
     await androidVideo.value?.requestFullscreen?.();
+    if (Immersive) await Immersive.enter();
   } catch {
     androidFullscreen.value = false;
     /* Fullscreen is optional on some WebViews. */
