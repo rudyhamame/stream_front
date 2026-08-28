@@ -208,10 +208,7 @@ function formatTime(value) {
 
 function handleAndroidMetadata(event) {
   const duration = Number(event.target.duration) || 0;
-  androidMediaReady.value = true;
-  androidBuffering.value = false;
   if (androidPlaybackOffset.value === 0 || androidDuration.value === 0) androidDuration.value = androidPlaybackOffset.value + duration;
-  scheduleAndroidControlsHide();
 }
 
 const androidRemainingTime = computed(() => Math.max(0, androidDuration.value - androidCurrentTime.value));
@@ -263,9 +260,15 @@ function onAndroidWaiting() {
   showAndroidControls();
 }
 
-function onAndroidReady() {
+function onAndroidReady(event) {
   androidBuffering.value = false;
+  if (event?.type === "playing") androidMediaReady.value = true;
   scheduleAndroidControlsHide();
+}
+
+function onAndroidFirstFrame() {
+  androidMediaReady.value = true;
+  onAndroidReady();
 }
 
 function movieStreamUrl(startSeconds = 0) {
