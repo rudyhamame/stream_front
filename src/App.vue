@@ -43,6 +43,7 @@ const scannerOpen = ref(false);
 const scannerError = ref("");
 let qrScanner = null;
 let loginViewportFrame = null;
+let nativeKeyboardHeight = 0;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -176,7 +177,9 @@ function updateLoginKeyboardLift() {
       return;
     }
     const viewport = window.visualViewport;
-    const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    const viewportBottom = nativeKeyboardHeight > 0
+      ? window.innerHeight - nativeKeyboardHeight
+      : viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
     const submit = active.closest("form")?.querySelector(".login-submit");
     const targetBottom = Math.max(active.getBoundingClientRect().bottom, submit?.getBoundingClientRect().bottom || 0);
     const lift = Math.min(window.innerHeight * .45, Math.max(0, targetBottom + 18 - viewportBottom));
@@ -188,12 +191,18 @@ function resetLoginKeyboardLift() {
   window.setTimeout(updateLoginKeyboardLift, 80);
 }
 
+function handleNativeKeyboardHeight(event) {
+  nativeKeyboardHeight = Math.max(0, Number(event.detail?.height) || 0);
+  updateLoginKeyboardLift();
+}
+
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
   window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
   document.removeEventListener("focusin", updateLoginKeyboardLift);
   document.removeEventListener("focusout", resetLoginKeyboardLift);
+  window.removeEventListener("rh-keyboard-height", handleNativeKeyboardHeight);
   if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
 });
 
@@ -678,6 +687,7 @@ onMounted(async () => {
   window.visualViewport?.addEventListener("scroll", updateLoginKeyboardLift);
   document.addEventListener("focusin", updateLoginKeyboardLift);
   document.addEventListener("focusout", resetLoginKeyboardLift);
+  window.addEventListener("rh-keyboard-height", handleNativeKeyboardHeight);
   if (pairing.value) {
     await setAndroidLoginWindow(true);
     // Capacitor can restore its WebView window flags just after mount.
