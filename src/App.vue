@@ -722,7 +722,7 @@ onMounted(async () => {
         <div class="login-art-fade"></div>
       </div>
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
-        <div class="login-brand"><span class="brand-mark">RH</span><span>IPTV PLAYER</span></div>
+        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV PLAYER</span></div>
         <p v-if="pairCode" class="eyebrow">ROKU LIBRARY</p>
         <h1 v-if="pairCode && isPairingSignup">Create your account</h1>
         <h1 v-else-if="pairCode">Open your Roku library</h1>

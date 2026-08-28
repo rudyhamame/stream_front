@@ -152,6 +152,7 @@
  .login-card { position:relative; z-index:3; align-self:end; margin:0 auto; width:min(460px,calc(100% - 40px)); padding:0 0 max(28px,env(safe-area-inset-bottom)); border:0; border-radius:0; background:transparent; box-shadow:none; transform:translateY(calc(0px - var(--login-keyboard-lift,0px) - var(--login-static-lift,0px))); transition:transform .2s ease; }
  .login-card-plain { --login-static-lift:24px; }
  .login-brand { display:flex; align-items:center; gap:10px; margin-bottom:18px; color:#f5f2ea; font:700 18px/1 'Space Grotesk'; letter-spacing:.06em; }
+ .login-brand-mark { width:42px; height:42px; flex:0 0 42px; object-fit:contain; }
  .login-brand .brand-mark { width:38px; height:38px; border-radius:11px; color:#10150f; font-size:18px; }
  .login-card .eyebrow { margin:0 0 9px; color:#d4f06a; }
  .login-card h1 { margin:0 0 10px; color:#f5f2ea; font:600 clamp(28px,7vw,40px)/1 'Space Grotesk'; letter-spacing:-.04em; }
