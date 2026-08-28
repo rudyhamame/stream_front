@@ -644,7 +644,7 @@ onMounted(async () => {
 
 <template>
   <main class="shell" :class="{ 'android-app-mode': androidApp }">
-    <section v-if="pairing" class="pairing-gate">
+    <section v-if="pairing" class="pairing-gate login-gate">
       <div class="login-art" aria-hidden="true">
         <img class="login-city" src="/login/city-background.png" alt="">
         <img class="login-couple" src="/login/couple-foreground.png" alt="">
