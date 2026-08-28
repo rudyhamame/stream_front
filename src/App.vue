@@ -350,6 +350,14 @@ async function unlockAndroidOrientation() {
   try { await ScreenOrientation.unlock(); } catch { /* Browser preview may not expose orientation unlocking. */ }
 }
 
+async function restoreAndroidWindow() {
+  await unlockAndroidOrientation();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  if (androidApp.value && Immersive) {
+    try { await Immersive.exit(); } catch { /* Native immersive mode may already be closed. */ }
+  }
+}
+
 async function closeAndroidPlayer() {
   clearAndroidControlsTimer();
   if (androidSeekTimer) {
@@ -363,9 +371,6 @@ async function closeAndroidPlayer() {
   if (document.fullscreenElement) {
     try { await document.exitFullscreen(); } catch { /* Fullscreen may already be closing. */ }
   }
-  if (androidApp.value && Immersive) {
-    try { await Immersive.exit(); } catch { /* Native immersive mode may already be closed. */ }
-  }
   androidVideo.value?.pause();
   androidVideo.value?.removeAttribute("src");
   androidVideo.value?.load();
@@ -376,7 +381,7 @@ async function closeAndroidPlayer() {
   androidPendingSeek.value = -1;
   androidMediaReady.value = false;
   androidBuffering.value = false;
-  await unlockAndroidOrientation();
+  await restoreAndroidWindow();
 }
 
 async function toggleAndroidPlayback() {
@@ -445,8 +450,7 @@ onBeforeUnmount(() => {
 function handleFullscreenChange() {
   if (document.fullscreenElement || !androidFullscreen.value) return;
   androidFullscreen.value = false;
-  if (Immersive) Immersive.exit().catch(() => {});
-  unlockAndroidOrientation();
+  restoreAndroidWindow();
 }
 
 document.addEventListener("fullscreenchange", handleFullscreenChange);
