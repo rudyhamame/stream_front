@@ -42,6 +42,7 @@ const selectedLoginDevice = ref("");
 const scannerOpen = ref(false);
 const scannerError = ref("");
 let qrScanner = null;
+let loginViewportFrame = null;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -164,7 +165,37 @@ async function startQrScanner() {
   }
 }
 
+function updateLoginKeyboardLift() {
+  if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
+  loginViewportFrame = requestAnimationFrame(() => {
+    loginViewportFrame = null;
+    const root = document.documentElement;
+    const active = document.activeElement;
+    if (!pairing.value || !active?.matches?.(".login-card input, .login-card select")) {
+      root.style.setProperty("--login-keyboard-lift", "0px");
+      return;
+    }
+    const viewport = window.visualViewport;
+    const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    const submit = active.closest("form")?.querySelector(".login-submit");
+    const targetBottom = Math.max(active.getBoundingClientRect().bottom, submit?.getBoundingClientRect().bottom || 0);
+    const lift = Math.min(window.innerHeight * .45, Math.max(0, targetBottom + 18 - viewportBottom));
+    root.style.setProperty("--login-keyboard-lift", `${Math.ceil(lift)}px`);
+  });
+}
+
+function resetLoginKeyboardLift() {
+  window.setTimeout(updateLoginKeyboardLift, 80);
+}
+
 onBeforeUnmount(stopQrScanner);
+onBeforeUnmount(() => {
+  window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
+  window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
+  document.removeEventListener("focusin", updateLoginKeyboardLift);
+  document.removeEventListener("focusout", resetLoginKeyboardLift);
+  if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
+});
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
 const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
@@ -643,6 +674,10 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
+  window.visualViewport?.addEventListener("resize", updateLoginKeyboardLift);
+  window.visualViewport?.addEventListener("scroll", updateLoginKeyboardLift);
+  document.addEventListener("focusin", updateLoginKeyboardLift);
+  document.addEventListener("focusout", resetLoginKeyboardLift);
   if (pairing.value) {
     await setAndroidLoginWindow(true);
     // Capacitor can restore its WebView window flags just after mount.
