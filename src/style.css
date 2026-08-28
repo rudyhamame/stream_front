@@ -6,3 +6,8 @@
  .pairing-card p { line-height: 1.6; }
  .pairing-card label { display: grid; gap: 8px; margin-top: 24px; color: #aeb4ab; }
  .pairing-card input { padding: 13px 14px; border: 1px solid #394236; border-radius: 8px; background: #080a08; color: #f3f4f1; letter-spacing: .18em; font-size: 18px; }
+ .scan-action { margin-top: 20px; width: 100%; }
+ .scanner-panel { margin-top: 20px; border: 1px solid #394236; border-radius: 12px; padding: 12px; background: #080a08; }
+ #qr-reader { width: 100%; min-height: 230px; }
+ #qr-reader video { width: 100% !important; border-radius: 8px; }
+ .scanner-panel .source-action { margin-top: 12px; width: 100%; }

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { Html5Qrcode } from "html5-qrcode";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
@@ -8,9 +9,13 @@ const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
-const pairingNeedsPassword = ref(false);
+const pairingNeedsSignup = ref(false);
+const pairingUsername = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
+const scannerOpen = ref(false);
+const scannerError = ref("");
+let qrScanner = null;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -27,16 +32,21 @@ async function request(path, options = {}) {
 async function loadPairingInfo() {
   if (!pairCode) return;
   const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
-  pairingNeedsPassword.value = Boolean(data.needsPassword);
+  pairingNeedsSignup.value = Boolean(data.needsSignup);
   pairingReady.value = true;
+  if (data.authenticated) {
+    pairing.value = false;
+    window.history.replaceState({}, "", window.location.pathname);
+    await request("/api/health"); online.value = true; await loadSources();
+  }
 }
 
 async function claimPairing() {
   try {
     if (!pairCode) return;
-    if (pairingNeedsPassword.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    const path = pairingNeedsPassword.value ? "/api/device-session/setup" : "/api/device-session/login";
-    const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, password: pairingPassword.value }) });
+    if (pairingNeedsSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
+    const path = pairingNeedsSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
+    const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, username: pairingUsername.value, password: pairingPassword.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
@@ -44,6 +54,58 @@ async function claimPairing() {
     await request("/api/health"); online.value = true; await loadSources();
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
+
+async function stopQrScanner() {
+  if (!qrScanner) return;
+  try {
+    if (qrScanner.isScanning) await qrScanner.stop();
+    qrScanner.clear();
+  } catch { /* Camera may already have been released by Android. */ }
+  qrScanner = null;
+  scannerOpen.value = false;
+}
+
+function pairingUrlFromScan(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const scannedUrl = new URL(raw);
+    const scannedPair = scannedUrl.searchParams.get("pair");
+    if (scannedPair) return `${window.location.origin}${window.location.pathname}?pair=${encodeURIComponent(scannedPair)}`;
+  } catch { /* Roku may encode the pairing code as plain text. */ }
+  if (/^[A-Za-z0-9_-]{8,160}$/.test(raw)) {
+    return `${window.location.origin}${window.location.pathname}?pair=${encodeURIComponent(raw)}`;
+  }
+  return "";
+}
+
+async function startQrScanner() {
+  scannerError.value = "";
+  scannerOpen.value = true;
+  await new Promise(resolve => setTimeout(resolve, 50));
+  try {
+    qrScanner = new Html5Qrcode("qr-reader");
+    await qrScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 230, height: 230 } },
+      async decodedText => {
+        const target = pairingUrlFromScan(decodedText);
+        if (!target) {
+          scannerError.value = "This is not a valid RH Stream pairing QR code.";
+          return;
+        }
+        await stopQrScanner();
+        window.location.assign(target);
+      },
+      () => { /* Most frames do not contain a QR code. */ }
+    );
+  } catch (error) {
+    await stopQrScanner();
+    scannerError.value = error?.message || "Camera permission is required to scan the Roku QR code.";
+  }
+}
+
+onBeforeUnmount(stopQrScanner);
 
 const online = ref(false), sources = ref([]), sourceId = ref("");
 const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
@@ -224,8 +286,6 @@ watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
   try {
     if (pairCode) {
-      deviceToken.value = "";
-      window.localStorage.removeItem("rh-device-token");
       await loadPairingInfo();
       return;
     }
@@ -238,7 +298,7 @@ onMounted(async () => {
 <template>
   <main class="shell">
     <section v-if="pairing" class="pairing-gate">
-      <div class="pairing-card"><p class="eyebrow">PRIVATE DEVICE PROFILE</p><h1 v-if="pairingNeedsPassword">Secure your Roku</h1><h1 v-else>Unlock your Roku</h1><p v-if="pairCode && !pairingReady">Checking the secure QR code…</p><template v-else-if="pairCode"><p v-if="pairingNeedsPassword">Create a password for this Roku. It protects this device’s private playlist profile.</p><p v-else>Enter this Roku’s password to open its private playlist profile.</p><form @submit.prevent="claimPairing"><label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="At least 8 characters"></label><label v-if="pairingNeedsPassword">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ pairingNeedsPassword ? 'Create device profile' : 'Unlock device profile' }}</button></form></template><p v-else class="section-copy">This playlist manager is private. Scan the QR code displayed in your Roku Settings page to access your device profile.</p><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
+      <div class="pairing-card"><p class="eyebrow">ROKU LIBRARY</p><h1 v-if="pairingNeedsSignup">Create your Roku login</h1><h1 v-else>Open your Roku library</h1><p v-if="pairCode && !pairingReady">Checking the Roku device code…</p><template v-else-if="pairCode"><p v-if="pairingNeedsSignup">Create a username and password to activate this Roku and manage its library from your phone.</p><p v-else>Sign in with this Roku’s username and password. The TV will connect automatically.</p><form @submit.prevent="claimPairing"><label>Username<input v-model="pairingUsername" type="text" minlength="3" maxlength="32" required autocomplete="username" placeholder="Choose a username"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="pairingNeedsSignup ? 'new-password' : 'current-password'" placeholder="At least 8 characters"></label><label v-if="pairingNeedsSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ pairingNeedsSignup ? 'Create account & activate Roku' : 'Sign in & open library' }}</button></form></template><template v-else><p class="section-copy">Scan the QR code displayed in your Roku Settings page to access its private library.</p><button type="button" class="primary-action scan-action" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div><p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p></template><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
     </section>
     <template v-else>
     <nav class="topbar">
