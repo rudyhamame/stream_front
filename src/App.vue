@@ -15,9 +15,12 @@ const androidPlaying = ref(false);
 const androidMuted = ref(false);
 const androidCurrentTime = ref(0);
 const androidDuration = ref(0);
+const androidPlaybackOffset = ref(0);
+const androidPendingSeek = ref(-1);
 const androidPlayerError = ref("");
 const androidFullscreen = ref(false);
 let androidHls = null;
+let androidSeekTimer = null;
 const Immersive = registerPlugin("Immersive");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
@@ -198,10 +201,23 @@ function formatTime(value) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-async function configureMoviePlayback() {
+function handleAndroidMetadata(event) {
+  const duration = Number(event.target.duration) || 0;
+  if (androidPlaybackOffset.value === 0 || androidDuration.value === 0) androidDuration.value = androidPlaybackOffset.value + duration;
+}
+
+function movieStreamUrl(startSeconds = 0) {
+  const source = androidPlayerSrc.value;
+  if (!source) return "";
+  const target = new URL(source);
+  if (startSeconds > 0) target.searchParams.set("start", String(Math.floor(startSeconds)));
+  return target.toString();
+}
+
+async function configureMoviePlayback(startSeconds = 0) {
   await nextTick();
   const video = androidVideo.value;
-  const source = androidPlayerSrc.value;
+  const source = movieStreamUrl(startSeconds);
   if (!video || !source) {
     androidPlayerError.value = "This movie does not have a playable stream.";
     return;
@@ -238,8 +254,10 @@ async function playAndroidMovie(item) {
   androidMuted.value = false;
   androidCurrentTime.value = 0;
   androidDuration.value = 0;
+  androidPlaybackOffset.value = 0;
+  androidPendingSeek.value = -1;
   androidPlayerError.value = "";
-  await configureMoviePlayback();
+  await configureMoviePlayback(0);
 }
 
 async function playWebMovie(item) {
@@ -248,8 +266,10 @@ async function playWebMovie(item) {
   androidMuted.value = false;
   androidCurrentTime.value = 0;
   androidDuration.value = 0;
+  androidPlaybackOffset.value = 0;
+  androidPendingSeek.value = -1;
   androidPlayerError.value = "";
-  await configureMoviePlayback();
+  await configureMoviePlayback(0);
 }
 
 async function lockAndroidLandscape() {
@@ -261,6 +281,10 @@ async function unlockAndroidOrientation() {
 }
 
 async function closeAndroidPlayer() {
+  if (androidSeekTimer) {
+    clearTimeout(androidSeekTimer);
+    androidSeekTimer = null;
+  }
   if (androidHls) {
     androidHls.destroy();
     androidHls = null;
@@ -278,6 +302,7 @@ async function closeAndroidPlayer() {
   androidPlaying.value = false;
   androidPlayerError.value = "";
   androidFullscreen.value = false;
+  androidPendingSeek.value = -1;
   await unlockAndroidOrientation();
 }
 
@@ -290,8 +315,31 @@ async function toggleAndroidPlayback() {
 
 function seekAndroidMovie(event) {
   if (!androidVideo.value) return;
-  androidVideo.value.currentTime = Number(event.target.value);
-  androidCurrentTime.value = androidVideo.value.currentTime;
+  seekAndroidTo(Number(event.target.value));
+}
+
+function seekAndroidTo(target) {
+  const duration = androidDuration.value || Infinity;
+  const next = Math.max(0, Math.min(Number(target) || 0, duration));
+  androidPendingSeek.value = next;
+  androidCurrentTime.value = next;
+  if (androidSeekTimer) clearTimeout(androidSeekTimer);
+  androidSeekTimer = setTimeout(() => restartAndroidAt(next), 650);
+}
+
+function seekAndroidBy(seconds) {
+  const basePosition = androidPendingSeek.value >= 0 ? androidPendingSeek.value : androidCurrentTime.value;
+  seekAndroidTo(basePosition + seconds);
+}
+
+async function restartAndroidAt(target) {
+  androidSeekTimer = null;
+  if (!androidNowPlaying.value) return;
+  androidPendingSeek.value = -1;
+  androidPlaybackOffset.value = target;
+  androidCurrentTime.value = target;
+  androidPlayerError.value = "";
+  await configureMoviePlayback(target);
 }
 
 function toggleAndroidMute() {
@@ -518,8 +566,8 @@ onMounted(async () => {
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
       <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
-        <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
-        <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
+        <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
+        <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="seekAndroidBy(-30)">↶ 30</button><button type="button" @click="seekAndroidBy(-10)">↶ 10</button><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="seekAndroidBy(10)">10 ↷</button><button type="button" @click="seekAndroidBy(30)">30 ↷</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
       </section>
     </section>
     <header class="manager-hero">
@@ -598,8 +646,8 @@ onMounted(async () => {
     </section>
     <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
       <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2></div><button type="button" class="android-player-close" aria-label="Close player" @click="closeAndroidPlayer">×</button></header>
-      <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="androidDuration = $event.target.duration || 0" @timeupdate="androidCurrentTime = $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
-      <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
+      <div class="android-video-frame"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="androidPlaying = true" @pause="androidPlaying = false" @ended="androidPlaying = false" @error="androidPlayerError = 'This movie could not be played right now.'"></video><div v-if="androidPlayerError" class="android-player-error">{{ androidPlayerError }}</div></div>
+      <div class="android-player-controls"><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" aria-label="Movie progress" @input="seekAndroidMovie"><div class="android-player-control-row"><span>{{ formatTime(androidCurrentTime) }} / {{ formatTime(androidDuration) }}</span><button type="button" @click="seekAndroidBy(-30)">↶ 30</button><button type="button" @click="seekAndroidBy(-10)">↶ 10</button><button type="button" @click="toggleAndroidPlayback">{{ androidPlaying ? 'Pause' : 'Play' }}</button><button type="button" @click="seekAndroidBy(10)">10 ↷</button><button type="button" @click="seekAndroidBy(30)">30 ↷</button><button type="button" @click="toggleAndroidMute">{{ androidMuted ? 'Sound on' : 'Mute' }}</button><button type="button" @click="fullscreenAndroidMovie">Full screen</button></div></div>
     </section>
     </template>
   </main>

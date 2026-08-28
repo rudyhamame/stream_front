@@ -86,9 +86,9 @@
  .android-player-error { position:absolute; inset:0; display:grid; place-items:center; padding:24px; color:#e58b82; text-align:center; background:#080a08cc; }
  .android-player-controls { padding-top:18px; }
  .android-player-controls input[type='range'] { width:100%; accent-color:#d4f06a; }
- .android-player-control-row { display:flex; align-items:center; gap:10px; color:#aeb7a0; font-size:12px; }
+ .android-player-control-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:#aeb7a0; font-size:12px; }
  .android-player-control-row span { margin-right:auto; }
- .android-player-control-row button { border:1px solid #394236; border-radius:8px; padding:9px 11px; background:#191d17; color:#f3f4f1; cursor:pointer; font:500 11px 'DM Sans'; }
+ .android-player-control-row button { border:1px solid #394236; border-radius:8px; min-width:58px; padding:9px 10px; background:#191d17; color:#f3f4f1; cursor:pointer; font:500 11px 'DM Sans'; }
  .android-player-control-row button:hover { border-color:#d4f06a; color:#d4f06a; }
  .android-player.is-fullscreen { display:block; padding:0; background:#000; }
  .android-player.is-fullscreen .android-video-frame { position:absolute; inset:0; width:100%; height:100%; border:0; border-radius:0; background:#000; }
