@@ -63,6 +63,7 @@ async function loadPairingInfo() {
   pairingReady.value = true;
   if (data.authenticated) {
     pairing.value = false;
+    await setAndroidLoginWindow(false);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   }
@@ -77,6 +78,7 @@ async function claimPairing() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
+    await setAndroidLoginWindow(false);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -94,6 +96,7 @@ async function signIn() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
+    await setAndroidLoginWindow(false);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -107,6 +110,7 @@ function logout() {
   pairingEmail.value = "";
   pairingPassword.value = "";
   pairingPasswordConfirmation.value = "";
+  setAndroidLoginWindow(true);
   window.history.replaceState({}, "", window.location.pathname);
 }
 
@@ -361,6 +365,14 @@ async function lockAndroidLandscape() {
 
 async function unlockAndroidOrientation() {
   try { await ScreenOrientation.unlock(); } catch { /* Browser preview may not expose orientation unlocking. */ }
+}
+
+async function setAndroidLoginWindow(active) {
+  if (!androidApp.value || !Immersive) return;
+  try {
+    if (active) await Immersive.enter();
+    else await Immersive.exit();
+  } catch { /* Native window controls are unavailable in browser preview. */ }
 }
 
 async function restoreAndroidWindow() {
@@ -631,6 +643,7 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
+  if (pairing.value) await setAndroidLoginWindow(true);
   try {
     if (pairCode) {
       await loadPairingInfo();
