@@ -34,6 +34,7 @@ async function loadPairingInfo() {
   if (!pairCode) return;
   const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
   pairingNeedsSignup.value = Boolean(data.needsSignup);
+  pairingMode.value = pairingNeedsSignup.value ? "signup" : "login";
   pairingReady.value = true;
   if (data.authenticated) {
     pairing.value = false;
@@ -45,8 +46,8 @@ async function loadPairingInfo() {
 async function claimPairing() {
   try {
     if (!pairCode) return;
-    if (pairingNeedsSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    const path = pairingNeedsSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
+    if (isPairingSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
+    const path = isPairingSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
     const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
@@ -300,7 +301,7 @@ onMounted(async () => {
 <template>
   <main class="shell">
     <section v-if="pairing" class="pairing-gate">
-      <div class="pairing-card"><p class="eyebrow">ROKU LIBRARY</p><h1 v-if="pairingNeedsSignup">Create your Roku account</h1><h1 v-else>Open your Roku library</h1><p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p><template v-else-if="pairCode"><p v-if="pairingNeedsSignup">Create an account to activate this Roku and manage its library from your phone.</p><p v-else>Sign in to browse and manage this Roku library. The TV will connect automatically.</p><form @submit.prevent="claimPairing"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="pairingNeedsSignup ? 'new-password' : 'current-password'" placeholder="At least 8 characters"></label><label v-if="pairingNeedsSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ pairingNeedsSignup ? 'Create account & activate Roku' : 'Sign in & open library' }}</button></form></template><template v-else><p class="section-copy">Scan the QR code displayed in your Roku Settings page to access its private library.</p><button type="button" class="primary-action scan-action" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div><p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p></template><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
+      <div class="pairing-card"><p class="eyebrow">ROKU LIBRARY</p><h1 v-if="isPairingSignup">Create your account</h1><h1 v-else>Open your Roku library</h1><p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p><template v-else-if="pairCode"><p v-if="isPairingSignup">Create an account to activate this Roku and manage its library from your phone.</p><p v-else>Sign in to link this Roku and open its library. The TV will connect automatically.</p><form @submit.prevent="claimPairing"><label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label><label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="At least 8 characters"></label><label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label><button type="submit" class="primary-action">{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</button><button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button></form></template><template v-else><p class="section-copy">Scan the QR code displayed in your Roku Settings page to access its private library.</p><button type="button" class="primary-action scan-action" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div><p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p></template><p v-if="message" class="xtream-message is-error">{{ message }}</p></div>
     </section>
     <template v-else>
     <nav class="topbar">
