@@ -39,7 +39,7 @@ async function loadPairingInfo() {
   if (data.authenticated) {
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await loadSources();
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   }
 }
 
@@ -53,7 +53,7 @@ async function claimPairing() {
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await loadSources();
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
@@ -109,7 +109,7 @@ async function startQrScanner() {
 
 onBeforeUnmount(stopQrScanner);
 
-const online = ref(false), sources = ref([]), sourceId = ref("");
+const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
 const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0);
@@ -160,6 +160,11 @@ async function loadSources(preferred = sourceId.value) {
   rememberItems([...savedItems.value, ...archivedItems.value]);
   if (source) await Promise.all([loadCatalog(), loadSaved()]);
   else { items.value = []; savedItems.value = []; archivedItems.value = []; }
+}
+
+async function loadLinkedDevices() {
+  const data = await request("/api/account/devices");
+  linkedDevices.value = data.items || [];
 }
 
 let catalogRequestId = 0;
@@ -293,7 +298,7 @@ onMounted(async () => {
       return;
     }
     if (!deviceToken.value) return;
-    await request("/api/health"); online.value = true; await loadSources();
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; }
 });
 </script>
