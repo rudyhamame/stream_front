@@ -739,14 +739,16 @@ onMounted(async () => {
           </form>
         </template>
         <template v-else>
-          <form @submit.prevent="signIn">
-            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
-            <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
-            <button type="submit" class="primary-action login-submit">Sign in</button>
-          </form>
-          <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
-          <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
+          <template v-if="!scannerOpen">
+            <form @submit.prevent="signIn">
+              <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+              <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
+              <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
+              <button type="submit" class="primary-action login-submit">Sign in</button>
+            </form>
+            <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
+            <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
+          </template>
           <div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div>
           <p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p>
         </template>
