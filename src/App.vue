@@ -379,6 +379,18 @@ function formatTime(value) {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+function parseDuration(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  if (/^\d+(?::\d{1,2}){1,2}$/.test(text)) {
+    const parts = text.split(":").map(Number);
+    return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+  }
+  const numeric = Number(text);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
+}
+
 function handleAndroidMetadata(event) {
   const duration = Number(event.target.duration) || 0;
   const absoluteDuration = androidPlaybackOffset.value + duration;
@@ -389,10 +401,12 @@ function handleAndroidMetadata(event) {
 
 async function loadMovieDuration(item) {
   if (!item?.sourceId || !item?.id || item.kind !== "movie") return;
+  const catalogDuration = parseDuration(item.duration);
+  if (catalogDuration > 0) androidDuration.value = Math.max(androidDuration.value, catalogDuration);
   try {
     const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration`);
     if (androidNowPlaying.value?.key !== item.key) return;
-    const seconds = Number(data.seconds) || 0;
+    const seconds = Number(data.seconds) || parseDuration(data.duration);
     if (seconds > 0) androidDuration.value = Math.max(androidDuration.value, seconds);
   } catch { /* The media element can still provide duration when available. */ }
 }
