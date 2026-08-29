@@ -858,6 +858,10 @@ onMounted(async () => {
       </div>
     </section>
     <template v-else>
+    <template v-if="browserApp && safariPage === 'welcome'">
+      <div class="home-background" aria-hidden="true"></div>
+      <div class="home-overlay" aria-hidden="true"></div>
+    </template>
     <nav class="topbar">
       <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
       <div class="topbar-actions"><span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span><button type="button" class="logout-button" @click="logout">Log out</button></div>

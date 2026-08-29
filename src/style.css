@@ -99,7 +99,11 @@
 
 /* Safari uses a native-style, viewport-bound shell with its primary navigation at the safe-area edge. */
  .safari-app-mode { width:100%; max-width:none; height:100dvh; min-height:100dvh; padding:0; overflow:hidden; background:#111210; }
+ .safari-app-mode { position:relative; }
  .safari-app-mode .topbar { height:64px; padding:0 clamp(18px,4vw,44px); border-bottom:1px solid #30322d; }
+ .safari-app-mode > .topbar,.safari-app-mode > .safari-page-shell,.safari-app-mode > .safari-bottom-menu { position:relative; z-index:2; }
+ .home-background { position:absolute; z-index:0; inset:0; background-image:url('/home-background.png'); background-position:center; background-repeat:no-repeat; background-size:cover; }
+ .home-overlay { position:absolute; z-index:1; inset:0; pointer-events:none; background:linear-gradient(90deg,rgba(5,8,5,.92) 0%,rgba(5,8,5,.72) 40%,rgba(5,8,5,.38) 70%,rgba(5,8,5,.55) 100%),linear-gradient(180deg,rgba(0,0,0,.35) 0%,rgba(0,0,0,.05) 50%,rgba(0,0,0,.55) 100%); }
  .safari-app-mode > .topbar .status,.safari-app-mode > .topbar .logout-button { display:none; }
  .safari-page-shell { height:calc(100dvh - 64px); padding:clamp(16px,3vw,30px) clamp(16px,4vw,46px) calc(86px + env(safe-area-inset-bottom)); overflow:hidden; }
  .safari-page { width:min(100%,1080px); height:100%; margin:0 auto; overflow:hidden; }
@@ -109,7 +113,8 @@
  .safari-welcome-page { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr); align-items:center; gap:clamp(30px,7vw,90px); }
  .safari-page-heading > p:last-child { max-width:560px; margin:20px 0 0; color:#aeb7a0; font-size:clamp(15px,2vw,18px); line-height:1.6; }
  .safari-library-stats { display:grid; gap:10px; }
- .safari-library-stats div { display:flex; align-items:baseline; justify-content:space-between; gap:18px; padding:17px 19px; border:1px solid #394236; border-radius:12px; background:#191d17; }
+ .safari-library-stats div { display:flex; align-items:baseline; justify-content:space-between; gap:18px; padding:17px 19px; border:1px solid rgba(165,255,65,.22); border-radius:12px; background:rgba(15,23,15,.78); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease; }
+ .safari-library-stats div:hover,.safari-library-stats div:focus-within { border-color:rgba(183,255,50,.55); box-shadow:0 0 24px rgba(183,255,50,.12); transform:translateY(-1px); }
  .safari-library-stats strong { color:#d4f06a; font:600 clamp(28px,5vw,42px) 'Space Grotesk'; }
  .safari-library-stats span { color:#aeb7a0; font-size:14px; }
  .safari-compact-heading { display:flex; flex:0 0 auto; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:14px; }
