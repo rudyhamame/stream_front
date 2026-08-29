@@ -17,12 +17,35 @@ const browserApp = ref(!androidApp.value);
 const androidPage = ref("welcome");
 const safariPage = ref("welcome");
 const safariLibraryTab = ref("series");
+const safariRailMotion = ref({});
+const safariRailPositions = new Map();
+const safariRailMotionTimers = new Map();
 const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
   { id: "library", label: "Library", icon: FilmRollAltIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
+function openBrowserLibrary(tab) {
+  safariLibraryTab.value = tab;
+  safariPage.value = "library";
+}
+function handleSafariRailScroll(event, railKey) {
+  const track = event.currentTarget;
+  const currentPosition = track.scrollLeft;
+  const previousPosition = safariRailPositions.get(railKey);
+  safariRailPositions.set(railKey, currentPosition);
+  if (previousPosition === undefined || currentPosition === previousPosition) return;
+  const direction = currentPosition < previousPosition ? "left" : "right";
+  const nextMotion = { ...safariRailMotion.value, [railKey]: "" };
+  safariRailMotion.value = nextMotion;
+  requestAnimationFrame(() => { safariRailMotion.value = { ...safariRailMotion.value, [railKey]: direction }; });
+  if (safariRailMotionTimers.has(railKey)) clearTimeout(safariRailMotionTimers.get(railKey));
+  safariRailMotionTimers.set(railKey, setTimeout(() => {
+    safariRailMotion.value = { ...safariRailMotion.value, [railKey]: "" };
+    safariRailMotionTimers.delete(railKey);
+  }, 180));
+}
 const androidVideo = ref(null);
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
@@ -258,6 +281,7 @@ function handleNativeKeyboardHeight(event) {
 }
 
 onBeforeUnmount(stopQrScanner);
+onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
   window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
@@ -290,6 +314,15 @@ const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channe
 const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
 const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
 function savedItemsForTabFor(value) { return savedItems.value.filter(item => item.kind === value); }
+const libraryRails = computed(() => {
+  const groups = new Map();
+  for (const item of savedItemsForTabFor(safariLibraryTab.value)) {
+    const category = String(item.category || item.categoryName || item.categoryId || "Other").trim() || "Other";
+    if (!groups.has(category)) groups.set(category, []);
+    groups.get(category).push(item);
+  }
+  return [...groups].map(([name, railItems]) => ({ name, items: railItems }));
+});
 
 const androidPlayerSrc = computed(() => {
   const item = androidNowPlaying.value;
@@ -858,8 +891,10 @@ onMounted(async () => {
       </div>
     </section>
     <template v-else>
-    <template v-if="browserApp && safariPage === 'welcome'">
+    <template v-if="browserApp">
       <div class="home-background" aria-hidden="true"></div>
+      <div class="home-aurora home-aurora-one" aria-hidden="true"></div>
+      <div class="home-aurora home-aurora-two" aria-hidden="true"></div>
       <div class="home-overlay" aria-hidden="true"></div>
     </template>
     <nav class="topbar">
@@ -881,30 +916,39 @@ onMounted(async () => {
         <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playAndroidMovie(androidUpNext)">▶</button></article>
       </section>
     </section>
-    <section v-else-if="browserApp" class="safari-page-shell">
+    <section v-else-if="browserApp" class="browser-app-shell">
+      <aside class="browser-sidebar">
+        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
+        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span class="browser-sidebar-icon"><component :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
+      </aside>
+      <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <div class="safari-page-heading"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your playlist and browse everything saved to your library without leaving this screen.</p></div>
-        <div class="safari-library-stats"><div><strong>{{ typeCounts.series || 0 }}</strong><span>Series</span></div><div><strong>{{ typeCounts.movie || 0 }}</strong><span>Movies</span></div><div><strong>{{ typeCounts.channel || 0 }}</strong><span>Live Channels</span></div></div>
+        <div class="safari-library-stats"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ typeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ typeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ typeCounts.channel || 0 }}</strong><span>Live Channels</span></button></div>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">PLAYLIST</p><h1>Manage playlist</h1></div><span>{{ selectedCount }} selected</span></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div>
-          <div class="android-playlist-tabs"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></div>
+          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected</button></div>
           <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
-          <div v-if="visibleItems.length" class="android-playlist-items"><label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}"><input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Ready' : 'Add' }}</em></label></div>
+          <div v-if="visibleItems.length" class="android-playlist-items browser-playlist-table"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><code>{{ item.id }}</code><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button></div>
           <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
-          <button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected to library</button>
+          <nav class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
         </template>
       </article>
 
       <article v-else-if="safariPage === 'library'" class="safari-page safari-library-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">LIBRARY</p><h1>Your library</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
         <nav class="safari-library-tabs" aria-label="Library sections"><button v-for="item in [{id:'series',label:'Series',icon:'▦'},{id:'movie',label:'Movies',icon:'▶'},{id:'channel',label:'Live Channels',icon:'◉'}]" :key="item.id" type="button" :class="{active:safariLibraryTab === item.id}" @click="safariLibraryTab = item.id"><span>{{ item.icon }}</span>{{ item.label }}</button></nav>
-        <div v-if="savedItemsForTabFor(safariLibraryTab).length" class="safari-library-list">
-          <button v-for="item in savedItemsForTabFor(safariLibraryTab)" :key="item.key" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><b v-else>{{ typeIcon(safariLibraryTab) }}</b></span><span><strong>{{ item.title }}</strong><small>{{ typeLabel(safariLibraryTab) }}</small></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
+        <div v-if="libraryRails.length" class="safari-library-rails">
+          <section v-for="rail in libraryRails" :key="rail.name" class="safari-library-rail">
+            <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
+            <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left'}" @scroll="handleSafariRailScroll($event, rail.name)">
+              <button v-for="item in rail.items" :key="item.key" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template></span><span><strong>{{ item.title }}</strong><small>{{ typeLabel(safariLibraryTab) }}</small></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
+            </div>
+          </section>
         </div>
         <p v-else class="android-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>
@@ -919,6 +963,7 @@ onMounted(async () => {
       </article>
 
       <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span><component :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
+      </div></div>
     </section>
     <template v-else>
     <header class="manager-hero">
