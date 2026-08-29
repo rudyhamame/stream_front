@@ -16,10 +16,10 @@ const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.
 // All browser sessions use the app-style shell; Android keeps its native branch.
 const browserApp = ref(!androidApp.value);
 const pageStorageKey = androidApp.value ? "rh-android-page" : "rh-safari-page";
-const allowedPages = ["welcome", "playlist", "library", "settings"];
+const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "settings"];
 const storedPage = window.localStorage.getItem(pageStorageKey);
 const androidPage = ref(allowedPages.includes(storedPage) ? storedPage : "welcome");
-const safariPage = ref(allowedPages.includes(storedPage) ? storedPage : "welcome");
+const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
 const safariRailMotion = ref({});
@@ -28,12 +28,18 @@ const safariRailMotionTimers = new Map();
 const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
-  { id: "library", label: "Library", icon: FilmRollAltIcon },
+  { id: "series", label: "Series", icon: FilmRollAltIcon },
+  { id: "movies", label: "Movies", icon: FilmRollAltIcon },
+  { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
+function openSafariPage(page) {
+  const tab = { series: "series", movies: "movie", channels: "channel" }[page];
+  if (tab) safariLibraryTab.value = tab;
+  safariPage.value = page;
+}
 function openBrowserLibrary(tab) {
-  safariLibraryTab.value = tab;
-  safariPage.value = "library";
+  openSafariPage({ series: "series", movie: "movies", channel: "channels" }[tab] || "series");
 }
 function handleSafariRailScroll(event, railKey) {
   const track = event.currentTarget;
@@ -959,7 +965,7 @@ onMounted(async () => {
     <section v-else-if="browserApp" class="browser-app-shell">
       <aside class="browser-sidebar">
         <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
-        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span class="browser-sidebar-icon"><component :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
+        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><component :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
@@ -980,9 +986,8 @@ onMounted(async () => {
       </article>
       <nav v-if="safariPage === 'playlist'" class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
 
-      <article v-if="safariPage === 'library'" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">LIBRARY</p><h1>Your library</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
-        <nav class="safari-library-tabs" aria-label="Library sections"><button v-for="item in [{id:'series',label:'Series',icon:'▦'},{id:'movie',label:'Movies',icon:'▶'},{id:'channel',label:'Live Channels',icon:'◉'}]" :key="item.id" type="button" :class="{active:safariLibraryTab === item.id}" @click="safariLibraryTab = item.id"><span>{{ item.icon }}</span>{{ item.label }}</button></nav>
+      <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
+        <div class="safari-compact-heading"><div><p class="eyebrow">{{ safariLibraryTab === 'channel' ? 'LIVE TV' : typeLabel(safariLibraryTab).toUpperCase() }}</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
         <div v-if="libraryRails.length" class="safari-library-rails">
           <section v-for="rail in libraryRails" :key="rail.name" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
@@ -1019,7 +1024,7 @@ onMounted(async () => {
         <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
       </article>
 
-      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span><component :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
+      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><component :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
       </div></div>
     </section>
     <template v-else>

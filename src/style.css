@@ -268,7 +268,7 @@
  .settings-playlist-copy small { overflow:hidden; color:#899383; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
  .settings-playlist-actions { display:flex; gap:7px; }
  @media(max-width:600px){.settings-playlist-form{grid-template-columns:1fr}.settings-playlist-link,.settings-playlist-form-actions{grid-column:1}.settings-playlist-list article{align-items:flex-start;flex-direction:column}.settings-playlist-actions{width:100%}.settings-playlist-actions button{flex:1}}
- .safari-bottom-menu { position:fixed; z-index:10; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(4,1fr); height:calc(76px + env(safe-area-inset-bottom)); background:rgba(17,18,16,.96); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
+ .safari-bottom-menu { position:fixed; z-index:10; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); height:calc(76px + env(safe-area-inset-bottom)); background:rgba(17,18,16,.96); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
  .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; background:transparent; color:#858c82; cursor:pointer; }
  .safari-bottom-menu button span { display:grid; place-items:center; width:24px; height:24px; line-height:1; }
  .safari-bottom-menu button svg { display:block; width:24px; height:24px; }
