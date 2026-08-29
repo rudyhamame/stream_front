@@ -368,7 +368,10 @@ function formatTime(value) {
 
 function handleAndroidMetadata(event) {
   const duration = Number(event.target.duration) || 0;
-  if (androidPlaybackOffset.value === 0 || androidDuration.value === 0) androidDuration.value = androidPlaybackOffset.value + duration;
+  const absoluteDuration = androidPlaybackOffset.value + duration;
+  // Safari can expose only the currently buffered HLS window here. Never let
+  // that shorter value replace the full duration returned by Xtream.
+  if (absoluteDuration > androidDuration.value) androidDuration.value = absoluteDuration;
 }
 
 async function loadMovieDuration(item) {
@@ -377,7 +380,7 @@ async function loadMovieDuration(item) {
     const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration`);
     if (androidNowPlaying.value?.key !== item.key) return;
     const seconds = Number(data.seconds) || 0;
-    if (seconds > 0) androidDuration.value = seconds;
+    if (seconds > 0) androidDuration.value = Math.max(androidDuration.value, seconds);
   } catch { /* The media element can still provide duration when available. */ }
 }
 
@@ -395,7 +398,7 @@ function clearAndroidControlsTimer() {
 
 function scheduleAndroidControlsHide() {
   clearAndroidControlsTimer();
-  if (!androidPlaying.value || androidBuffering.value || androidPlayerError.value) return;
+  if (!androidPlaying.value || androidPlayerError.value) return;
   androidControlsTimer = setTimeout(() => { androidControlsVisible.value = false; }, 3600);
 }
 
@@ -426,6 +429,14 @@ function onAndroidPause() {
 }
 
 function onAndroidWaiting() {
+  // Safari emits transient waiting/stalled events while an HLS segment is
+  // being fetched. Do not turn those normal gaps into a permanently visible
+  // spinner and control overlay once playback has already started.
+  if (androidPlaying.value) {
+    androidBuffering.value = false;
+    scheduleAndroidControlsHide();
+    return;
+  }
   androidBuffering.value = true;
   showAndroidControls();
 }
@@ -457,6 +468,7 @@ function handleAndroidVideoError() {
 }
 
 function onAndroidReady(event) {
+  if (event?.type === "playing") androidPlaying.value = true;
   androidBuffering.value = false;
   androidPlaybackRetryCount.value = 0;
   if (event?.type === "playing" && !androidMediaReady.value) {
@@ -1023,7 +1035,15 @@ onMounted(async () => {
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">{{ safariLibraryTab === 'channel' ? 'LIVE TV' : typeLabel(safariLibraryTab).toUpperCase() }}</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
-        <div v-if="libraryRails.length" class="safari-library-rails">
+        <div v-if="safariLibraryTab === 'channel' && savedItemsForTabFor('channel').length" class="safari-library-table" role="table" aria-label="Live TV channels">
+          <div class="safari-library-table-header" role="row"><span>CHANNEL</span><span>CATEGORY</span><span>ID</span></div>
+          <div v-for="item in savedItemsForTabFor('channel')" :key="item.key" class="safari-library-table-row" role="row">
+            <span class="safari-library-table-channel"><span class="safari-library-channel-logo"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon('channel') }}</span></span><strong>{{ item.title }}</strong></span>
+            <span>{{ item.category || item.categoryName || item.categoryId || 'Uncategorized' }}</span>
+            <code>{{ item.id }}</code>
+          </div>
+        </div>
+        <div v-else-if="libraryRails.length" class="safari-library-rails">
           <section v-for="rail in libraryRails" :key="rail.name" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">

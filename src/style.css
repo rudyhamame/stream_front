@@ -230,6 +230,16 @@
  .safari-library-rail-track > button > span:nth-child(2) { min-width:0; padding:4px 4px; color:#f3f4ef; font:600 15px/1.25 'Space Grotesk'; }
  .safari-library-rail-track > button > span:nth-child(2) strong { display:block; overflow-wrap:anywhere; text-align:center; white-space:normal; }
  .safari-library-rail-track > button > em { color:#b8ff39; font-size:11px; font-style:normal; }
+ .safari-library-table { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid rgba(184,255,57,.14); border-radius:8px; background:rgba(8,12,8,.72); scrollbar-width:none; }
+ .safari-library-table::-webkit-scrollbar { display:none; width:0; height:0; }
+ .safari-library-table-header,.safari-library-table-row { display:grid; grid-template-columns:minmax(280px,1fr) minmax(180px,.6fr) 150px; align-items:center; gap:16px; min-width:680px; }
+ .safari-library-table-header { padding:13px 16px; color:#b8ff39; font:700 12px/1.1 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
+ .safari-library-table-row { min-height:76px; padding:9px 16px; border-top:1px solid rgba(255,255,255,.07); color:#aeb7a0; font-size:13px; }
+ .safari-library-table-channel { display:flex; align-items:center; min-width:0; gap:12px; color:#f3f4ef; }
+ .safari-library-table-channel strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 15px/1.25 'Space Grotesk'; }
+ .safari-library-channel-logo { display:grid; flex:0 0 58px; width:58px; height:46px; place-items:center; overflow:hidden; border-radius:5px; background:#252c21; color:#d4f06a; font-size:20px; }
+ .safari-library-channel-logo img { display:block; width:100%; height:100%; object-fit:contain; }
+ .safari-library-table-row code { color:#b8ff39; font:13px 'DM Sans'; }
  .safari-library-tabs { display:grid; flex:0 0 auto; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-bottom:12px; padding:4px; border:1px solid #303a2d; border-radius:12px; background:#10150f; }
  .safari-library-tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border:1px solid transparent; border-radius:8px; background:transparent; color:#929b8e; cursor:pointer; font:600 13px 'DM Sans'; }
  .safari-library-tabs button span { color:inherit; font-size:17px; }
