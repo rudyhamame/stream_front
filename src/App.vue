@@ -4,6 +4,10 @@ import { Html5Qrcode } from "html5-qrcode";
 import Hls from "hls.js";
 import { registerPlugin } from "@capacitor/core";
 import { ScreenOrientation } from "@capacitor/screen-orientation";
+import HomeIcon from "./components/icons/HomeIcon.vue";
+import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
+import GlobeAlt2Icon from "./components/icons/GlobeAlt2Icon.vue";
+import CogIcon from "./components/icons/CogIcon.vue";
 
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
@@ -12,6 +16,12 @@ const safariWebsite = ref(!androidApp.value && /safari/i.test(navigator.userAgen
 const androidPage = ref("welcome");
 const safariPage = ref("welcome");
 const safariLibraryTab = ref("series");
+const safariMenuItems = [
+  { id: "welcome", label: "Welcome", icon: HomeIcon },
+  { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
+  { id: "library", label: "Library", icon: FilmRollAltIcon },
+  { id: "settings", label: "Settings", icon: CogIcon }
+];
 const androidVideo = ref(null);
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
@@ -903,7 +913,7 @@ onMounted(async () => {
         <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
       </article>
 
-      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'library',label:'Library',icon:'▦'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
+      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span><component :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
     </section>
     <template v-else>
     <header class="manager-hero">

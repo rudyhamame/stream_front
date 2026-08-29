@@ -138,7 +138,8 @@
  .safari-settings-page .android-linked-settings,.safari-settings-page .android-settings-card,.safari-settings-page .android-change-password-toggle,.safari-settings-page .android-password-form { max-width:680px; }
  .safari-bottom-menu { position:fixed; z-index:10; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(4,1fr); height:calc(76px + env(safe-area-inset-bottom)); padding:7px max(10px,env(safe-area-inset-right)) max(7px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); border-top:1px solid #394236; background:rgba(17,18,16,.96); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
  .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; border-radius:10px; background:transparent; color:#858c82; cursor:pointer; }
- .safari-bottom-menu button span { font-size:21px; line-height:1; }
+ .safari-bottom-menu button span { display:grid; place-items:center; width:24px; height:24px; line-height:1; }
+ .safari-bottom-menu button svg { display:block; width:24px; height:24px; }
  .safari-bottom-menu button small { font:600 11px 'DM Sans'; }
  .safari-bottom-menu button.active { background:#252c21; color:#d4f06a; }
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
