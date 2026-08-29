@@ -292,7 +292,7 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
-const name = ref(""), url = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
+const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername = ref(""), sourcePassword = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0);
 const sortBy = ref("name"), selectionFilter = ref("all");
@@ -739,9 +739,9 @@ async function saveSource() {
     const data = await request(isEditing ? `/api/xtream/sources/${editing.value}` : "/api/xtream/sources", {
       method: isEditing ? "PUT" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.value, url: url.value }),
+      body: JSON.stringify({ name: name.value, type: sourceType.value, url: url.value, username: sourceUsername.value, password: sourcePassword.value }),
     });
-    name.value = ""; url.value = ""; editing.value = null;
+    name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; editing.value = null;
     await loadSources(data.id);
     messageType.value = "success";
     message.value = "Source saved.";
@@ -749,8 +749,8 @@ async function saveSource() {
   finally { busy.value = false; }
 }
 
-function editSource(source) { editing.value = source.id; name.value = source.name; url.value = ""; }
-function cancelEdit() { editing.value = null; name.value = ""; url.value = ""; }
+function editSource(source) { editing.value = source.id; name.value = source.name; sourceType.value = source.type || "xtream"; url.value = source.endpoint || ""; sourceUsername.value = ""; sourcePassword.value = ""; }
+function cancelEdit() { editing.value = null; name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; }
 async function deleteSource(source) {
   if (!confirm(`Delete “${source.name}”?`)) return;
   try {
@@ -933,19 +933,19 @@ onMounted(async () => {
         <template v-else>
           <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected</button></div>
           <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
-          <div v-if="visibleItems.length" class="android-playlist-items browser-playlist-table"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><code>{{ item.id }}</code><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button></div>
+          <div v-if="visibleItems.length" class="android-playlist-items browser-playlist-table"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span><code>{{ item.id }}</code><em class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : selectedKeys.includes(item.key) ? 'is-selected' : 'is-available'">{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button></div>
           <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
-          <nav class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
         </template>
       </article>
+      <nav v-if="safariPage === 'playlist'" class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
 
-      <article v-else-if="safariPage === 'library'" class="safari-page safari-library-page">
+      <article v-if="safariPage === 'library'" class="safari-page safari-library-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">LIBRARY</p><h1>Your library</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
         <nav class="safari-library-tabs" aria-label="Library sections"><button v-for="item in [{id:'series',label:'Series',icon:'▦'},{id:'movie',label:'Movies',icon:'▶'},{id:'channel',label:'Live Channels',icon:'◉'}]" :key="item.id" type="button" :class="{active:safariLibraryTab === item.id}" @click="safariLibraryTab = item.id"><span>{{ item.icon }}</span>{{ item.label }}</button></nav>
         <div v-if="libraryRails.length" class="safari-library-rails">
           <section v-for="rail in libraryRails" :key="rail.name" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
-            <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left'}" @scroll="handleSafariRailScroll($event, rail.name)">
+            <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
               <button v-for="item in rail.items" :key="item.key" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template></span><span><strong>{{ item.title }}</strong><small>{{ typeLabel(safariLibraryTab) }}</small></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
             </div>
           </section>
@@ -953,9 +953,25 @@ onMounted(async () => {
         <p v-else class="android-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>
 
-      <article v-else class="safari-page safari-settings-page">
+      <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">SETTINGS</p><h1>Settings</h1></div></div>
         <div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
+        <section class="settings-playlists">
+          <div class="settings-section-heading"><div><p class="eyebrow">PLAYLISTS</p><h2>Manage playlists</h2></div><span>{{ sources.length }} total</span></div>
+          <form class="settings-playlist-form" @submit.prevent="saveSource">
+            <label>Playlist type<select v-model="sourceType"><option value="m3u">M3U</option><option value="xtream">Xtream</option></select></label>
+            <label>Playlist name<input v-model="name" required placeholder="My playlist"></label>
+            <label class="settings-playlist-link">Playlist link<input v-model="url" type="url" required :placeholder="sourceType === 'm3u' ? 'https://provider.com/playlist.m3u' : 'https://provider.com'" spellcheck="false"></label>
+            <template v-if="sourceType === 'xtream'">
+              <label>Username<input v-model="sourceUsername" :required="!editing" autocomplete="username" :placeholder="editing ? 'Leave blank to keep current' : 'Username'"></label>
+              <label>Password<input v-model="sourcePassword" type="password" :required="!editing" autocomplete="new-password" :placeholder="editing ? 'Leave blank to keep current' : 'Password'"></label>
+            </template>
+            <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ editing ? 'Save changes' : 'Add playlist' }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
+          </form>
+          <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
+          <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
+          <p v-else class="android-empty">No playlists added yet.</p>
+        </section>
         <section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p></section>
         <button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
         <form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
