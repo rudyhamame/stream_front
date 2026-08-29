@@ -366,6 +366,16 @@ function handleAndroidMetadata(event) {
   if (androidPlaybackOffset.value === 0 || androidDuration.value === 0) androidDuration.value = androidPlaybackOffset.value + duration;
 }
 
+async function loadMovieDuration(item) {
+  if (!item?.sourceId || !item?.id || item.kind !== "movie") return;
+  try {
+    const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration`);
+    if (androidNowPlaying.value?.key !== item.key) return;
+    const seconds = Number(data.seconds) || 0;
+    if (seconds > 0) androidDuration.value = seconds;
+  } catch { /* The media element can still provide duration when available. */ }
+}
+
 const androidRemainingTime = computed(() => Math.max(0, androidDuration.value - androidCurrentTime.value));
 const androidTimelineStyle = computed(() => {
   const percent = androidDuration.value ? Math.min(100, Math.max(0, (androidCurrentTime.value / androidDuration.value) * 100)) : 0;
@@ -395,6 +405,9 @@ function showAndroidControls() {
 
 function toggleAndroidControls(event) {
   if (event?.target?.closest?.("button, input")) return;
+  // A tap on the video means playback is interactive again; clear any
+  // transient buffering state so the spinner cannot remain stuck over it.
+  androidBuffering.value = false;
   androidControlsVisible.value = !androidControlsVisible.value;
   if (androidControlsVisible.value) scheduleAndroidControlsHide(); else clearAndroidControlsTimer();
 }
@@ -534,6 +547,7 @@ async function playAndroidMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
@@ -551,6 +565,7 @@ async function playWebMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
