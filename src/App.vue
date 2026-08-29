@@ -356,6 +356,8 @@ const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername 
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
+const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
+const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
@@ -375,14 +377,13 @@ const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "cha
 const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
 const hasMoreCatalog = computed(() => page.value < pages.value);
 function savedItemsForTabFor(value) { return savedItems.value.filter(item => item.kind === value); }
+const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry.kind === safariLibraryTab.value));
+const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item.kind === safariLibraryTab.value));
+const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value,
+  managedLibraryCategories.value.filter(category => category.kind === value).reduce((count, category) => count + category.items.length, 0),
+])));
 const libraryRails = computed(() => {
-  const groups = new Map();
-  for (const item of savedItemsForTabFor(safariLibraryTab.value)) {
-    const category = String(item.category || item.categoryName || item.categoryId || "Other").trim() || "Other";
-    if (!groups.has(category)) groups.set(category, []);
-    groups.get(category).push(item);
-  }
-  return [...groups].map(([name, railItems]) => ({ name, items: railItems }));
+  return managedCategoriesForTab.value.filter(category => category.items.length).map(category => ({ id: category.id, name: category.name, items: category.items }));
 });
 
 const androidPlayerSrc = computed(() => {
@@ -402,7 +403,10 @@ const androidPlayerSrc = computed(() => {
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const tail = `${String(minutes).padStart(hours ? 2 : 1, "0")}:${String(seconds % 60).padStart(2, "0")}`;
+  return hours ? `${hours}:${tail}` : tail;
 }
 
 function parseDuration(value) {
@@ -419,6 +423,11 @@ function parseDuration(value) {
 
 function handleAndroidMetadata(event) {
   const duration = Number(event.target.duration) || 0;
+  // Movie playback is delivered through a deliberately rolling HLS manifest.
+  // Safari reports that short window as media duration, so it must never be
+  // used as the movie's timeline length.
+  if (androidNowPlaying.value?.kind === "movie") return;
+  if (!Number.isFinite(duration) || duration <= 0) return;
   const absoluteDuration = androidPlaybackOffset.value + duration;
   // Safari can expose only the currently buffered HLS window here. Never let
   // that shorter value replace the full duration returned by Xtream.
@@ -430,7 +439,8 @@ async function loadMovieDuration(item) {
   const catalogDuration = parseDuration(item.duration);
   if (catalogDuration > 0) androidDuration.value = Math.max(androidDuration.value, catalogDuration);
   try {
-    const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration`);
+    const params = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
+    const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration${params}`);
     if (androidNowPlaying.value?.key !== item.key) return;
     const seconds = Number(data.seconds) || parseDuration(data.duration);
     if (seconds > 0) androidDuration.value = Math.max(androidDuration.value, seconds);
@@ -613,7 +623,7 @@ async function playAndroidMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
-  loadMovieDuration(item);
+  await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
@@ -631,7 +641,7 @@ async function playWebMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
-  loadMovieDuration(item);
+  await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
@@ -753,19 +763,44 @@ function toggleAndroidMute() {
   androidMuted.value = androidVideo.value.muted;
 }
 
-async function fullscreenAndroidMovie() {
+async function fullscreenAndroidMovie(event) {
+  event?.preventDefault?.();
+  event?.stopPropagation?.();
+  const video = androidVideo.value;
+  if (!video) return;
+
+  if (!androidApp.value) {
+    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+    if (fullscreenElement || androidFullscreen.value) {
+      try {
+        if (document.exitFullscreen) await document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      } catch { /* CSS fullscreen can still be closed below. */ }
+      androidFullscreen.value = false;
+      return;
+    }
+
+    androidFullscreen.value = true;
+    const frame = video.closest(".android-video-frame") || video;
+    try {
+      // Safari requires this call synchronously from the click gesture. Do not
+      // await orientation or Capacitor plugins before requesting fullscreen.
+      if (frame.requestFullscreen) await frame.requestFullscreen();
+      else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+      else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+    } catch {
+      // Keep the CSS fullscreen layout as a usable fallback.
+    }
+    showAndroidControls();
+    return;
+  }
+
   try {
     androidFullscreen.value = true;
     if (Immersive) await Immersive.enter();
     await lockAndroidLandscape();
-    // Android uses the CSS overlay plus the native immersive window. Calling
-    // the WebView video fullscreen API here can reintroduce a landscape inset.
-    if (!androidApp.value) await androidVideo.value?.requestFullscreen?.();
     if (Immersive) await Immersive.enter();
-  } catch {
-    androidFullscreen.value = false;
-    /* Fullscreen is optional on some WebViews. */
-  }
+  } catch { /* Android keeps the CSS fullscreen layout as fallback. */ }
 }
 
 onBeforeUnmount(() => {
@@ -801,6 +836,83 @@ function rememberItems(entries = []) {
   knownItems.value = next;
 }
 
+function applyManagedLibrary(data) {
+  managedLibraryCategories.value = data.categories || [];
+  managedLibraryItems.value = data.items || [];
+  categoryNameDrafts.value = Object.fromEntries(managedLibraryCategories.value.map(category => [category.id, category.name]));
+  if (categoryEditorId.value && !managedLibraryCategories.value.some(category => category.id === categoryEditorId.value)) {
+    categoryEditorId.value = "";
+    categoryEditorKeys.value = [];
+  }
+}
+
+async function loadManagedLibrary() {
+  applyManagedLibrary(await request(`/api/library/categories?refresh=${Date.now()}`, { cache: "no-store" }));
+}
+
+function openCategoryItems(category) {
+  if (categoryEditorId.value === category.id) {
+    categoryEditorId.value = "";
+    categoryEditorKeys.value = [];
+    return;
+  }
+  categoryEditorId.value = category.id;
+  categoryEditorKeys.value = category.items.map(item => item.libraryKey);
+}
+
+function toggleCategoryItem(itemKey) {
+  categoryEditorKeys.value = categoryEditorKeys.value.includes(itemKey)
+    ? categoryEditorKeys.value.filter(key => key !== itemKey)
+    : [...categoryEditorKeys.value, itemKey];
+}
+
+async function createManagedCategory() {
+  const categoryName = newCategoryName.value.trim();
+  if (!categoryName) return;
+  categoryBusy.value = true;
+  try {
+    applyManagedLibrary(await request("/api/library/categories", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ kind: safariLibraryTab.value, name: categoryName }),
+    }));
+    newCategoryName.value = "";
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { categoryBusy.value = false; }
+}
+
+async function renameManagedCategory(category) {
+  const categoryName = String(categoryNameDrafts.value[category.id] || "").trim();
+  if (!categoryName || categoryName === category.name) return;
+  categoryBusy.value = true;
+  try {
+    applyManagedLibrary(await request(`/api/library/categories/${encodeURIComponent(category.id)}`, {
+      method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: categoryName }),
+    }));
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { categoryBusy.value = false; }
+}
+
+async function saveManagedCategoryItems(category) {
+  categoryBusy.value = true;
+  try {
+    applyManagedLibrary(await request(`/api/library/categories/${encodeURIComponent(category.id)}/items`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ itemKeys: categoryEditorKeys.value }),
+    }));
+    categoryEditorId.value = "";
+    categoryEditorKeys.value = [];
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { categoryBusy.value = false; }
+}
+
+async function deleteManagedCategory(category) {
+  if (!confirm(`Delete category “${category.name}”? Its items will remain in the Library but will not appear on Roku until assigned to another category.`)) return;
+  categoryBusy.value = true;
+  try {
+    applyManagedLibrary(await request(`/api/library/categories/${encodeURIComponent(category.id)}`, { method: "DELETE" }));
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { categoryBusy.value = false; }
+}
+
 async function loadSources(preferred = sourceId.value) {
   const data = await request("/api/xtream/sources");
   sources.value = data.items || [];
@@ -812,6 +924,7 @@ async function loadSources(preferred = sourceId.value) {
   rememberItems([...savedItems.value, ...archivedItems.value]);
   if (source) await Promise.all([loadCatalog(), loadSaved()]);
   else { items.value = []; savedItems.value = []; archivedItems.value = []; }
+  await loadManagedLibrary();
 }
 
 async function loadLinkedDevices() {
@@ -919,6 +1032,7 @@ async function saveSelection() {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(item => item.key), enabledItems }),
     });
     applySource(data);
+    await loadManagedLibrary();
     selectedKeys.value = [];
     messageType.value = "success";
     message.value = `Saved successfully. ${addedCount} item(s) added; ${data.selectedCount} total enabled on Roku.`;
@@ -933,6 +1047,7 @@ async function removeSaved(item) {
       method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(entry => entry.key), enabledItems }),
     });
     applySource(data);
+    await loadManagedLibrary();
     messageType.value = "success";
     message.value = `Removed “${item.title}” from Roku.`;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -942,6 +1057,7 @@ async function archiveSaved(item) {
   busy.value = true;
   try {
     applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}`, { method: "POST" }));
+    await loadManagedLibrary();
     messageType.value = "success";
     message.value = "Item archived and removed from Roku.";
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -951,6 +1067,7 @@ async function restoreArchived(item) {
   busy.value = true;
   try {
     applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}/restore`, { method: "POST" }));
+    await loadManagedLibrary();
     messageType.value = "success";
     message.value = "Item restored to the Roku library.";
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -1099,20 +1216,25 @@ onMounted(async () => {
       <nav v-if="safariPage === 'playlist'" class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">{{ safariLibraryTab === 'channel' ? 'LIVE TV' : typeLabel(safariLibraryTab).toUpperCase() }}</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
-        <div v-if="safariLibraryTab === 'channel' && savedItemsForTabFor('channel').length" class="safari-library-table" role="table" aria-label="Live TV channels">
-          <div class="safari-library-table-header" role="row"><span>CHANNEL</span><span>CATEGORY</span><span>ID</span></div>
-          <div v-for="item in savedItemsForTabFor('channel')" :key="item.key" class="safari-library-table-row" role="row">
-            <span class="safari-library-table-channel"><span class="safari-library-channel-logo"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon('channel') }}</b></template></span><strong>{{ item.title }}</strong></span>
-            <span>{{ item.category || item.categoryName || item.categoryId || 'Uncategorized' }}</span>
-            <code>{{ item.id }}</code>
+        <div class="safari-compact-heading"><div><p class="eyebrow">{{ safariLibraryTab === 'channel' ? 'LIVE TV' : typeLabel(safariLibraryTab).toUpperCase() }}</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span><button type="button" class="source-action" @click="categoryManagerOpen = !categoryManagerOpen">{{ categoryManagerOpen ? 'Close categories' : 'Manage categories' }}</button></div></div>
+        <section v-if="categoryManagerOpen" class="library-category-manager">
+          <header><div><p class="eyebrow">ROKU RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control both this Library and Roku.</span></header>
+          <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
+          <div class="library-category-list">
+            <article v-for="managedCategory in managedCategoriesForTab" :key="managedCategory.id" class="library-category-entry">
+              <div class="library-category-row"><input v-model="categoryNameDrafts[managedCategory.id]" maxlength="120" aria-label="Category name"><span>{{ managedCategory.items.length }} items</span><button type="button" class="source-action" :disabled="categoryBusy" @click="renameManagedCategory(managedCategory)">Rename</button><button type="button" class="source-action" :disabled="categoryBusy" @click="openCategoryItems(managedCategory)">{{ categoryEditorId === managedCategory.id ? 'Close items' : 'Edit items' }}</button><button type="button" class="source-delete" :disabled="categoryBusy" @click="deleteManagedCategory(managedCategory)">Delete</button></div>
+              <div v-if="categoryEditorId === managedCategory.id" class="library-category-items">
+                <label v-for="managedItem in managedItemsForTab" :key="managedItem.libraryKey"><input type="checkbox" :checked="categoryEditorKeys.includes(managedItem.libraryKey)" @change="toggleCategoryItem(managedItem.libraryKey)"><span class="safari-library-art"><img v-if="managedItem.logo" :src="imageUrl(managedItem.logo)" :alt="managedItem.title"><b v-else>{{ typeIcon(safariLibraryTab) }}</b></span><strong>{{ managedItem.title }}</strong></label>
+                <button type="button" class="primary-action" :disabled="categoryBusy" @click="saveManagedCategoryItems(managedCategory)">Save category items</button>
+              </div>
+            </article>
           </div>
-        </div>
-        <div v-else-if="libraryRails.length" class="safari-library-rails">
-          <section v-for="rail in libraryRails" :key="rail.name" class="safari-library-rail">
+        </section>
+        <div v-if="libraryRails.length" class="safari-library-rails">
+          <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.key" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
             </div>
           </section>
         </div>

@@ -208,8 +208,27 @@
  .browser-playlist-status.is-available { border-color:rgba(174,183,160,.28); background:rgba(174,183,160,.08); color:#b5bdae; }
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
- .safari-library-page { display:flex; flex-direction:column; }
- .safari-library-rails { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:24px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+.safari-library-page { display:flex; flex-direction:column; }
+.library-heading-actions { display:flex; align-items:center; gap:12px; }
+.library-category-manager { display:flex; flex:0 0 auto; max-height:54vh; flex-direction:column; gap:14px; margin-bottom:20px; padding:18px; overflow:auto; border:1px solid rgba(184,255,57,.2); border-radius:12px; background:rgba(8,12,8,.9); }
+.library-category-manager > header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
+.library-category-manager > header h2 { margin:2px 0 0; color:#f3f4ef; font:600 20px 'Space Grotesk'; }
+.library-category-manager > header > span { max-width:470px; color:#92998b; font-size:12px; text-align:right; }
+.library-category-create { display:flex; gap:10px; }
+.library-category-create input,.library-category-row input { min-width:0; border:1px solid #394236; border-radius:8px; background:#151b14; color:#f3f4ef; font:500 14px 'Space Grotesk'; outline:none; }
+.library-category-create input { flex:1 1 auto; padding:0 13px; }
+.library-category-create input:focus,.library-category-row input:focus { border-color:#b7ff32; }
+.library-category-list { display:grid; gap:10px; }
+.library-category-entry { border:1px solid rgba(255,255,255,.08); border-radius:10px; background:#111610; }
+.library-category-row { display:grid; grid-template-columns:minmax(180px,1fr) auto auto auto auto; align-items:center; gap:8px; padding:10px; }
+.library-category-row input { width:100%; padding:10px 12px; }
+.library-category-row > span { color:#92998b; font-size:12px; white-space:nowrap; }
+.library-category-items { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:8px; padding:0 10px 10px; }
+.library-category-items label { display:grid; grid-template-columns:auto 40px minmax(0,1fr); align-items:center; gap:8px; min-height:52px; padding:6px 9px; border:1px solid rgba(255,255,255,.08); border-radius:8px; color:#e7ebdf; cursor:pointer; }
+.library-category-items label .safari-library-art { width:40px; height:40px; }
+.library-category-items label strong { overflow:hidden; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
+.library-category-items > .primary-action { grid-column:1/-1; justify-self:end; }
+.safari-library-rails { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:24px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
  .safari-library-rails::-webkit-scrollbar { display:none; width:0; height:0; }
  .safari-library-rail { flex:0 0 auto; width:100%; min-width:0; }
  .safari-library-rail > header { display:flex; align-items:baseline; gap:9px; margin-bottom:10px; }
@@ -315,7 +334,7 @@
  @keyframes android-player-spin { to { transform:rotate(360deg); } }
  .android-player-overlay { position:absolute; inset:0; z-index:3; opacity:0; pointer-events:none; transition:opacity .25s ease; background:linear-gradient(to bottom, #0008 0%, transparent 28%, transparent 58%, #000b 100%); }
  .android-player-overlay.visible { opacity:1; pointer-events:auto; }
- .android-fullscreen-control { position:absolute; top:14px; right:14px; z-index:2; display:grid; place-items:center; width:40px; height:40px; border:1px solid #d7f35e99; border-radius:8px; background:#11121080; color:#f3f4f1; cursor:pointer; }
+ .android-fullscreen-control { position:absolute; top:14px; right:14px; z-index:6; display:grid; place-items:center; width:40px; height:40px; border:1px solid #d7f35e99; border-radius:8px; background:#11121080; color:#f3f4f1; cursor:pointer; pointer-events:auto; touch-action:manipulation; }
  .android-fullscreen-control svg { width:22px; height:22px; }
  .android-seek-preview { position:absolute; bottom:52px; left:50%; z-index:4; display:grid; width:150px; height:96px; transform:translateX(-50%); overflow:hidden; border:1px solid #d4f06a99; border-radius:8px; background:#080a08; box-shadow:0 5px 18px #000b; pointer-events:none; }
  .android-seek-preview img { width:100%; height:100%; object-fit:cover; }
