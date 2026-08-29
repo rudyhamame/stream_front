@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
 const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername = ref(""), sourcePassword = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
-const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0);
+const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
@@ -329,6 +329,7 @@ const visibleItems = computed(() => {
 const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
 const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
 const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
+const hasMoreCatalog = computed(() => page.value < pages.value);
 function savedItemsForTabFor(value) { return savedItems.value.filter(item => item.kind === value); }
 const libraryRails = computed(() => {
   const groups = new Map();
@@ -741,29 +742,47 @@ let catalogRequestId = 0;
 let catalogController = null;
 async function loadCatalog(reset = true) {
   if (!sourceId.value) return;
-  if (reset) page.value = 1;
+  if (!reset && (loading.value || loadingMore.value || !hasMoreCatalog.value)) return;
+  if (reset) {
+    page.value = 1;
+    items.value = [];
+    loadingMore.value = false;
+    if (catalogController) catalogController.abort();
+  }
   const requestId = ++catalogRequestId;
-  if (catalogController) catalogController.abort();
   catalogController = new AbortController();
   const requestedSourceId = sourceId.value;
   const requestedKind = kind.value;
-  loading.value = true;
+  const requestedPage = reset ? 1 : page.value + 1;
+  if (reset) loading.value = true;
+  else loadingMore.value = true;
   message.value = "";
   try {
-    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(page.value), limit: "50" });
+    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(requestedPage), limit: "10" });
     const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
-    items.value = data.items || [];
-    rememberItems(items.value);
+    const nextItems = data.items || [];
+    items.value = reset ? nextItems : [...items.value, ...nextItems.filter(item => !items.value.some(existing => existing.key === item.key))];
+    rememberItems(nextItems);
     categories.value = data.categories || [];
     languages.value = data.languages || [];
-    page.value = data.pagination?.page || 1;
+    page.value = data.pagination?.page || requestedPage;
     pages.value = data.pagination?.pageCount || 1;
     total.value = data.pagination?.total || 0;
   } catch (error) {
     if (error.name !== "AbortError" && requestId === catalogRequestId) { message.value = error.message; messageType.value = "error"; }
   }
-  finally { if (requestId === catalogRequestId) loading.value = false; }
+  finally {
+    if (requestId === catalogRequestId) {
+      loading.value = false;
+      loadingMore.value = false;
+    }
+  }
+}
+
+function handlePlaylistScroll(event) {
+  const element = event.currentTarget;
+  if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) loadCatalog(false);
 }
 
 async function loadSaved() {
@@ -950,7 +969,7 @@ onMounted(async () => {
     </nav>
     <section v-if="androidApp" class="android-page-shell">
       <article v-if="androidPage === 'welcome'" class="android-page"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your Roku library, browse your selected content, and keep your devices connected from one place.</p><div class="android-backend-status" :class="{online}"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div><section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section><div class="android-library-stats"><div class="android-stat"><strong>{{ typeCounts.series || 0 }}</strong><span>Series</span></div><div class="android-stat"><strong>{{ typeCounts.movie || 0 }}</strong><span>Movies</span></div><div class="android-stat"><strong>{{ typeCounts.channel || 0 }}</strong><span>Live Channels</span></div></div></article>
-      <article v-else-if="androidPage === 'playlist'" class="android-page android-playlist-page"><p class="eyebrow">PLAYLIST</p><h1>Feed your<br><em>library.</em></h1><form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form><template v-else><div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="android-playlist-tabs"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></div><label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label><div v-if="visibleItems.length" class="android-playlist-items"><label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}"><input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Ready' : 'Add' }}</em></label></div><p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected to library</button></template></article>
+      <article v-else-if="androidPage === 'playlist'" class="android-page android-playlist-page"><p class="eyebrow">PLAYLIST</p><h1>Feed your<br><em>library.</em></h1><form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form><template v-else><div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="android-playlist-tabs"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></div><label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label><div v-if="visibleItems.length" class="android-playlist-items" @scroll="handlePlaylistScroll"><label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}"><input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Ready' : 'Add' }}</em></label></div><p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected to library</button></template></article>
       <article v-else-if="androidPage === 'series'" class="android-page"><p class="eyebrow">SERIES</p><h1>Series</h1><div v-if="savedItemsForTabFor('series').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('series')" :key="item.key"><span>▦</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No series are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'movies'" class="android-page"><p class="eyebrow">MOVIES</p><h1>Movies</h1><div v-if="savedItemsForTabFor('movie').length" class="android-item-list"><button v-for="item in savedItemsForTabFor('movie')" :key="item.key" type="button" class="android-movie-item" @click="playAndroidMovie(item)"><span>▶</span><strong>{{ item.title }}</strong><small>Play movie</small></button></div><p v-else class="android-empty">No movies are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'channels'" class="android-page"><p class="eyebrow">CHANNELS</p><h1>Channels</h1><div v-if="savedItemsForTabFor('channel').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('channel')" :key="item.key"><span>◉</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No channels are enabled yet. Add them from the library manager.</p></article>
@@ -980,7 +999,7 @@ onMounted(async () => {
           <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected</button></div>
           <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
-          <div v-else-if="visibleItems.length" class="android-playlist-items browser-playlist-table"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span><code>{{ item.id }}</code><em class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : selectedKeys.includes(item.key) ? 'is-selected' : 'is-available'">{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button></div>
+          <div v-else-if="visibleItems.length" class="android-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span><code>{{ item.id }}</code><em class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : selectedKeys.includes(item.key) ? 'is-selected' : 'is-available'">{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button><div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div></div>
           <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
       </article>

@@ -134,7 +134,7 @@
  .browser-sidebar nav button.active { border-color:rgba(184,255,57,.36); background:rgba(22,31,19,.82); color:#b8ff39; box-shadow:inset 0 0 0 1px rgba(184,255,57,.18),0 0 20px rgba(184,255,57,.08); }
  .browser-sidebar-icon { display:grid; place-items:center; width:27px; height:27px; }
  .browser-sidebar-icon svg { width:27px; height:27px; }
- .browser-sidebar-icon img { display:block; width:27px; height:27px; object-fit:contain; }
+ .browser-sidebar-icon img { display:block; width:27px; height:27px; object-fit:contain; filter:brightness(0) saturate(100%) invert(86%) sepia(44%) saturate(723%) hue-rotate(28deg) brightness(105%) contrast(89%); }
  .browser-main { height:100%; margin-left:240px; }
  .browser-main > .safari-page-shell { height:100%; }
  .browser-main > .safari-page-shell { padding:0; }
@@ -180,6 +180,7 @@
  @keyframes browser-playlist-spin { to { transform:rotate(360deg); } }
  .browser-playlist-table { display:block; padding:0; border:1px solid rgba(184,255,57,.12); border-radius:7px; background:rgba(8,12,8,.72); overflow:auto; scrollbar-width:none; }
  .browser-playlist-table::-webkit-scrollbar { display:none; width:0; height:0; }
+ .browser-playlist-loading-more { min-width:600px; padding:14px; color:#aeb7a0; font-size:12px; text-align:center; }
  .browser-playlist-header,.browser-playlist-row { display:grid; grid-template-columns:minmax(0,1fr) 110px 130px !important; align-items:center; gap:11px; }
  .browser-playlist-header { min-width:600px; padding:13px 14px; color:#b8ff39; font:700 12px/1.1 'Space Grotesk'; letter-spacing:.08em; text-align:left; text-transform:uppercase; }
  .browser-playlist-header span:first-child { grid-column:1; }
@@ -217,6 +218,7 @@
  .safari-library-rail-track { display:flex; gap:12px; overflow-x:auto; padding:2px 3px 10px 0; border-radius:0; perspective:900px; overscroll-behavior-inline:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
  .safari-library-rail-track::-webkit-scrollbar { display:none; width:0; height:0; }
  .safari-library-rail-track > button { display:flex; flex:0 0 180px; min-width:0; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:9px; border-radius:0; background:rgba(8,12,8,.72); color:#f3f4ef; cursor:default; font:inherit; text-align:left; transition:border-color .16s ease,background .16s ease,transform .16s ease,box-shadow .16s ease;padding:0; border:0; }
+ .safari-library-rail-track:has(> button:only-child) > button { flex-basis:100%; }
  .safari-library-rail-track > button.is-playable { cursor:pointer; }
  .safari-library-rail-track > button.is-playable:hover,.safari-library-rail-track > button.is-playable:focus-visible,.safari-library-rail-track > button:focus-visible { border-color:rgba(184,255,57,.75); background:rgba(22,31,19,.82); box-shadow:0 0 20px rgba(184,255,57,.08); outline:none; transform:scale(1.02); }
  .safari-library-rail-track.is-scrolling-left > button { animation:safari-rail-turn-left 180ms ease-out; transform-origin:center center; backface-visibility:hidden; }
@@ -274,7 +276,7 @@
  .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; background:transparent; color:#858c82; cursor:pointer; }
  .safari-bottom-menu button span { display:grid; place-items:center; width:24px; height:24px; line-height:1; }
  .safari-bottom-menu button svg { display:block; width:24px; height:24px; }
- .safari-bottom-menu button img { display:block; width:24px; height:24px; object-fit:contain; }
+ .safari-bottom-menu button img { display:block; width:24px; height:24px; object-fit:contain; filter:brightness(0) saturate(100%) invert(86%) sepia(44%) saturate(723%) hue-rotate(28deg) brightness(105%) contrast(89%); }
  .safari-bottom-menu button small { font:600 11px 'DM Sans'; }
  .safari-bottom-menu button.active { background:#252c21; color:#d4f06a; }
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
