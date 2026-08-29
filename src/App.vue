@@ -82,8 +82,13 @@ let androidPreviewTimer = null;
 let androidControlsTimer = null;
 const Immersive = registerPlugin("Immersive");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
-const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
+// A Roku QR is an explicit request to authenticate for that Roku. Never let
+// an existing Library browser token silently approve or bypass this flow.
+// Clear it before deviceToken is initialized and before pairing info is
+// requested, while leaving the short-lived pair code in the URL intact.
+if (pairCode) window.localStorage.removeItem("rh-device-token");
+const deviceToken = ref(pairCode ? "" : storedToken());
 const pairingDeviceId = ref("");
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
