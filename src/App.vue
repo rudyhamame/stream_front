@@ -343,6 +343,8 @@ onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
 onBeforeUnmount(() => {
   if (deviceStatusTimer) clearInterval(deviceStatusTimer);
+  if (libraryRevisionController) libraryRevisionController.abort();
+  if (libraryRevisionRetryTimer) clearTimeout(libraryRevisionRetryTimer);
   window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
   window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
   document.removeEventListener("focusin", updateLoginKeyboardLift);
@@ -358,6 +360,7 @@ const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), kno
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
+let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
@@ -850,6 +853,25 @@ async function loadManagedLibrary() {
   applyManagedLibrary(await request(`/api/library/categories?refresh=${Date.now()}`, { cache: "no-store" }));
 }
 
+async function watchLibraryRevision() {
+  if (!deviceToken.value || libraryRevisionController) return;
+  libraryRevisionController = new AbortController();
+  const controller = libraryRevisionController;
+  try {
+    const data = await request(`/api/library/revision?since=${libraryRevision}`, { cache: "no-store", signal: controller.signal });
+    if (controller.signal.aborted) return;
+    const nextRevision = Number(data.revision) || 1;
+    const changed = libraryRevision > 0 && nextRevision !== libraryRevision;
+    libraryRevision = nextRevision;
+    libraryRevisionController = null;
+    if (changed) await loadManagedLibrary();
+    watchLibraryRevision();
+  } catch (error) {
+    if (libraryRevisionController === controller) libraryRevisionController = null;
+    if (error.name !== "AbortError") libraryRevisionRetryTimer = window.setTimeout(watchLibraryRevision, 1500);
+  }
+}
+
 function openCategoryItems(category) {
   if (categoryEditorId.value === category.id) {
     categoryEditorId.value = "";
@@ -1104,7 +1126,7 @@ onMounted(async () => {
       return;
     }
     if (!deviceToken.value) return;
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]); watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
     }, 10_000);
