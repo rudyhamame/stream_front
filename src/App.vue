@@ -143,6 +143,19 @@ async function loadPairingInfo() {
   pairingDeviceId.value = data.deviceId || "";
   pairingMode.value = pairingNeedsSignup.value ? "signup" : "login";
   pairingReady.value = true;
+  // A trusted QR is created only by a Roku that already holds a locally saved
+  // device token from a previous successful login. Exchange its one-time,
+  // short-lived code for a browser token; no credentials are present in the QR.
+  if (data.canAutoLogin) {
+    const claimed = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+    deviceToken.value = claimed.token;
+    window.localStorage.setItem("rh-device-token", claimed.token);
+    pairing.value = false;
+    await setAndroidLoginWindow(true);
+    window.history.replaceState({}, "", window.location.pathname);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    return;
+  }
   if (data.authenticated) {
     pairing.value = false;
     await setAndroidLoginWindow(true);
