@@ -283,6 +283,7 @@ function handleNativeKeyboardHeight(event) {
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => {
+  if (deviceStatusTimer) clearInterval(deviceStatusTimer);
   window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
   window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
   document.removeEventListener("focusin", updateLoginKeyboardLift);
@@ -818,6 +819,7 @@ async function restoreArchived(item) {
 }
 
 let searchTimer;
+let deviceStatusTimer;
 watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadCatalog(), 350); });
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
@@ -843,6 +845,9 @@ onMounted(async () => {
     }
     if (!deviceToken.value) return;
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    deviceStatusTimer = window.setInterval(() => {
+      if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
+    }, 30_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; }
 });
 </script>
