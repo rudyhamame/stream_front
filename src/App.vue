@@ -847,7 +847,7 @@ onMounted(async () => {
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
-    }, 30_000);
+    }, 10_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; }
 });
 </script>
