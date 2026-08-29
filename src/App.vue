@@ -694,7 +694,7 @@ async function loadSources(preferred = sourceId.value) {
 }
 
 async function loadLinkedDevices() {
-  const data = await request("/api/account/devices");
+  const data = await request(`/api/account/devices?refresh=${Date.now()}`, { cache: "no-store" });
   linkedDevices.value = data.items || [];
 }
 
