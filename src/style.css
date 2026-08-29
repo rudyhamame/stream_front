@@ -285,7 +285,7 @@
    .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:13px}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .android-playlist-source{grid-template-columns:1fr auto;gap:8px}.safari-playlist-page .android-playlist-source>span{grid-column:1/-1}.safari-playlist-page .android-playlist-source select{width:100%;min-width:0}.safari-playlist-page .android-playlist-source .android-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}
  }
  .android-player { position:fixed; inset:0; z-index:20; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:24px 22px max(24px, env(safe-area-inset-bottom)); background:#111210; }
- .android-player:not(.is-fullscreen) { grid-template-rows:auto minmax(0,1fr) auto; align-content:start; gap:10px; overflow:hidden; }
+ .android-player:not(.is-fullscreen) { grid-template-rows:auto minmax(0,1fr); align-content:start; gap:10px; overflow:hidden; }
  .android-player-header { display:flex; align-items:center; gap:14px; min-width:0; padding-bottom:20px; }
  .android-player-header .eyebrow { margin:0 0 4px; }
  .android-player-header h2 { margin:0; overflow:hidden; color:#f3f4f1; font:600 clamp(20px,5vw,30px)/1.1 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
@@ -324,6 +324,7 @@
  .android-up-next strong { color:#f3f4f1; font:500 16px 'Space Grotesk'; }
  .android-up-next small { margin-top:4px; color:#aeb7a0; font-size:12px; }
  .android-up-next button { width:34px; height:34px; border:1px solid #9eaa91; border-radius:50%; background:#30352e; color:#d4f06a; cursor:pointer; }
+ .android-up-next { display:none; }
  .android-player-error { position:absolute; inset:0; display:grid; place-items:center; padding:24px; color:#e58b82; text-align:center; background:#080a08cc; }
  .android-player-controls { padding-top:18px; }
  .android-player-controls input[type='range'] { width:100%; accent-color:#d4f06a; }
@@ -342,10 +343,10 @@
  .xtream-play-button:hover { background:#e3ff88; }
  .web-playable-row { cursor:pointer; }
  .web-playable-row:hover { border-color:#d4f06a; background:#20271c; }
- .web-player { padding:clamp(24px,5vw,70px); }
+ .web-player { padding:16px 20px; }
  .web-player .android-video-frame { width:min(1200px,100%); justify-self:center; }
  .web-player .android-player-header,.web-player .android-player-controls { width:min(1200px,100%); justify-self:center; }
- @media(max-width:700px){.web-player{padding:20px}.web-player .android-player-control-row{flex-wrap:wrap}.web-player .android-player-control-row span{width:100%;margin:0 0 4px}.web-player .android-player-control-row button{flex:1}}
+ @media(max-width:700px){.web-player{padding:10px 12px}.web-player .android-player-control-row{flex-wrap:wrap}.web-player .android-player-control-row span{width:100%;margin:0 0 4px}.web-player .android-player-control-row button{flex:1}}
  /* The topbar has no separator; keep this override after all responsive rules. */
  .topbar,.safari-app-mode .topbar { border-bottom:0; }
  .brand { font-size:22px; }

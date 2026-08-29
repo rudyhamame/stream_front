@@ -381,11 +381,7 @@ const androidTimelineStyle = computed(() => {
   const percent = androidDuration.value ? Math.min(100, Math.max(0, (androidCurrentTime.value / androidDuration.value) * 100)) : 0;
   return { "--android-progress": `${percent}%` };
 });
-const androidUpNext = computed(() => {
-  const movies = savedItemsForTabFor("movie");
-  const index = movies.findIndex(item => item.key === androidNowPlaying.value?.key);
-  return index >= 0 ? movies[index + 1] || null : null;
-});
+const androidUpNext = computed(() => null);
 
 function clearAndroidControlsTimer() {
   if (androidControlsTimer) clearTimeout(androidControlsTimer);
