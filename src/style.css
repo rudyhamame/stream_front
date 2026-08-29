@@ -29,6 +29,14 @@
  .android-page h1 { margin:12px 0 18px; font:600 clamp(38px,10vw,64px)/.98 'Space Grotesk'; letter-spacing:-.05em; }
  .android-page h1 em { color:#d4f06a; font-style:normal; }
  .android-page > p:not(.eyebrow):not(.android-empty) { max-width:520px; color:#aeb7a0; line-height:1.65; font-size:16px; }
+ .android-backend-status,.safari-backend-status { display:flex; align-items:center; gap:12px; width:max-content; max-width:100%; margin-top:24px; padding:12px 14px; border:1px solid rgba(229,139,130,.38); border-radius:10px; background:rgba(30,24,21,.72); }
+ .android-backend-status.online,.safari-backend-status.online { border-color:rgba(184,255,57,.32); background:rgba(25,39,20,.72); }
+ .backend-status-dot { width:9px; height:9px; flex:0 0 9px; border-radius:50%; background:#e58b82; box-shadow:0 0 10px rgba(229,139,130,.45); }
+ .online .backend-status-dot { background:#b8ff39; box-shadow:0 0 10px rgba(184,255,57,.55); }
+ .android-backend-status div,.safari-backend-status div { display:grid; gap:2px; min-width:0; }
+ .android-backend-status small,.safari-backend-status small { color:#899383; font-size:9px; font-weight:700; letter-spacing:.12em; }
+ .android-backend-status strong,.safari-backend-status strong { color:#f3f4f1; font:600 13px 'Space Grotesk'; }
+ .android-backend-status em,.safari-backend-status em { color:#aeb7a0; font-size:10px; font-style:normal; }
  .android-stat { display:flex; align-items:baseline; gap:10px; margin-top:42px; color:#aeb7a0; }
  .android-library-stats { display:grid; gap:20px; margin-top:36px; }
  .android-library-stats .android-stat { margin-top:0; }
@@ -133,6 +141,7 @@
  .safari-page .eyebrow { margin:0 0 8px; color:#d4f06a; }
  .safari-welcome-page { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr); align-items:center; gap:clamp(30px,7vw,90px); }
  .safari-page-heading > p:last-child { max-width:560px; margin:20px 0 0; color:#aeb7a0; font-size:clamp(15px,2vw,18px); line-height:1.6; }
+ .safari-backend-status { margin-top:26px; }
  .safari-library-stats { display:grid; gap:10px; }
  .safari-library-stats button { display:flex; align-items:baseline; justify-content:space-between; gap:18px; width:100%; padding:17px 19px; border:1px solid rgba(165,255,65,.22); border-radius:12px; background:rgba(15,23,15,.78); color:inherit; cursor:pointer; font:inherit; text-align:left; -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); transition:border-color .2s ease,box-shadow .2s ease,transform .2s ease; }
  .safari-library-stats button:hover,.safari-library-stats button:focus-visible { border-color:rgba(183,255,50,.55); box-shadow:0 0 24px rgba(183,255,50,.12); outline:none; transform:translateY(-1px); }
