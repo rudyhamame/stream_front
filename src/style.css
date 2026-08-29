@@ -234,11 +234,12 @@
  .safari-library-table::-webkit-scrollbar { display:none; width:0; height:0; }
  .safari-library-table-header,.safari-library-table-row { display:grid; grid-template-columns:minmax(280px,1fr) minmax(180px,.6fr) 150px; align-items:center; gap:16px; min-width:680px; }
  .safari-library-table-header { padding:13px 16px; color:#b8ff39; font:700 12px/1.1 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
- .safari-library-table-row { min-height:76px; padding:9px 16px; border-top:1px solid rgba(255,255,255,.07); color:#aeb7a0; font-size:13px; }
+ .safari-library-table-row { min-height:82px; padding:9px 16px; border-top:1px solid rgba(255,255,255,.07); color:#aeb7a0; font-size:13px; }
  .safari-library-table-channel { display:flex; align-items:center; min-width:0; gap:12px; color:#f3f4ef; }
  .safari-library-table-channel strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font:600 15px/1.25 'Space Grotesk'; }
- .safari-library-channel-logo { display:grid; flex:0 0 58px; width:58px; height:46px; place-items:center; overflow:hidden; border-radius:5px; background:#252c21; color:#d4f06a; font-size:20px; }
- .safari-library-channel-logo img { display:block; width:100%; height:100%; object-fit:contain; }
+ .safari-library-channel-logo { position:relative; display:grid; flex:0 0 78px; width:78px; height:64px; place-items:center; overflow:visible; border-radius:0; background:transparent; color:#d4f06a; font-size:20px; }
+ .safari-library-channel-logo img { display:block; width:auto; height:auto; max-width:78px; max-height:64px; border-radius:0; object-fit:contain; }
+ .safari-library-channel-logo > b { position:absolute; display:grid; place-items:center; inset:7px; border:1px solid rgba(212,240,106,.65); border-radius:50%; background:rgba(8,12,8,.78); color:#d4f06a; font-size:12px; }
  .safari-library-table-row code { color:#b8ff39; font:13px 'DM Sans'; }
  .safari-library-tabs { display:grid; flex:0 0 auto; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-bottom:12px; padding:4px; border:1px solid #303a2d; border-radius:12px; background:#10150f; }
  .safari-library-tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border:1px solid transparent; border-radius:8px; background:transparent; color:#929b8e; cursor:pointer; font:600 13px 'DM Sans'; }
@@ -289,6 +290,8 @@
  .safari-bottom-menu button img { display:block; width:24px; height:24px; object-fit:contain; filter:brightness(0) saturate(100%) invert(86%) sepia(44%) saturate(723%) hue-rotate(28deg) brightness(105%) contrast(89%); }
  .safari-bottom-menu button small { font:600 11px 'DM Sans'; }
  .safari-bottom-menu button.active { background:#252c21; color:#d4f06a; }
+ /* Keep keyboard focus from drawing the old yellow border box around items. */
+ button:focus-visible { outline:none !important; border-color:transparent !important; box-shadow:none !important; }
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
  @media(prefers-reduced-motion:reduce){.safari-library-rail-track.is-scrolling-left>button,.safari-library-rail-track.is-scrolling-right>button{animation:none}}
  @media(max-width:700px){

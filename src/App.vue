@@ -42,6 +42,18 @@ function openSafariPage(page) {
 function openBrowserLibrary(tab) {
   openSafariPage({ series: "series", movie: "movies", channel: "channels" }[tab] || "series");
 }
+function focusMainMenu() {
+  const menu = document.querySelector(androidApp.value ? ".android-bottom-menu" : ".browser-sidebar nav");
+  const active = menu?.querySelector("button.active") || menu?.querySelector("button");
+  active?.focus({ preventScroll: true });
+}
+function handleNavigationKeydown(event) {
+  if (event.key !== "ArrowLeft" || pairing.value || androidNowPlaying.value) return;
+  const page = androidApp.value ? androidPage.value : safariPage.value;
+  if (page !== "welcome") return;
+  event.preventDefault();
+  focusMainMenu();
+}
 function handleSafariRailScroll(event, railKey) {
   const track = event.currentTarget;
   const currentPosition = track.scrollLeft;
@@ -302,6 +314,7 @@ function handleNativeKeyboardHeight(event) {
 
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
+onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
 onBeforeUnmount(() => {
   if (deviceStatusTimer) clearInterval(deviceStatusTimer);
   window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
@@ -913,6 +926,7 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
+  document.addEventListener("keydown", handleNavigationKeydown);
   window.visualViewport?.addEventListener("resize", updateLoginKeyboardLift);
   window.visualViewport?.addEventListener("scroll", updateLoginKeyboardLift);
   document.addEventListener("focusin", updateLoginKeyboardLift);
@@ -1038,7 +1052,7 @@ onMounted(async () => {
         <div v-if="safariLibraryTab === 'channel' && savedItemsForTabFor('channel').length" class="safari-library-table" role="table" aria-label="Live TV channels">
           <div class="safari-library-table-header" role="row"><span>CHANNEL</span><span>CATEGORY</span><span>ID</span></div>
           <div v-for="item in savedItemsForTabFor('channel')" :key="item.key" class="safari-library-table-row" role="row">
-            <span class="safari-library-table-channel"><span class="safari-library-channel-logo"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon('channel') }}</span></span><strong>{{ item.title }}</strong></span>
+            <span class="safari-library-table-channel"><span class="safari-library-channel-logo"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon('channel') }}</b></template></span><strong>{{ item.title }}</strong></span>
             <span>{{ item.category || item.categoryName || item.categoryId || 'Uncategorized' }}</span>
             <code>{{ item.id }}</code>
           </div>
