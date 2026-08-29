@@ -211,14 +211,13 @@
  .safari-library-page { display:flex; flex-direction:column; }
  .safari-library-rails { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:24px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
  .safari-library-rails::-webkit-scrollbar { display:none; width:0; height:0; }
- .safari-library-rail { flex:0 0 auto; min-width:0; }
+ .safari-library-rail { flex:0 0 auto; width:100%; min-width:0; }
  .safari-library-rail > header { display:flex; align-items:baseline; gap:9px; margin-bottom:10px; }
  .safari-library-rail > header h2 { margin:0; color:#f3f4ef; font:600 18px/1.2 'Space Grotesk'; }
  .safari-library-rail > header span { color:#92998b; font-size:12px; }
- .safari-library-rail-track { display:flex; gap:12px; overflow-x:auto; padding:2px 3px 10px 0; border-radius:0; perspective:900px; overscroll-behavior-inline:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+ .safari-library-rail-track { display:flex; gap:12px; width:100%; overflow-x:auto; padding:2px 3px 10px 0; border-radius:0; background:rgba(8,12,8,.42); perspective:900px; overscroll-behavior-inline:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
  .safari-library-rail-track::-webkit-scrollbar { display:none; width:0; height:0; }
  .safari-library-rail-track > button { display:flex; flex:0 0 180px; min-width:0; flex-direction:column; align-items:stretch; justify-content:flex-start; gap:9px; border-radius:0; background:rgba(8,12,8,.72); color:#f3f4ef; cursor:default; font:inherit; text-align:left; transition:border-color .16s ease,background .16s ease,transform .16s ease,box-shadow .16s ease;padding:0; border:0; }
- .safari-library-rail-track:has(> button:only-child) > button { flex-basis:100%; }
  .safari-library-rail-track > button.is-playable { cursor:pointer; }
  .safari-library-rail-track > button.is-playable:hover,.safari-library-rail-track > button.is-playable:focus-visible,.safari-library-rail-track > button:focus-visible { border-color:rgba(184,255,57,.75); background:rgba(22,31,19,.82); box-shadow:0 0 20px rgba(184,255,57,.08); outline:none; transform:scale(1.02); }
  .safari-library-rail-track.is-scrolling-left > button { animation:safari-rail-turn-left 180ms ease-out; transform-origin:center center; backface-visibility:hidden; }
