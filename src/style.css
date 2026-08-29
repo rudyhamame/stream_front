@@ -305,7 +305,7 @@
  .android-player-title > p:last-child { margin:6px 0 0; color:#aeb7a0; font-size:14px; }
  .android-player-back,.android-player-close { flex:0 0 auto; width:36px; height:36px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#d4f06a; cursor:pointer; font:27px/1 'DM Sans'; }
  .android-player-close { margin-left:auto; color:#aeb7a0; font-size:24px; }
- .android-video-frame { position:relative; display:grid; place-items:center; align-self:start; width:100%; height:min(56.25vw, calc(100dvh - 250px)); aspect-ratio:16/9; min-height:0; overflow:hidden; border:1px solid #394236; border-radius:16px; background:#080a08; }
+ .android-video-frame { position:relative; display:grid; place-items:center; align-self:start; width:100%; height:min(56.25vw, calc(100dvh - 250px)); aspect-ratio:16/9; min-height:0; overflow:hidden; border:1px solid #394236; background:#080a08; }
  .android-video-frame video { width:100%; height:100%; object-fit:contain; background:#080a08; }
  .android-video-placeholder { position:absolute; inset:0; z-index:1; display:grid; place-items:center; align-content:center; gap:12px; padding:24px; background:#191d17; color:#f3f4f1; text-align:center; }
  .android-placeholder-mark { display:grid; place-items:center; width:74px; height:74px; border-radius:20px; background:#d4f06a; color:#111210; font:700 30px 'Space Grotesk'; letter-spacing:-.08em; }
