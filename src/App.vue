@@ -12,7 +12,8 @@ import CogIcon from "./components/icons/CogIcon.vue";
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
-const safariWebsite = ref(!androidApp.value && /safari/i.test(navigator.userAgent) && !/(android|chrome|crios|fxios|edgios)/i.test(navigator.userAgent));
+// All browser sessions use the app-style shell; Android keeps its native branch.
+const browserApp = ref(!androidApp.value);
 const androidPage = ref("welcome");
 const safariPage = ref("welcome");
 const safariLibraryTab = ref("series");
@@ -814,7 +815,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': safariWebsite && !androidApp, 'login-shell': pairing }">
+  <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': browserApp && !androidApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="login-art" aria-hidden="true">
         <img class="login-city" src="/login/city-background.png" alt="">
@@ -876,7 +877,7 @@ onMounted(async () => {
         <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playAndroidMovie(androidUpNext)">▶</button></article>
       </section>
     </section>
-    <section v-else-if="safariWebsite" class="safari-page-shell">
+    <section v-else-if="browserApp" class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <div class="safari-page-heading"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your playlist and browse everything saved to your library without leaving this screen.</p></div>
         <div class="safari-library-stats"><div><strong>{{ typeCounts.series || 0 }}</strong><span>Series</span></div><div><strong>{{ typeCounts.movie || 0 }}</strong><span>Movies</span></div><div><strong>{{ typeCounts.channel || 0 }}</strong><span>Live Channels</span></div></div>
