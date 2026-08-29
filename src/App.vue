@@ -8,7 +8,10 @@ import { ScreenOrientation } from "@capacitor/screen-orientation";
 const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-stream-backend.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
+const safariWebsite = ref(!androidApp.value && /safari/i.test(navigator.userAgent) && !/(android|chrome|crios|fxios|edgios)/i.test(navigator.userAgent));
 const androidPage = ref("welcome");
+const safariPage = ref("welcome");
+const safariLibraryTab = ref("series");
 const androidVideo = ref(null);
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
@@ -18,18 +21,21 @@ const androidDuration = ref(0);
 const androidPlaybackOffset = ref(0);
 const androidPendingSeek = ref(-1);
 const androidMediaReady = ref(false);
+const androidPlaybackRetryCount = ref(0);
 const androidBuffering = ref(false);
 const androidControlsVisible = ref(true);
 const androidQuality = ref("Auto");
 const androidPlayerError = ref("");
 const androidFullscreen = ref(false);
 let androidHls = null;
+let androidRecoveryTimer = null;
 let androidSeekTimer = null;
 let androidControlsTimer = null;
 const Immersive = registerPlugin("Immersive");
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const deviceToken = ref(storedToken());
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
+const pairingDeviceId = ref("");
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
 const pairingNeedsSignup = ref(false);
@@ -68,6 +74,7 @@ async function loadPairingInfo() {
   if (!pairCode) return;
   const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
   pairingNeedsSignup.value = Boolean(data.needsSignup);
+  pairingDeviceId.value = data.deviceId || "";
   pairingMode.value = pairingNeedsSignup.value ? "signup" : "login";
   pairingReady.value = true;
   if (data.authenticated) {
@@ -347,8 +354,35 @@ function onAndroidWaiting() {
   showAndroidControls();
 }
 
+function clearAndroidRecoveryTimer() {
+  if (androidRecoveryTimer) clearTimeout(androidRecoveryTimer);
+  androidRecoveryTimer = null;
+}
+
+function handleAndroidVideoError() {
+  if (!androidNowPlaying.value) return;
+  // A WebView can emit a media error while HLS.js is recovering a segment.
+  // Keep the player alive and show the final error only after retries fail.
+  if (androidPlaybackRetryCount.value < 3) {
+    androidPlaybackRetryCount.value += 1;
+    androidBuffering.value = true;
+    showAndroidControls();
+    clearAndroidRecoveryTimer();
+    androidRecoveryTimer = setTimeout(() => {
+      androidRecoveryTimer = null;
+      if (androidHls) androidHls.startLoad();
+      else configureMoviePlayback(androidPlaybackOffset.value);
+    }, 900 * androidPlaybackRetryCount.value);
+    return;
+  }
+  androidPlayerError.value = "Playback unavailable";
+  androidBuffering.value = false;
+  showAndroidControls();
+}
+
 function onAndroidReady(event) {
   androidBuffering.value = false;
+  androidPlaybackRetryCount.value = 0;
   if (event?.type === "playing" && !androidMediaReady.value) {
     const video = event.target;
     const reveal = () => {
@@ -387,6 +421,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     androidHls.destroy();
     androidHls = null;
   }
+  clearAndroidRecoveryTimer();
   video.removeAttribute("src");
   video.style.opacity = "0";
   video.load();
@@ -394,7 +429,20 @@ async function configureMoviePlayback(startSeconds = 0) {
     if (Hls.isSupported()) {
       androidHls = new Hls({ enableWorker: true, lowLatencyMode: false });
       androidHls.on(Hls.Events.ERROR, (_event, data) => {
-        if (data.fatal) androidPlayerError.value = "This movie could not be played right now.";
+        if (!data.fatal) return;
+        if (androidPlaybackRetryCount.value < 3) {
+          androidPlaybackRetryCount.value += 1;
+          androidBuffering.value = true;
+          showAndroidControls();
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) androidHls.recoverMediaError();
+          else {
+            clearAndroidRecoveryTimer();
+            androidRecoveryTimer = setTimeout(() => androidHls?.startLoad(), 900 * androidPlaybackRetryCount.value);
+          }
+        } else {
+          androidPlayerError.value = "This movie could not be played right now.";
+          androidBuffering.value = false;
+        }
       });
       androidHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
         try { await video.play(); androidPlaying.value = true; } catch { /* The user can press Play. */ }
@@ -423,6 +471,7 @@ async function playAndroidMovie(item) {
   androidControlsVisible.value = true;
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
+  androidPlaybackRetryCount.value = 0;
   await configureMoviePlayback(0);
 }
 
@@ -439,6 +488,7 @@ async function playWebMovie(item) {
   androidControlsVisible.value = true;
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
+  androidPlaybackRetryCount.value = 0;
   await configureMoviePlayback(0);
 }
 
@@ -468,6 +518,7 @@ async function restoreAndroidWindow() {
 
 async function closeAndroidPlayer() {
   clearAndroidControlsTimer();
+  clearAndroidRecoveryTimer();
   if (androidSeekTimer) {
     clearTimeout(androidSeekTimer);
     androidSeekTimer = null;
@@ -554,6 +605,7 @@ async function fullscreenAndroidMovie() {
 
 onBeforeUnmount(() => {
   if (androidHls) androidHls.destroy();
+  clearAndroidRecoveryTimer();
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
   unlockAndroidOrientation();
 });
@@ -752,7 +804,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell" :class="{ 'android-app-mode': androidApp, 'login-shell': pairing }">
+  <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': safariWebsite && !androidApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="login-art" aria-hidden="true">
         <img class="login-city" src="/login/city-background.png" alt="">
@@ -768,6 +820,7 @@ onMounted(async () => {
         <p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p>
         <template v-else-if="pairCode">
           <p>{{ isPairingSignup ? 'Create an account to activate this Roku and manage its library from your phone.' : 'Sign in to link this Roku and open its library. The TV will connect automatically.' }}</p>
+          <p class="pairing-device-code">You are linking Roku device <code>{{ pairingDeviceId || pairCode }}</code>. This device identity is saved with your account; your email address and password are never stored in or shared through the QR code.</p>
           <form @submit.prevent="claimPairing">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="Your password"></label>
@@ -808,11 +861,51 @@ onMounted(async () => {
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
       <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
-        <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false" @error="androidPlayerError = 'Playback unavailable'; androidBuffering = false; showAndroidControls()"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || !androidPlaying || androidBuffering || androidPlayerError}"><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playAndroidMovie(androidNowPlaying)">Retry</button></div></div>
+        <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || !androidPlaying || androidBuffering || androidPlayerError}"><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playAndroidMovie(androidNowPlaying)">Retry</button></div></div>
         <div class="android-player-utility"><button type="button"><span>4K</span><small>Quality</small></button><button type="button" @click="fullscreenAndroidMovie"><span>□</span><small>Fullscreen</small></button></div>
         <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playAndroidMovie(androidUpNext)">▶</button></article>
       </section>
     </section>
+    <section v-else-if="safariWebsite" class="safari-page-shell">
+      <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
+        <div class="safari-page-heading"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your playlist and browse everything saved to your library without leaving this screen.</p></div>
+        <div class="safari-library-stats"><div><strong>{{ typeCounts.series || 0 }}</strong><span>Series</span></div><div><strong>{{ typeCounts.movie || 0 }}</strong><span>Movies</span></div><div><strong>{{ typeCounts.channel || 0 }}</strong><span>Live Channels</span></div></div>
+      </article>
+
+      <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
+        <div class="safari-compact-heading"><div><p class="eyebrow">PLAYLIST</p><h1>Manage playlist</h1></div><span>{{ selectedCount }} selected</span></div>
+        <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
+        <template v-else>
+          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div>
+          <div class="android-playlist-tabs"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></div>
+          <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
+          <div v-if="visibleItems.length" class="android-playlist-items"><label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}"><input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="android-playlist-icon">{{ typeIcon(kind) }}</span><span><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span><em>{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Ready' : 'Add' }}</em></label></div>
+          <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
+          <button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected to library</button>
+        </template>
+      </article>
+
+      <article v-else-if="safariPage === 'library'" class="safari-page safari-library-page">
+        <div class="safari-compact-heading"><div><p class="eyebrow">LIBRARY</p><h1>Your library</h1></div><span>{{ typeCounts[safariLibraryTab] || 0 }} items</span></div>
+        <nav class="safari-library-tabs" aria-label="Library sections"><button v-for="item in [{id:'series',label:'Series',icon:'▦'},{id:'movie',label:'Movies',icon:'▶'},{id:'channel',label:'Live Channels',icon:'◉'}]" :key="item.id" type="button" :class="{active:safariLibraryTab === item.id}" @click="safariLibraryTab = item.id"><span>{{ item.icon }}</span>{{ item.label }}</button></nav>
+        <div v-if="savedItemsForTabFor(safariLibraryTab).length" class="safari-library-list">
+          <button v-for="item in savedItemsForTabFor(safariLibraryTab)" :key="item.key" type="button" :class="{'is-playable': safariLibraryTab === 'movie'}" @click="safariLibraryTab === 'movie' && playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><b v-else>{{ typeIcon(safariLibraryTab) }}</b></span><span><strong>{{ item.title }}</strong><small>{{ typeLabel(safariLibraryTab) }}</small></span><em v-if="safariLibraryTab === 'movie'">Play</em></button>
+        </div>
+        <p v-else class="android-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
+      </article>
+
+      <article v-else class="safari-page safari-settings-page">
+        <div class="safari-compact-heading"><div><p class="eyebrow">SETTINGS</p><h1>Settings</h1></div></div>
+        <div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
+        <section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p></section>
+        <button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
+        <form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
+        <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
+      </article>
+
+      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'library',label:'Library',icon:'▦'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="safariPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
+    </section>
+    <template v-else>
     <header class="manager-hero">
       <div>
         <p class="eyebrow">ROKU PLAYLIST BUILDER</p>
@@ -887,9 +980,10 @@ onMounted(async () => {
       </template>
       <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
     </section>
-    <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
+    </template>
+      <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
       <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
-      <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false" @error="androidPlayerError = 'Playback unavailable'; androidBuffering = false; showAndroidControls()"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || !androidPlaying || androidBuffering || androidPlayerError}"><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(androidNowPlaying)">Retry</button></div></div>
+      <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || !androidPlaying || androidBuffering || androidPlayerError}"><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(androidNowPlaying)">Retry</button></div></div>
       <div class="android-player-utility"><button type="button"><span>4K</span><small>Quality</small></button><button type="button" @click="fullscreenAndroidMovie"><span>□</span><small>Fullscreen</small></button></div>
       <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(androidUpNext)">▶</button></article>
     </section>

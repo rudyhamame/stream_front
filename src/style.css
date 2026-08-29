@@ -96,6 +96,55 @@
  .android-bottom-menu button small { font:500 10px 'DM Sans'; }
  .android-bottom-menu button.active { color:#d4f06a; background:#252c21; }
  .android-app-mode > .manager-hero,.android-app-mode > .linked-devices,.android-app-mode > .xtream-control-panel { display:none; }
+
+/* Safari uses a native-style, viewport-bound shell with its primary navigation at the safe-area edge. */
+ .safari-app-mode { width:100%; max-width:none; height:100dvh; min-height:100dvh; padding:0; overflow:hidden; background:#111210; }
+ .safari-app-mode .topbar { height:64px; padding:0 clamp(18px,4vw,44px); border-bottom:1px solid #30322d; }
+ .safari-app-mode > .topbar .status,.safari-app-mode > .topbar .logout-button { display:none; }
+ .safari-page-shell { height:calc(100dvh - 64px); padding:clamp(16px,3vw,30px) clamp(16px,4vw,46px) calc(86px + env(safe-area-inset-bottom)); overflow:hidden; }
+ .safari-page { width:min(100%,1080px); height:100%; margin:0 auto; overflow:hidden; }
+ .safari-page h1 { margin:5px 0 14px; color:#f5f2ea; font:600 clamp(31px,5vw,58px)/1 'Space Grotesk'; letter-spacing:-.05em; }
+ .safari-page h1 em { color:#d4f06a; font-style:normal; }
+ .safari-page .eyebrow { margin:0 0 8px; color:#d4f06a; }
+ .safari-welcome-page { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(270px,.75fr); align-items:center; gap:clamp(30px,7vw,90px); }
+ .safari-page-heading > p:last-child { max-width:560px; margin:20px 0 0; color:#aeb7a0; font-size:clamp(15px,2vw,18px); line-height:1.6; }
+ .safari-library-stats { display:grid; gap:10px; }
+ .safari-library-stats div { display:flex; align-items:baseline; justify-content:space-between; gap:18px; padding:17px 19px; border:1px solid #394236; border-radius:12px; background:#191d17; }
+ .safari-library-stats strong { color:#d4f06a; font:600 clamp(28px,5vw,42px) 'Space Grotesk'; }
+ .safari-library-stats span { color:#aeb7a0; font-size:14px; }
+ .safari-compact-heading { display:flex; flex:0 0 auto; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:14px; }
+ .safari-compact-heading h1 { margin-bottom:0; font-size:clamp(28px,4vw,42px); }
+ .safari-compact-heading > span { padding-bottom:4px; color:#aeb7a0; font-size:12px; white-space:nowrap; }
+ .safari-playlist-page { padding:0; }
+ .safari-playlist-page .android-playlist-source-form { flex:0 0 auto; }
+ .safari-playlist-page .android-playlist-items { overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+ .safari-library-page { display:flex; flex-direction:column; }
+ .safari-library-tabs { display:grid; flex:0 0 auto; grid-template-columns:repeat(3,minmax(0,1fr)); gap:7px; margin-bottom:12px; padding:4px; border:1px solid #303a2d; border-radius:12px; background:#10150f; }
+ .safari-library-tabs button { display:flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border:1px solid transparent; border-radius:8px; background:transparent; color:#929b8e; cursor:pointer; font:600 13px 'DM Sans'; }
+ .safari-library-tabs button span { color:inherit; font-size:17px; }
+ .safari-library-tabs button.active { border-color:#82ad45; background:#202d1d; color:#d4f06a; box-shadow:inset 0 -2px #b7ff32; }
+ .safari-library-list { display:grid; flex:1 1 auto; min-height:0; align-content:start; gap:9px; padding:2px 3px 2px 0; overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+ .safari-library-list > button { display:grid; grid-template-columns:48px minmax(0,1fr) auto; align-items:center; gap:13px; width:100%; min-height:66px; padding:8px 14px 8px 9px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#f3f4f1; text-align:left; font:inherit; }
+ .safari-library-list > button.is-playable { cursor:pointer; }
+ .safari-library-list > button.is-playable:hover,.safari-library-list > button.is-playable:focus-visible { border-color:#d4f06a; outline:none; background:#20271c; }
+ .safari-library-art { display:grid; place-items:center; width:48px; height:48px; overflow:hidden; border-radius:8px; background:#252c21; color:#d4f06a; }
+ .safari-library-art img { width:100%; height:100%; object-fit:cover; }
+ .safari-library-list strong,.safari-library-list small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .safari-library-list strong { font-size:14px; }
+ .safari-library-list small { margin-top:3px; color:#8f958c; font-size:11px; }
+ .safari-library-list em { color:#d4f06a; font-size:11px; font-style:normal; }
+ .safari-library-empty { margin:auto; text-align:center; }
+ .safari-settings-page { overflow:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; padding-bottom:12px; }
+ .safari-settings-page .android-linked-settings,.safari-settings-page .android-settings-card,.safari-settings-page .android-change-password-toggle,.safari-settings-page .android-password-form { max-width:680px; }
+ .safari-bottom-menu { position:fixed; z-index:10; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(4,1fr); height:calc(76px + env(safe-area-inset-bottom)); padding:7px max(10px,env(safe-area-inset-right)) max(7px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); border-top:1px solid #394236; background:rgba(17,18,16,.96); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
+ .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; border-radius:10px; background:transparent; color:#858c82; cursor:pointer; }
+ .safari-bottom-menu button span { font-size:21px; line-height:1; }
+ .safari-bottom-menu button small { font:600 11px 'DM Sans'; }
+ .safari-bottom-menu button.active { background:#252c21; color:#d4f06a; }
+ html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
+ @media(max-width:700px){
+   .safari-app-mode .topbar{height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.safari-page-shell{height:calc(100dvh - 58px);padding:14px 14px calc(80px + env(safe-area-inset-bottom))}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats div{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:10px}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-library-tabs button{font-size:11px}.safari-library-list>button{grid-template-columns:44px minmax(0,1fr) auto}.safari-library-art{width:44px;height:44px}
+ }
  .android-player { position:fixed; inset:0; z-index:20; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:24px 22px max(24px, env(safe-area-inset-bottom)); background:#111210; }
  .android-player:not(.is-fullscreen) { grid-template-rows:auto auto auto auto; align-content:start; gap:14px; overflow:hidden; }
  .android-player-header { display:flex; align-items:center; gap:14px; min-width:0; padding-bottom:20px; }
@@ -178,6 +227,8 @@
  .login-card .eyebrow { margin:0 0 9px; color:#d4f06a; }
  .login-card h1 { margin:0 0 10px; color:#f5f2ea; font:600 clamp(28px,7vw,40px)/1 'Space Grotesk'; letter-spacing:-.04em; }
  .login-card > p:not(.eyebrow):not(.login-scan-copy):not(.xtream-message) { margin:0 0 16px; color:#b8bdb4; line-height:1.45; font-size:13px; }
+ .login-card .pairing-device-code { margin:-6px 0 16px; color:#d4f06a; font-size:12px; line-height:1.45; }
+ .login-card .pairing-device-code code { display:inline-block; margin:0 3px; padding:2px 6px; border:1px solid #d4f06a66; border-radius:6px; background:#0a0c0acc; color:#f5f2ea; font:600 12px 'DM Sans'; letter-spacing:.04em; }
  .login-card form { display:grid; gap:11px; }
  .login-card label { display:grid; gap:6px; margin:0; color:#aeb7a0; font-size:12px; }
  .login-card input,.login-card select { width:100%; height:48px; padding:0 15px; border:1px solid #d4f06a33; border-radius:14px; outline:none; background:#0a0c0acc; color:#f5f2ea; font:500 15px 'DM Sans'; letter-spacing:normal; backdrop-filter:blur(8px); }
