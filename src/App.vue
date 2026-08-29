@@ -666,7 +666,7 @@ document.addEventListener("fullscreenchange", handleFullscreenChange);
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
-function streamFormatLabel(item) { return String(item?.streamFormat || "hls").toUpperCase(); }
+function streamFormatLabel(item) { return String(item?.extension || item?.streamFormat || "mp4").toUpperCase(); }
 
 function applySource(source) {
   if (!source) return;
