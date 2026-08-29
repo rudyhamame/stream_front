@@ -15,9 +15,13 @@ const api = path => `${base}${path}`;
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
 // All browser sessions use the app-style shell; Android keeps its native branch.
 const browserApp = ref(!androidApp.value);
-const androidPage = ref("welcome");
-const safariPage = ref("welcome");
-const safariLibraryTab = ref("series");
+const pageStorageKey = androidApp.value ? "rh-android-page" : "rh-safari-page";
+const allowedPages = ["welcome", "playlist", "library", "settings"];
+const storedPage = window.localStorage.getItem(pageStorageKey);
+const androidPage = ref(allowedPages.includes(storedPage) ? storedPage : "welcome");
+const safariPage = ref(allowedPages.includes(storedPage) ? storedPage : "welcome");
+const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
+const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
 const safariRailMotion = ref({});
 const safariRailPositions = new Map();
 const safariRailMotionTimers = new Map();
@@ -822,6 +826,9 @@ async function restoreArchived(item) {
 
 let searchTimer;
 let deviceStatusTimer;
+watch(androidPage, value => window.localStorage.setItem("rh-android-page", value));
+watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value));
+watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadCatalog(), 350); });
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
