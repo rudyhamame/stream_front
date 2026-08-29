@@ -10,7 +10,12 @@ import GlobeAlt2Icon from "./components/icons/GlobeAlt2Icon.vue";
 import CogIcon from "./components/icons/CogIcon.vue";
 import MaximizeIcon from "./components/icons/MaximizeIcon.vue";
 
-const base = (import.meta.env.VITE_API_BASE_URL || "https://rh-library-backend.onrender.com").replace(/\/$/, "");
+const canonicalBackend = "https://rh-library-backend.onrender.com";
+const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
+// Render still has the retired backend URL in one frontend environment. That
+// service lacks the Library category routes loaded immediately after login,
+// causing a misleading "Request failed (404)" despite successful auth.
+const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
 const api = path => `${base}${path}`;
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
 // All browser sessions use the app-style shell; Android keeps its native branch.
