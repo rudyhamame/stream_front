@@ -105,7 +105,7 @@ const pairingDeviceId = ref("");
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
 const pairingNeedsSignup = ref(false);
-const pairingMode = ref("signup");
+const pairingMode = ref(pairCode ? "signup" : "login");
 const pairingEmail = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
@@ -197,11 +197,24 @@ async function signIn() {
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
+async function signUp() {
+  try {
+    if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
+    await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
+    pairingPassword.value = "";
+    pairingPasswordConfirmation.value = "";
+    pairingMode.value = "login";
+    messageType.value = "success";
+    message.value = "Account created. Sign in, then scan a Roku QR code to link your device.";
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+}
+
 function logout() {
   deviceToken.value = "";
   window.localStorage.removeItem("rh-device-token");
   pairing.value = true;
   pairingReady.value = false;
+  pairingMode.value = "login";
   pairingEmail.value = "";
   pairingPassword.value = "";
   pairingPasswordConfirmation.value = "";
@@ -995,7 +1008,8 @@ onMounted(async () => {
         <p v-if="pairCode" class="eyebrow">ROKU LIBRARY</p>
         <h1 v-if="pairCode && isPairingSignup">Create your account</h1>
         <h1 v-else-if="pairCode">Open your Roku library</h1>
-        <h1 v-else>Sign in to your library</h1>
+        <h1 v-else-if="!isPairingSignup">Sign in to your library</h1>
+        <h1 v-else>Create your account</h1>
         <p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p>
         <template v-else-if="pairCode">
           <p>{{ isPairingSignup ? 'Create an account to activate this Roku and manage its library from your phone.' : 'Sign in to link this Roku and open its library. The TV will connect automatically.' }}</p>
@@ -1008,7 +1022,7 @@ onMounted(async () => {
             <button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button>
           </form>
         </template>
-        <template v-else>
+        <template v-else-if="!isPairingSignup">
           <template v-if="!scannerOpen">
             <form @submit.prevent="signIn">
               <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
@@ -1022,7 +1036,17 @@ onMounted(async () => {
           <div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div>
           <p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p>
         </template>
-        <p v-if="message" class="xtream-message is-error">{{ message }}</p>
+        <template v-else>
+          <p>Create an account to manage your Roku library. You can link a Roku after signing up.</p>
+          <form @submit.prevent="signUp">
+            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
+            <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
+            <button type="submit" class="primary-action login-submit">Create account</button>
+            <button type="button" class="source-action" @click="pairingMode = 'login'">I already have an account</button>
+          </form>
+        </template>
+        <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
       </div>
     </section>
     <template v-else>
@@ -1042,7 +1066,7 @@ onMounted(async () => {
       <article v-else-if="androidPage === 'series'" class="android-page"><p class="eyebrow">SERIES</p><h1>Series</h1><div v-if="savedItemsForTabFor('series').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('series')" :key="item.key"><span>▦</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No series are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'movies'" class="android-page"><p class="eyebrow">MOVIES</p><h1>Movies</h1><div v-if="savedItemsForTabFor('movie').length" class="android-item-list"><button v-for="item in savedItemsForTabFor('movie')" :key="item.key" type="button" class="android-movie-item" @click="playAndroidMovie(item)"><span>▶</span><strong>{{ item.title }}</strong><small>Play movie</small></button></div><p v-else class="android-empty">No movies are enabled yet. Add them from the library manager.</p></article>
       <article v-else-if="androidPage === 'channels'" class="android-page"><p class="eyebrow">CHANNELS</p><h1>Channels</h1><div v-if="savedItemsForTabFor('channel').length" class="android-item-list"><div v-for="item in savedItemsForTabFor('channel')" :key="item.key"><span>◉</span><strong>{{ item.title }}</strong></div></div><p v-else class="android-empty">No channels are enabled yet. Add them from the library manager.</p></article>
-      <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p></section><button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button><form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
+      <article v-else class="android-page"><p class="eyebrow">SETTINGS</p><h1>Settings</h1><div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div><section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p><button type="button" class="source-action android-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section><button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button><form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form><button type="button" class="logout-button android-logout" @click="logout">Log out</button></article>
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
       <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
@@ -1114,7 +1138,7 @@ onMounted(async () => {
           <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
           <p v-else class="android-empty">No playlists added yet.</p>
         </section>
-        <section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p></section>
+        <section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p><button type="button" class="source-action android-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
         <button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
         <form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
         <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
