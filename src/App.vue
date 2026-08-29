@@ -16,6 +16,8 @@ const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend
 // service lacks the Library category routes loaded immediately after login,
 // causing a misleading "Request failed (404)" despite successful auth.
 const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
+const legacyPairingBackend = "https://rh-stream-backend.onrender.com";
+let pairingBackend = base;
 const api = path => `${base}${path}`;
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
 // All browser sessions use the app-style shell; Android keeps its native branch.
@@ -137,13 +139,40 @@ async function request(path, options = {}) {
   if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
   const response = await fetch(api(path), { ...options, headers });
   const data = response.status === 204 ? null : await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.error || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const error = new Error(data?.error || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
+}
+
+async function pairingRequest(path, options = {}) {
+  let lastError;
+  for (const origin of [...new Set([base, legacyPairingBackend])]) {
+    try {
+      const headers = new Headers(options.headers || {});
+      if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
+      const response = await fetch(`${origin}${path}`, { ...options, headers });
+      const data = response.status === 204 ? null : await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const error = new Error(data?.error || `Request failed (${response.status})`);
+        error.status = response.status;
+        throw error;
+      }
+      pairingBackend = origin;
+      return data;
+    } catch (error) {
+      lastError = error;
+      if (origin === legacyPairingBackend || (error.status !== 404 && !/expired|invalid/i.test(error.message))) throw error;
+    }
+  }
+  throw lastError || new Error("Pairing code expired or invalid");
 }
 
 async function loadPairingInfo() {
   if (!pairCode) return;
-  const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+  const data = await pairingRequest("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
   pairingNeedsSignup.value = Boolean(data.needsSignup);
   pairingDeviceId.value = data.deviceId || "";
   pairingMode.value = pairingNeedsSignup.value ? "signup" : "login";
@@ -152,7 +181,7 @@ async function loadPairingInfo() {
   // device token from a previous successful login. Exchange its one-time,
   // short-lived code for a browser token; no credentials are present in the QR.
   if (data.canAutoLogin) {
-    const claimed = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+    const claimed = await pairingRequest("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
     deviceToken.value = claimed.token;
     window.localStorage.setItem("rh-device-token", claimed.token);
     pairing.value = false;
@@ -174,9 +203,14 @@ async function claimPairing() {
     if (!pairCode) return;
     if (isPairingSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
     const path = isPairingSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
-    const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
-    deviceToken.value = data.token;
-    window.localStorage.setItem("rh-device-token", data.token);
+    const data = await pairingRequest(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
+    let token = data.token;
+    if (pairingBackend !== base) {
+      const canonicalLogin = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, deviceId: data.deviceId || pairingDeviceId.value }) });
+      if (canonicalLogin.token) token = canonicalLogin.token;
+    }
+    deviceToken.value = token;
+    window.localStorage.setItem("rh-device-token", token);
     pairing.value = false;
     await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
