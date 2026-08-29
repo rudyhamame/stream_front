@@ -207,7 +207,8 @@
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
  .safari-library-page { display:flex; flex-direction:column; }
- .safari-library-rails { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:24px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
+ .safari-library-rails { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:24px; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
+ .safari-library-rails::-webkit-scrollbar { display:none; width:0; height:0; }
  .safari-library-rail { flex:0 0 auto; min-width:0; }
  .safari-library-rail > header { display:flex; align-items:baseline; gap:9px; margin-bottom:10px; }
  .safari-library-rail > header h2 { margin:0; color:#f3f4ef; font:600 18px/1.2 'Space Grotesk'; }
