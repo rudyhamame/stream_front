@@ -22,6 +22,7 @@ const androidPage = ref(allowedPages.includes(storedPage) ? storedPage : "welcom
 const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
+const moviesNavIcon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAAkklEQVR4AZSQgQ2CQBAE0SrUBoyNqV2oZWgTdgVlwAxhCYTwAbLLX+529y9/rHZ+U8MdbwtruIoYFH0H1ZlTowGUc8Sg6MAo/FAboDE0tIqB+QKaEuBpaNGwSLBRusG5vPF7wx5bDH+UJ/iAm1a6InzCHywaXgh8oYZzRFay6TBU7Aq+zmVUU8Rg0+GU/QpoZugAAAD//7AHqg0AAAAGSURBVAMAR5UWGTOKbOYAAAAASUVORK5CYII=";
 const safariRailMotion = ref({});
 const safariRailPositions = new Map();
 const safariRailMotionTimers = new Map();
@@ -29,7 +30,7 @@ const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
   { id: "series", label: "Series", icon: FilmRollAltIcon },
-  { id: "movies", label: "Movies", icon: FilmRollAltIcon },
+  { id: "movies", label: "Movies", icon: moviesNavIcon },
   { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
@@ -965,7 +966,7 @@ onMounted(async () => {
     <section v-else-if="browserApp" class="browser-app-shell">
       <aside class="browser-sidebar">
         <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
-        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><component :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
+        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
@@ -1024,7 +1025,7 @@ onMounted(async () => {
         <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
       </article>
 
-      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><component :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
+      <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
       </div></div>
     </section>
     <template v-else>

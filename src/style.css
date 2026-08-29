@@ -134,6 +134,7 @@
  .browser-sidebar nav button.active { border-color:rgba(184,255,57,.36); background:rgba(22,31,19,.82); color:#b8ff39; box-shadow:inset 0 0 0 1px rgba(184,255,57,.18),0 0 20px rgba(184,255,57,.08); }
  .browser-sidebar-icon { display:grid; place-items:center; width:27px; height:27px; }
  .browser-sidebar-icon svg { width:27px; height:27px; }
+ .browser-sidebar-icon img { display:block; width:27px; height:27px; object-fit:contain; }
  .browser-main { height:100%; margin-left:240px; }
  .browser-main > .safari-page-shell { height:100%; }
  .browser-main > .safari-page-shell { padding:0; }
@@ -272,6 +273,7 @@
  .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; background:transparent; color:#858c82; cursor:pointer; }
  .safari-bottom-menu button span { display:grid; place-items:center; width:24px; height:24px; line-height:1; }
  .safari-bottom-menu button svg { display:block; width:24px; height:24px; }
+ .safari-bottom-menu button img { display:block; width:24px; height:24px; object-fit:contain; }
  .safari-bottom-menu button small { font:600 11px 'DM Sans'; }
  .safari-bottom-menu button.active { background:#252c21; color:#d4f06a; }
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
