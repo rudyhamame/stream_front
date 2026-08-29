@@ -213,6 +213,8 @@
  .web-player .android-video-frame { width:min(1200px,100%); justify-self:center; }
  .web-player .android-player-header,.web-player .android-player-controls { width:min(1200px,100%); justify-self:center; }
  @media(max-width:700px){.web-player{padding:20px}.web-player .android-player-control-row{flex-wrap:wrap}.web-player .android-player-control-row span{width:100%;margin:0 0 4px}.web-player .android-player-control-row button{flex:1}}
+ /* The topbar has no separator; keep this override after all responsive rules. */
+ .topbar,.safari-app-mode .topbar { border-bottom:0; }
  .linked-device-list strong,.linked-device-list small { display:block; }
  .linked-device-list small { margin-top:2px; color:#8f958c; font-size:11px; }
  @media(max-width:700px){.linked-devices{align-items:flex-start;flex-direction:column}.linked-device-list{justify-content:flex-start}}
