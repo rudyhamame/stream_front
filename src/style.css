@@ -209,7 +209,7 @@
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
 .safari-library-page { display:flex; width:100%; max-width:none; flex-direction:column; margin-right:0; margin-left:0; }
-.live-tv-browser { display:grid; grid-template-columns:minmax(300px,.75fr) minmax(560px,1.75fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; }
+.live-tv-browser { display:grid; grid-template-columns:minmax(560px,1.75fr) minmax(300px,.75fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; }
 .live-tv-preview { display:flex; min-width:0; flex-direction:column; align-self:start; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.78); box-shadow:0 22px 52px rgba(0,0,0,.38); }
 .live-tv-preview { order:2; }
 .live-tv-screen { position:relative; display:grid; width:100%; aspect-ratio:16/9; overflow:hidden; background:#000; }
