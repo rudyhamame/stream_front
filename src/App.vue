@@ -1582,7 +1582,7 @@ onMounted(async () => {
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div>
+          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div>
           <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
@@ -1608,7 +1608,6 @@ onMounted(async () => {
           <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
       </article>
-      <nav v-if="safariPage === 'playlist'" class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span><button type="button" class="source-action" @click="categoryManagerOpen = !categoryManagerOpen">{{ categoryManagerOpen ? 'Close categories' : 'Manage categories' }}</button></div></div>
