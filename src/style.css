@@ -341,9 +341,6 @@
  @keyframes android-player-spin { to { transform:rotate(360deg); } }
  .android-player-overlay { position:absolute; inset:0; z-index:3; opacity:0; pointer-events:none; transition:opacity .25s ease; background:linear-gradient(to bottom, #0008 0%, transparent 28%, transparent 58%, #000b 100%); }
  .android-player-overlay.visible { opacity:1; pointer-events:auto; }
- @media(hover:hover) and (pointer:fine) {
-   .android-video-frame:hover .android-player-overlay,.android-video-frame:focus-within .android-player-overlay { opacity:1; pointer-events:auto; }
- }
  .android-fullscreen-control { position:absolute; top:14px; right:14px; z-index:6; display:grid; place-items:center; width:40px; height:40px; border:1px solid #d7f35e99; border-radius:8px; background:#11121080; color:#f3f4f1; cursor:pointer; pointer-events:auto; touch-action:manipulation; }
  .android-fullscreen-control svg { width:22px; height:22px; }
  .android-seek-preview { position:absolute; bottom:52px; left:50%; z-index:4; display:grid; width:150px; height:96px; transform:translateX(-50%); overflow:hidden; border:1px solid #d4f06a99; border-radius:8px; background:#080a08; box-shadow:0 5px 18px #000b; pointer-events:none; }

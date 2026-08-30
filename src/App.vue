@@ -517,13 +517,18 @@ function clearAndroidControlsTimer() {
 
 function scheduleAndroidControlsHide() {
   clearAndroidControlsTimer();
-  if (!androidPlaying.value || androidPlayerError.value) return;
+  if (!androidPlaying.value || androidBuffering.value || androidPlayerError.value) return;
   androidControlsTimer = setTimeout(() => { androidControlsVisible.value = false; }, 3600);
 }
 
 function showAndroidControls() {
   androidControlsVisible.value = true;
   scheduleAndroidControlsHide();
+}
+
+function handleAndroidPlayerPointerMove(event) {
+  if (!androidNowPlaying.value || !event.target?.closest?.(".android-video-frame")) return;
+  showAndroidControls();
 }
 
 function toggleAndroidControls(event) {
@@ -898,6 +903,7 @@ onBeforeUnmount(() => {
   if (androidHls) androidHls.destroy();
   clearAndroidRecoveryTimer();
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  document.removeEventListener("pointermove", handleAndroidPlayerPointerMove);
   unlockAndroidOrientation();
 });
 
@@ -908,6 +914,7 @@ function handleFullscreenChange() {
 }
 
 document.addEventListener("fullscreenchange", handleFullscreenChange);
+document.addEventListener("pointermove", handleAndroidPlayerPointerMove, { passive: true });
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
