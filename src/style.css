@@ -326,10 +326,7 @@
  .android-player-close { margin-left:auto; color:#aeb7a0; font-size:24px; }
  .android-video-frame { position:relative; display:grid; place-items:center; align-self:start; width:100%; height:min(56.25vw, calc(100dvh - 250px)); aspect-ratio:16/9; min-height:0; overflow:hidden; border:1px solid #394236; background:#080a08; }
  .android-video-frame video { width:100%; height:100%; object-fit:contain; background:#080a08; }
- .android-video-placeholder { position:absolute; inset:0; z-index:1; display:grid; place-items:center; align-content:center; gap:12px; padding:24px; background:#191d17; color:#f3f4f1; text-align:center; }
- .android-placeholder-mark { display:grid; place-items:center; width:74px; height:74px; border-radius:20px; background:#d4f06a; color:#111210; font:700 30px 'Space Grotesk'; letter-spacing:-.08em; }
- .android-video-placeholder strong { color:#d4f06a; font:600 20px 'Space Grotesk'; }
- .android-video-placeholder small { max-width:80%; overflow:hidden; color:#aeb7a0; text-overflow:ellipsis; white-space:nowrap; }
+ .android-video-placeholder { position:absolute; inset:0; z-index:1; background:#000; }
  .android-buffering { position:absolute; z-index:2; top:50%; left:50%; width:38px; height:38px; margin:-19px; border:3px solid #394236; border-top-color:#d4f06a; border-radius:50%; animation:android-player-spin .8s linear infinite; }
  @keyframes android-player-spin { to { transform:rotate(360deg); } }
  .android-player-overlay { position:absolute; inset:0; z-index:3; opacity:0; pointer-events:none; transition:opacity .25s ease; background:linear-gradient(to bottom, #0008 0%, transparent 28%, transparent 58%, #000b 100%); }
