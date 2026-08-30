@@ -227,9 +227,10 @@
 .live-tv-on-air { flex:0 0 auto; padding:5px 8px; background:#b8ff39; color:#10150d; font:800 10px 'Space Grotesk'; letter-spacing:.08em; }
 .live-tv-channel-list { display:flex; min-width:0; min-height:0; flex-direction:column; overflow:hidden; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.72); }
 .live-tv-channel-list { order:1; }
-.live-tv-table-body { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#46503f transparent; }
+.live-tv-table-body { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:none; -ms-overflow-style:none; }
+.live-tv-table-body::-webkit-scrollbar { display:none; width:0; height:0; }
 .live-tv-table-row { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(155px,1fr) 90px 100px minmax(180px,1.2fr) 75px 90px 70px 125px 74px; align-items:center; gap:12px; width:100%; min-width:1220px; }
-.live-tv-channel-list > header { flex:0 0 auto; min-height:42px; padding:0 13px; border-bottom:1px solid rgba(255,255,255,.08); color:#b8ff39; font:700 10px 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
+.live-tv-table-header { min-height:42px; padding:0 13px; border-bottom:1px solid rgba(255,255,255,.08); color:#b8ff39; font:700 10px 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
 button.live-tv-table-row { min-height:64px; padding:7px 13px; border:0; border-bottom:1px solid rgba(255,255,255,.07); background:transparent; color:#92998b; cursor:pointer; font:500 12px 'DM Sans'; text-align:left; transition:background .15s ease,color .15s ease; }
 button.live-tv-table-row > span:not(.live-tv-channel),button.live-tv-table-row > code { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 button.live-tv-table-row > code { color:#b8ff39; font:11px 'DM Sans'; }
