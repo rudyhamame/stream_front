@@ -1497,10 +1497,6 @@ onMounted(async () => {
 <template>
   <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': browserApp && !androidApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
-      <div class="login-art" aria-hidden="true">
-        <img class="login-rh-art" src="/login/rh-login-art.png" alt="">
-        <div class="login-art-fade"></div>
-      </div>
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
         <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV PLAYER</span></div>
         <p v-if="pairCode" class="eyebrow">ROKU LIBRARY</p>
