@@ -416,6 +416,10 @@ const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
 const savedCount = computed(() => savedItems.value.length);
+function compareCatalogTitles(a, b) {
+  return String(a?.title || '').trim().localeCompare(String(b?.title || '').trim(), undefined, { numeric: true, sensitivity: 'base' })
+    || String(a?.key || '').localeCompare(String(b?.key || ''));
+}
 const visibleItems = computed(() => {
   const filtered = items.value.filter(item => selectionFilter.value === "all"
     || (selectionFilter.value === "selected" && selectedKeys.value.includes(item.key))
@@ -423,7 +427,7 @@ const visibleItems = computed(() => {
   return [...filtered].sort((a, b) => {
     if (sortBy.value === "recent") return String(b.added || "").localeCompare(String(a.added || ""));
     if (sortBy.value === "category") return String(a.categoryId || "").localeCompare(String(b.categoryId || "")) || a.title.localeCompare(b.title);
-    return String(a.title || "").localeCompare(String(b.title || ""), undefined, { numeric: true, sensitivity: "base" });
+    return compareCatalogTitles(a, b);
   });
 });
 const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
@@ -1309,7 +1313,8 @@ async function loadCatalog(reset = true) {
     const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     const nextItems = data.items || [];
-    items.value = reset ? nextItems : [...items.value, ...nextItems.filter(item => !items.value.some(existing => existing.key === item.key))];
+    const mergedItems = reset ? nextItems : [...items.value, ...nextItems.filter(item => !items.value.some(existing => existing.key === item.key))];
+    items.value = mergedItems.sort(compareCatalogTitles);
     rememberItems(nextItems);
     categories.value = data.categories || [];
     languages.value = data.languages || [];
@@ -1582,7 +1587,7 @@ onMounted(async () => {
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label></div>
+          <div class="android-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
             <section class="browser-playlist-preview" aria-label="Playlist preview">
