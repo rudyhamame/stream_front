@@ -209,8 +209,9 @@
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
 .safari-library-page { display:flex; width:100%; max-width:none; flex-direction:column; margin-right:0; margin-left:0; }
-.live-tv-browser { display:grid; grid-template-columns:minmax(440px,1.35fr) minmax(360px,.85fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; }
+.live-tv-browser { display:grid; grid-template-columns:minmax(300px,.75fr) minmax(560px,1.75fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; }
 .live-tv-preview { display:flex; min-width:0; flex-direction:column; align-self:start; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.78); box-shadow:0 22px 52px rgba(0,0,0,.38); }
+.live-tv-preview { order:2; }
 .live-tv-screen { position:relative; display:grid; width:100%; aspect-ratio:16/9; overflow:hidden; background:#000; }
 .live-tv-screen video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
 .live-tv-placeholder { position:absolute; inset:0; display:grid; z-index:1; place-content:center; gap:9px; color:#8d9588; text-align:center; }
@@ -225,6 +226,7 @@
 .live-tv-preview > footer small { margin-top:3px; color:#92998b; font-size:12px; }
 .live-tv-on-air { flex:0 0 auto; padding:5px 8px; background:#b8ff39; color:#10150d; font:800 10px 'Space Grotesk'; letter-spacing:.08em; }
 .live-tv-channel-list { display:flex; min-width:0; min-height:0; flex-direction:column; overflow:hidden; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.72); }
+.live-tv-channel-list { order:1; }
 .live-tv-table-body { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#46503f transparent; }
 .live-tv-table-row { display:grid; grid-template-columns:minmax(220px,1.5fr) minmax(155px,1fr) 90px 100px minmax(180px,1.2fr) 75px 90px 70px 125px 74px; align-items:center; gap:12px; width:100%; min-width:1220px; }
 .live-tv-channel-list > header { flex:0 0 auto; min-height:42px; padding:0 13px; border-bottom:1px solid rgba(255,255,255,.08); color:#b8ff39; font:700 10px 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
