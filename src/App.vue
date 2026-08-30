@@ -16,7 +16,17 @@ const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend
 // service lacks the Library category routes loaded immediately after login,
 // causing a misleading "Request failed (404)" despite successful auth.
 const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
+const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-browser-streamer.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
+
+function browserPlaybackUrl(raw) {
+  const target = new URL(raw, base);
+  if (target.pathname.startsWith("/api/xtream/hls/")) {
+    target.protocol = new URL(browserStreamer).protocol;
+    target.host = new URL(browserStreamer).host;
+  }
+  return target.toString();
+}
 const androidApp = ref(Boolean(window.Capacitor?.isNativePlatform?.() && window.Capacitor.getPlatform?.() === "android"));
 // All browser sessions use the app-style shell; Android keeps its native branch.
 const browserApp = ref(!androidApp.value);
@@ -408,7 +418,7 @@ const androidPlayerSrc = computed(() => {
     : "";
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
-  const target = new URL(raw, base);
+  const target = new URL(browserPlaybackUrl(raw));
   if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
 });
