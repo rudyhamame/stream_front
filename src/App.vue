@@ -1108,6 +1108,7 @@ async function selectWeatherLocation(slot, selectedIndex) {
 
 let catalogRequestId = 0;
 let catalogController = null;
+const playlistRequestSize = 20;
 async function loadCatalog(reset = true) {
   if (!sourceId.value) return;
   if (!reset && (loading.value || loadingMore.value || !hasMoreCatalog.value)) return;
@@ -1126,7 +1127,7 @@ async function loadCatalog(reset = true) {
   else loadingMore.value = true;
   message.value = "";
   try {
-    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(requestedPage), limit: "10" });
+    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: query.value.trim(), page: String(requestedPage), limit: String(playlistRequestSize) });
     const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     const nextItems = data.items || [];
@@ -1150,7 +1151,8 @@ async function loadCatalog(reset = true) {
 
 function handlePlaylistScroll(event) {
   const element = event.currentTarget;
-  if (element.scrollTop + element.clientHeight >= element.scrollHeight - 80) loadCatalog(false);
+  const distanceFromLastItem = element.scrollHeight - element.clientHeight - element.scrollTop;
+  if (distanceFromLastItem <= 32) loadCatalog(false);
 }
 
 async function loadSaved() {
@@ -1366,8 +1368,8 @@ onMounted(async () => {
     </section>
     <section v-else-if="browserApp" class="browser-app-shell">
       <aside class="browser-sidebar">
-        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
-        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span>{{ item.label }}</span></button></nav>
+        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"></div>
+        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
