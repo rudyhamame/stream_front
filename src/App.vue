@@ -90,6 +90,10 @@ function handleSafariRailScroll(event, railKey) {
   }, 180));
 }
 const androidVideo = ref(null);
+const liveTvVideo = ref(null);
+const liveTvSelected = ref(null);
+const liveTvLoading = ref(false);
+const liveTvError = ref("");
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
 const androidMuted = ref(false);
@@ -109,6 +113,8 @@ const androidFullscreen = ref(false);
 const androidPreviewUrl = ref("");
 const androidPreviewTime = ref(-1);
 let androidHls = null;
+let liveTvHls = null;
+let liveTvRequestId = 0;
 let androidRecoveryTimer = null;
 let androidSeekTimer = null;
 let androidPreviewTimer = null;
@@ -420,6 +426,16 @@ const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", 
 const libraryRails = computed(() => {
   return managedCategoriesForTab.value.filter(category => category.items.length).map(category => ({ id: category.id, name: category.name, items: category.items }));
 });
+const liveTvChannels = computed(() => {
+  const channels = new Map();
+  for (const category of managedLibraryCategories.value.filter(entry => entry.kind === "channel")) {
+    for (const item of category.items || []) {
+      const key = item.libraryKey || `${item.sourceId || "source"}:${item.id}`;
+      if (!channels.has(key)) channels.set(key, { ...item, categoryName: category.name });
+    }
+  }
+  return [...channels.values()];
+});
 
 const androidPlayerSrc = computed(() => {
   const item = androidNowPlaying.value;
@@ -727,6 +743,72 @@ async function playWebMovie(item) {
   await configureMoviePlayback(0);
 }
 
+function stopLiveTvPreview({ clearSelection = false } = {}) {
+  liveTvRequestId += 1;
+  if (liveTvHls) {
+    liveTvHls.destroy();
+    liveTvHls = null;
+  }
+  const video = liveTvVideo.value;
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  liveTvLoading.value = false;
+  if (clearSelection) {
+    liveTvSelected.value = null;
+    liveTvError.value = "";
+  }
+}
+
+async function selectLiveTvChannel(item) {
+  stopLiveTvPreview();
+  const requestId = liveTvRequestId;
+  liveTvSelected.value = item;
+  liveTvLoading.value = true;
+  liveTvError.value = "";
+  try {
+    if (!item?.sourceId || !item?.id) throw new Error("This channel does not have a playable stream.");
+    const authorization = await request(`/api/xtream/stream-ticket/${encodeURIComponent(item.sourceId)}/channel/${encodeURIComponent(item.id)}`);
+    if (requestId !== liveTvRequestId) return;
+    if (!authorization.ticket) throw new Error("Could not authorize this channel.");
+    const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
+    const target = new URL(browserPlaybackUrl(`/api/xtream/hls/${encodeURIComponent(item.sourceId)}/channel/${encodeURIComponent(item.id)}/master.m3u8${extension}`));
+    target.searchParams.set("streamTicket", authorization.ticket);
+    await nextTick();
+    if (requestId !== liveTvRequestId) return;
+    const video = liveTvVideo.value;
+    if (!video) throw new Error("The TV preview is unavailable.");
+    const startPlayback = async () => {
+      try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
+    };
+    if (Hls.isSupported()) {
+      liveTvHls = new Hls({ enableWorker: true, lowLatencyMode: true, liveSyncDurationCount: 3 });
+      liveTvHls.on(Hls.Events.MEDIA_ATTACHED, () => liveTvHls?.loadSource(target.toString()));
+      liveTvHls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+      liveTvHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        liveTvLoading.value = false;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) liveTvHls?.recoverMediaError();
+        else liveTvError.value = "This channel is unavailable right now.";
+      });
+      liveTvHls.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = target.toString();
+      await startPlayback();
+    } else throw new Error("Live TV playback is not supported in this browser.");
+  } catch (error) {
+    if (requestId !== liveTvRequestId) return;
+    liveTvLoading.value = false;
+    liveTvError.value = error.message || "This channel is unavailable right now.";
+  }
+}
+
+watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
+  if (pageName !== "channels" || tab !== "channel") stopLiveTvPreview({ clearSelection: true });
+});
+
 async function lockAndroidLandscape() {
   try { await ScreenOrientation.lock({ orientation: "landscape" }); } catch { /* Browser preview may not expose orientation locking. */ }
 }
@@ -901,6 +983,7 @@ async function fullscreenAndroidMovie(event) {
 
 onBeforeUnmount(() => {
   if (androidHls) androidHls.destroy();
+  stopLiveTvPreview({ clearSelection: true });
   clearAndroidRecoveryTimer();
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
   document.removeEventListener("pointermove", handleAndroidPlayerPointerMove);
@@ -1405,7 +1488,27 @@ onMounted(async () => {
             </article>
           </div>
         </section>
-        <div v-if="libraryRails.length" class="safari-library-rails">
+        <div v-if="safariLibraryTab === 'channel' && liveTvChannels.length" class="live-tv-browser">
+          <section class="live-tv-preview" aria-label="Live TV preview">
+            <div class="live-tv-screen">
+              <video ref="liveTvVideo" controls playsinline @loadstart="liveTvLoading = true" @playing="liveTvLoading = false" @waiting="liveTvLoading = true" @stalled="liveTvLoading = true" @error="liveTvLoading = false; liveTvError = 'This channel is unavailable right now.'"></video>
+              <div v-if="!liveTvSelected" class="live-tv-placeholder"><span>LIVE TV</span><strong>Select a channel to preview it</strong></div>
+              <div v-else-if="liveTvLoading" class="live-tv-loader" aria-label="Loading channel"></div>
+              <p v-if="liveTvError" class="live-tv-error">{{ liveTvError }}</p>
+            </div>
+            <footer><span class="live-tv-on-air">LIVE</span><div><strong>{{ liveTvSelected?.title || 'TV preview' }}</strong><small>{{ liveTvSelected ? liveTvSelected.categoryName : 'Choose a channel from the table' }}</small></div></footer>
+          </section>
+          <section class="live-tv-channel-list" aria-label="Live TV channels">
+            <header class="live-tv-table-row"><span>Channel</span><span>Category</span><span>Status</span></header>
+            <div class="live-tv-table-body">
+              <button v-for="channel in liveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :class="{selected:(liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`)}" @click="selectLiveTvChannel(channel)">
+                <span class="live-tv-channel"><span class="live-tv-channel-logo"><img v-if="channel.logo" :src="imageUrl(channel.logo)" :alt="channel.title"><b v-else>TV</b></span><strong>{{ channel.title }}</strong></span>
+                <span>{{ channel.categoryName }}</span><span>{{ (liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`) ? 'Playing' : 'Preview' }}</span>
+              </button>
+            </div>
+          </section>
+        </div>
+        <div v-else-if="safariLibraryTab !== 'channel' && libraryRails.length" class="safari-library-rails">
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">

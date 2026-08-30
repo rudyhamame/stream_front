@@ -208,7 +208,34 @@
  .browser-playlist-status.is-available { border-color:rgba(174,183,160,.28); background:rgba(174,183,160,.08); color:#b5bdae; }
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
-.safari-library-page { display:flex; flex-direction:column; }
+.safari-library-page { display:flex; width:100%; max-width:none; flex-direction:column; margin-right:0; margin-left:0; }
+.live-tv-browser { display:grid; grid-template-columns:minmax(440px,1.35fr) minmax(360px,.85fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; }
+.live-tv-preview { display:flex; min-width:0; flex-direction:column; align-self:start; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.78); box-shadow:0 22px 52px rgba(0,0,0,.38); }
+.live-tv-screen { position:relative; display:grid; width:100%; aspect-ratio:16/9; overflow:hidden; background:#000; }
+.live-tv-screen video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; }
+.live-tv-placeholder { position:absolute; inset:0; display:grid; z-index:1; place-content:center; gap:9px; color:#8d9588; text-align:center; }
+.live-tv-placeholder span { color:#b8ff39; font:700 12px 'Space Grotesk'; letter-spacing:.14em; }
+.live-tv-placeholder strong { color:#e7ebdf; font:600 18px 'Space Grotesk'; }
+.live-tv-loader { position:absolute; z-index:2; top:50%; left:50%; width:38px; height:38px; margin:-19px; border:3px solid #394236; border-top-color:#b8ff39; border-radius:50%; animation:android-player-spin .8s linear infinite; }
+.live-tv-error { position:absolute; z-index:3; right:18px; bottom:18px; left:18px; margin:0; padding:10px 13px; background:rgba(9,12,9,.9); color:#ff9d8d; font-size:13px; text-align:center; }
+.live-tv-preview > footer { display:flex; align-items:center; gap:12px; min-height:68px; padding:11px 15px; }
+.live-tv-preview > footer div { min-width:0; }
+.live-tv-preview > footer strong,.live-tv-preview > footer small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.live-tv-preview > footer strong { color:#f3f4ef; font:600 15px 'Space Grotesk'; }
+.live-tv-preview > footer small { margin-top:3px; color:#92998b; font-size:12px; }
+.live-tv-on-air { flex:0 0 auto; padding:5px 8px; background:#b8ff39; color:#10150d; font:800 10px 'Space Grotesk'; letter-spacing:.08em; }
+.live-tv-channel-list { display:flex; min-width:0; min-height:0; flex-direction:column; overflow:hidden; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.72); }
+.live-tv-table-body { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#46503f transparent; }
+.live-tv-table-row { display:grid; grid-template-columns:minmax(190px,1fr) minmax(95px,.55fr) 74px; align-items:center; gap:12px; width:100%; min-width:0; }
+.live-tv-channel-list > header { flex:0 0 auto; min-height:42px; padding:0 13px; border-bottom:1px solid rgba(255,255,255,.08); color:#b8ff39; font:700 10px 'Space Grotesk'; letter-spacing:.08em; text-transform:uppercase; }
+button.live-tv-table-row { min-height:64px; padding:7px 13px; border:0; border-bottom:1px solid rgba(255,255,255,.07); background:transparent; color:#92998b; cursor:pointer; font:500 12px 'DM Sans'; text-align:left; transition:background .15s ease,color .15s ease; }
+button.live-tv-table-row:hover,button.live-tv-table-row:focus-visible { background:rgba(184,255,57,.07); color:#dce4d5; }
+button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff39; }
+.live-tv-channel { display:flex; align-items:center; gap:10px; min-width:0; }
+.live-tv-channel strong { overflow:hidden; color:#f3f4ef; font:600 13px 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
+.live-tv-channel-logo { display:grid; flex:0 0 48px; place-items:center; width:48px; height:42px; background:#111610; }
+.live-tv-channel-logo img { max-width:44px; max-height:38px; object-fit:contain; }
+.live-tv-channel-logo b { color:#b8ff39; font:700 11px 'Space Grotesk'; }
 .library-heading-actions { display:flex; align-items:center; gap:12px; }
 .library-category-manager { display:flex; flex:0 0 auto; max-height:54vh; flex-direction:column; gap:14px; margin-bottom:20px; padding:18px; overflow:auto; border:1px solid rgba(184,255,57,.2); border-radius:12px; background:rgba(8,12,8,.9); }
 .library-category-manager > header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
@@ -323,7 +350,7 @@
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
  @media(prefers-reduced-motion:reduce){.safari-library-rail-track.is-scrolling-left>button,.safari-library-rail-track.is-scrolling-right>button{animation:none}}
  @media(max-width:700px){
-   .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:13px}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .android-playlist-source{grid-template-columns:1fr auto;gap:8px}.safari-playlist-page .android-playlist-source>span{grid-column:1/-1}.safari-playlist-page .android-playlist-source select{width:100%;min-width:0}.safari-playlist-page .android-playlist-source .android-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}
+   .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:13px}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .android-playlist-source{grid-template-columns:1fr auto;gap:8px}.safari-playlist-page .android-playlist-source>span{grid-column:1/-1}.safari-playlist-page .android-playlist-source select{width:100%;min-width:0}.safari-playlist-page .android-playlist-source .android-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}.live-tv-browser{grid-template-columns:1fr;overflow:auto;padding-bottom:90px}.live-tv-preview{align-self:stretch}.live-tv-channel-list{min-height:420px}.live-tv-table-row{grid-template-columns:minmax(150px,1fr) 90px 64px}
  }
  .android-player { position:fixed; inset:0; z-index:20; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:24px 22px max(24px, env(safe-area-inset-bottom)); background:radial-gradient(ellipse at center,#181b16 0%,#0c0e0c 66%,#050605 100%); }
  .android-player:not(.is-fullscreen) { grid-template-rows:auto minmax(0,1fr); align-content:start; gap:10px; overflow:hidden; }
