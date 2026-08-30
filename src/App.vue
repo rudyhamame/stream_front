@@ -104,6 +104,7 @@ const androidControlsVisible = ref(true);
 const androidQuality = ref("Auto");
 const androidPlayerError = ref("");
 const androidStreamTicket = ref("");
+const androidForceHls = ref(false);
 const androidFullscreen = ref(false);
 const androidPreviewUrl = ref("");
 const androidPreviewTime = ref(-1);
@@ -419,12 +420,13 @@ const androidPlayerSrc = computed(() => {
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
-  const fallback = playableSourceId && item.id
-    ? (playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
+  const generated = playableSourceId && item.id
+    ? (!androidForceHls.value && playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  const raw = item.playbackUrl || item.url || fallback;
+  // Prefer the generated direct VOD route over stale catalog playback URLs.
+  const raw = generated || item.playbackUrl || item.url;
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (target.origin === new URL(browserStreamer).origin && androidStreamTicket.value) target.searchParams.set("streamTicket", androidStreamTicket.value);
@@ -552,6 +554,15 @@ function clearAndroidRecoveryTimer() {
 
 function handleAndroidVideoError() {
   if (!androidNowPlaying.value) return;
+  const failedSource = androidPlayerSrc.value;
+  if (failedSource && !isHlsPlaybackUrl(failedSource) && !androidForceHls.value) {
+    androidForceHls.value = true;
+    androidPlaybackRetryCount.value = 0;
+    androidBuffering.value = true;
+    showAndroidControls();
+    configureMoviePlayback(androidCurrentTime.value);
+    return;
+  }
   // A WebView can emit a media error while HLS.js is recovering a segment.
   // Keep the player alive and show the final error only after retries fail.
   if (androidPlaybackRetryCount.value < 3) {
@@ -597,8 +608,15 @@ function movieStreamUrl(startSeconds = 0) {
   const source = androidPlayerSrc.value;
   if (!source) return "";
   const target = new URL(source);
-  if (startSeconds > 0) target.searchParams.set("start", String(Math.floor(startSeconds)));
+  if (startSeconds > 0 && isHlsPlaybackUrl(target.toString())) target.searchParams.set("start", String(Math.floor(startSeconds)));
   return target.toString();
+}
+
+function isHlsPlaybackUrl(source) {
+  try {
+    const target = new URL(source);
+    return target.pathname.includes('/api/xtream/hls/') || target.pathname.endsWith('.m3u8');
+  } catch { return String(source || '').includes('/api/xtream/hls/'); }
 }
 
 async function configureMoviePlayback(startSeconds = 0) {
@@ -618,7 +636,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   video.style.opacity = "0";
   video.load();
   try {
-    const directPlayback = !source.includes('/api/xtream/hls/');
+    const directPlayback = !isHlsPlaybackUrl(source);
     if (directPlayback) {
       video.src = source;
       await video.play();
@@ -656,6 +674,7 @@ async function configureMoviePlayback(startSeconds = 0) {
 
 async function playAndroidMovie(item) {
   androidStreamTicket.value = "";
+  androidForceHls.value = false;
   androidNowPlaying.value = item;
   androidFullscreen.value = false;
   androidPlaying.value = false;
@@ -677,6 +696,7 @@ async function playAndroidMovie(item) {
 
 async function playWebMovie(item) {
   androidStreamTicket.value = "";
+  androidForceHls.value = false;
   androidNowPlaying.value = item;
   androidPlaying.value = false;
   androidMuted.value = false;
@@ -799,6 +819,19 @@ async function restartAndroidAt(target) {
   androidSeekTimer = null;
   if (!androidNowPlaying.value) return;
   androidPendingSeek.value = -1;
+  const directSource = androidPlayerSrc.value;
+  if (directSource && !isHlsPlaybackUrl(directSource) && androidVideo.value) {
+    androidPlaybackOffset.value = 0;
+    androidCurrentTime.value = target;
+    androidPlayerError.value = "";
+    androidBuffering.value = true;
+    showAndroidControls();
+    try {
+      androidVideo.value.currentTime = target;
+      await androidVideo.value.play();
+    } catch { handleAndroidVideoError(); }
+    return;
+  }
   androidPlaybackOffset.value = target;
   androidCurrentTime.value = target;
   androidPlayerError.value = "";
