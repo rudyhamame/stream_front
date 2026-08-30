@@ -419,7 +419,12 @@ const androidPlayerSrc = computed(() => {
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
-  if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
+  // Browser media is served by the dedicated streamer. The device token is
+  // only valid for authenticated requests to the Library API and must not be
+  // attached to cross-origin HLS manifests.
+  if (deviceToken.value && target.origin === new URL(base).origin) {
+    target.searchParams.set("deviceToken", deviceToken.value);
+  }
   return target.toString();
 });
 
