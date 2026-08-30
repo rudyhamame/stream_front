@@ -432,7 +432,15 @@ const androidPlayerSrc = computed(() => {
 
 async function loadStreamTicket(item) {
   if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
-  const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || "movie")}/${encodeURIComponent(item.id)}`);
+  let playable = item;
+  if (item.kind === "series") {
+    const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
+    const episode = details.episodes?.[0];
+    if (!episode?.id) throw new Error("This series has no playable episodes.");
+    playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4" };
+    androidNowPlaying.value = playable;
+  }
+  const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
   androidStreamTicket.value = data.ticket || "";
   if (!androidStreamTicket.value) throw new Error("Could not authorize this stream.");
 }
