@@ -1378,7 +1378,7 @@ onMounted(async () => {
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">PLAYLIST</p><h1>Manage playlist</h1></div><span>{{ selectedCount }} selected</span></div>
+        <div class="safari-compact-heading"><div><h1>Manage playlist</h1></div><span>{{ selectedCount }} selected</span></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
           <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected</button></div>
@@ -1391,7 +1391,7 @@ onMounted(async () => {
       <nav v-if="safariPage === 'playlist'" class="android-playlist-tabs safari-playlist-tabs" aria-label="Playlist content type"><button v-for="value in ['series','movie','channel']" :key="value" type="button" :class="{active:kind === value}" @click="chooseKind(value)">{{ typeLabel(value) }} <small>{{ typeCounts[value] || 0 }}</small></button></nav>
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">{{ safariLibraryTab === 'channel' ? 'LIVE TV' : typeLabel(safariLibraryTab).toUpperCase() }}</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span><button type="button" class="source-action" @click="categoryManagerOpen = !categoryManagerOpen">{{ categoryManagerOpen ? 'Close categories' : 'Manage categories' }}</button></div></div>
+        <div class="safari-compact-heading"><div><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span><button type="button" class="source-action" @click="categoryManagerOpen = !categoryManagerOpen">{{ categoryManagerOpen ? 'Close categories' : 'Manage categories' }}</button></div></div>
         <section v-if="categoryManagerOpen" class="library-category-manager">
           <header><div><p class="eyebrow">ROKU RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control both this Library and Roku.</span></header>
           <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
@@ -1417,7 +1417,7 @@ onMounted(async () => {
       </article>
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">SETTINGS</p><h1>Settings</h1></div></div>
+        <div class="safari-compact-heading"><div><h1>Settings</h1></div></div>
         <div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
         <section class="weather-settings">
           <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
