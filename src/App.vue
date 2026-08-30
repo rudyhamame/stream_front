@@ -178,14 +178,14 @@ async function loadPairingInfo() {
     pairing.value = false;
     await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
     return;
   }
   if (data.authenticated) {
     pairing.value = false;
     await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   }
 }
 
@@ -200,7 +200,7 @@ async function claimPairing() {
     pairing.value = false;
     await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
@@ -218,7 +218,7 @@ async function signIn() {
     pairing.value = false;
     await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
@@ -379,6 +379,13 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
+const weatherLocations = ref([null, null]);
+const weatherQueries = ref(["", ""]);
+const weatherResults = ref([[], []]);
+const weatherSearching = ref([false, false]);
+const weatherMessage = ref("");
+const weatherMessageType = ref("info");
+const weatherSearchTimers = [null, null];
 const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername = ref(""), sourcePassword = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
@@ -1035,6 +1042,63 @@ async function loadLinkedDevices() {
   linkedDevices.value = data.items || [];
 }
 
+async function loadWeatherSettings() {
+  if (!deviceToken.value) return;
+  const data = await request("/api/account/weather-locations");
+  const locations = Array.isArray(data.locations) ? data.locations.slice(0, 2) : [];
+  while (locations.length < 2) locations.push(null);
+  weatherLocations.value = locations;
+  weatherQueries.value = locations.map(location => location?.label || "");
+}
+
+function searchWeatherLocations(slot) {
+  const index = slot - 1;
+  window.clearTimeout(weatherSearchTimers[index]);
+  weatherResults.value[index] = [];
+  const query = String(weatherQueries.value[index] || "").trim();
+  if (query.length < 2) {
+    weatherSearching.value[index] = false;
+    return;
+  }
+  weatherSearching.value[index] = true;
+  weatherSearchTimers[index] = window.setTimeout(async () => {
+    try {
+      const language = document.documentElement.lang === "ar" ? "ar" : "en";
+      const data = await request(`/api/roku/weather-locations/search?q=${encodeURIComponent(query)}&language=${language}`);
+      weatherResults.value[index] = data.locations || [];
+    } catch (error) {
+      weatherMessageType.value = "error";
+      weatherMessage.value = error.message;
+    } finally {
+      weatherSearching.value[index] = false;
+    }
+  }, 350);
+}
+
+async function selectWeatherLocation(slot, selectedIndex) {
+  const index = slot - 1;
+  const location = weatherResults.value[index][Number(selectedIndex)];
+  if (!location) return;
+  const locations = [...weatherLocations.value];
+  locations[index] = location;
+  weatherLocations.value = locations;
+  weatherQueries.value[index] = location.label;
+  weatherResults.value[index] = [];
+  try {
+    const data = await request("/api/account/weather-locations", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ locations }),
+    });
+    weatherLocations.value = data.locations;
+    weatherMessageType.value = "success";
+    weatherMessage.value = `${location.label} saved for weather location ${slot}.`;
+  } catch (error) {
+    weatherMessageType.value = "error";
+    weatherMessage.value = error.message;
+  }
+}
+
 let catalogRequestId = 0;
 let catalogController = null;
 async function loadCatalog(reset = true) {
@@ -1207,7 +1271,7 @@ onMounted(async () => {
       return;
     }
     if (!deviceToken.value) return;
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices()]); watchLibraryRevision();
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]); watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
     }, 10_000);
@@ -1346,6 +1410,22 @@ onMounted(async () => {
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">SETTINGS</p><h1>Settings</h1></div></div>
         <div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
+        <section class="weather-settings">
+          <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
+          <div class="weather-location-grid">
+            <label v-for="slot in 2" :key="slot">
+              <span>Location {{ slot }}</span>
+              <input v-model="weatherQueries[slot - 1]" type="search" autocomplete="off" placeholder="Search city or postal code" @input="searchWeatherLocations(slot)">
+              <small v-if="weatherSearching[slot - 1]">Searching…</small>
+              <select v-if="weatherResults[slot - 1].length" value="" @change="selectWeatherLocation(slot, $event.target.value)">
+                <option value="" disabled>Select a location</option>
+                <option v-for="(location, resultIndex) in weatherResults[slot - 1]" :key="`${location.id}-${resultIndex}`" :value="resultIndex">{{ location.label }}</option>
+              </select>
+              <small v-else-if="weatherLocations[slot - 1]">Saved: {{ weatherLocations[slot - 1].label }}</small>
+            </label>
+          </div>
+          <p v-if="weatherMessage" :class="['weather-settings-message', `is-${weatherMessageType}`]">{{ weatherMessage }}</p>
+        </section>
         <section class="settings-playlists">
           <div class="settings-section-heading"><div><p class="eyebrow">PLAYLISTS</p><h2>Manage playlists</h2></div><span>{{ sources.length }} total</span></div>
           <form class="settings-playlist-form" @submit.prevent="saveSource">
