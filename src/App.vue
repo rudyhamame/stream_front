@@ -25,7 +25,7 @@ const api = path => `${base}${path}`;
 
 function browserPlaybackUrl(raw) {
   const target = new URL(raw, base);
-  if (target.pathname.startsWith("/api/xtream/hls/")) {
+  if (target.pathname.startsWith("/api/xtream/hls/") || target.pathname.startsWith("/api/xtream/play/")) {
     target.protocol = new URL(browserStreamer).protocol;
     target.host = new URL(browserStreamer).host;
   }
@@ -420,7 +420,9 @@ const androidPlayerSrc = computed(() => {
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
   const fallback = playableSourceId && item.id
-    ? `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`
+    ? (playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
+      ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
+      : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
@@ -616,7 +618,12 @@ async function configureMoviePlayback(startSeconds = 0) {
   video.style.opacity = "0";
   video.load();
   try {
-    if (Hls.isSupported()) {
+    const directPlayback = !source.includes('/api/xtream/hls/');
+    if (directPlayback) {
+      video.src = source;
+      await video.play();
+      androidPlaying.value = true;
+    } else if (Hls.isSupported()) {
       androidHls = new Hls({ enableWorker: true, lowLatencyMode: false });
       androidHls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
