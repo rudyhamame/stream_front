@@ -537,14 +537,8 @@ function onAndroidPause() {
 }
 
 function onAndroidWaiting() {
-  // Safari emits transient waiting/stalled events while an HLS segment is
-  // being fetched. Do not turn those normal gaps into a permanently visible
-  // spinner and control overlay once playback has already started.
-  if (androidPlaying.value) {
-    androidBuffering.value = false;
-    scheduleAndroidControlsHide();
-    return;
-  }
+  // Any waiting or stalled event means the player is loading media. Keep the
+  // loader visible until the media element reports that playback is ready.
   androidBuffering.value = true;
   showAndroidControls();
 }
