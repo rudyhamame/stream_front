@@ -199,6 +199,7 @@
  .browser-playlist-row .android-playlist-icon { width:54px; height:78px; flex:0 0 54px; }
  .browser-playlist-row .browser-item-poster.channel-logo { width:78px; height:64px; flex-basis:78px; overflow:visible; border-radius:0; background:transparent; }
  .browser-playlist-row .browser-item-poster.channel-logo img { width:auto; height:auto; max-width:78px; max-height:64px; border-radius:0; object-fit:contain; }
+ .channel-name-fallback { display:flex; width:100%; height:100%; align-items:center; justify-content:center; padding:7px; overflow:hidden; border:1px solid rgba(184,255,57,.32); border-radius:6px; background:radial-gradient(circle at 30% 20%,rgba(184,255,57,.2),transparent 48%),linear-gradient(145deg,#25331f,#111710); color:#efffdc; font:700 9px/1.2 'Space Grotesk'; letter-spacing:.02em; text-align:center; overflow-wrap:anywhere; }
  .browser-playlist-row .browser-item-poster { position:relative; overflow:hidden; background:#252c21; }
  .browser-playlist-row .browser-item-poster img { width:100%; height:100%; object-fit:cover; }
  .browser-playlist-row .browser-item-poster b { position:absolute; display:grid; place-items:center; inset:7px; border:1px solid rgba(212,240,106,.65); border-radius:50%; background:rgba(8,12,8,.78); color:#d4f06a; font-size:12px; }
@@ -259,6 +260,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .live-tv-channel strong { overflow:hidden; color:#f3f4ef; font:600 13px 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
 .live-tv-channel-logo { display:grid; flex:0 0 48px; place-items:center; width:48px; height:42px; background:#111610; }
 .live-tv-channel-logo img { max-width:44px; max-height:38px; object-fit:contain; }
+.live-tv-channel-logo .channel-name-fallback { padding:4px; border-radius:4px; font-size:7px; -webkit-line-clamp:3; }
 .live-tv-channel-logo b { color:#b8ff39; font:700 11px 'Space Grotesk'; }
 .safari-playlist-page .android-playlist-source select { width:100%; min-width:0; }
 .library-heading-actions { display:flex; align-items:center; gap:12px; }

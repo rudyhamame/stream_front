@@ -153,6 +153,7 @@ const passwordMessage = ref("");
 const passwordMessageType = ref("info");
 const scannerOpen = ref(false);
 const scannerError = ref("");
+const failedLogoUrls = ref(new Set());
 let qrScanner = null;
 let loginViewportFrame = null;
 let nativeKeyboardHeight = 0;
@@ -161,6 +162,11 @@ const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
 };
+function markLogoFailed(value) {
+  const url = String(value || '').trim();
+  if (!url || failedLogoUrls.value.has(url)) return;
+  failedLogoUrls.value = new Set([...failedLogoUrls.value, url]);
+}
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
@@ -1592,7 +1598,7 @@ onMounted(async () => {
             <div class="android-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll">
               <div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div>
               <div v-for="item in visibleItems" :key="item.key" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),previewing:playlistPreviewSelected?.key === item.key}" tabindex="0" role="button" @click="selectPlaylistPreview(item)" @keydown.enter="selectPlaylistPreview(item)">
-                <span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
+                <span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else-if="kind === 'channel'" class="channel-name-fallback">{{ item.title }}</span><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
                 <code>{{ item.id }}</code>
                 <button type="button" class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'" :disabled="busy || savedKeys.has(item.key)" @click.stop="addPlaylistItem(item)">{{ savedKeys.has(item.key) ? 'Added' : 'Add' }}</button>
               </div>
@@ -1633,7 +1639,7 @@ onMounted(async () => {
             <div class="live-tv-table-body" @scroll="handleLiveTvScroll">
               <header class="live-tv-table-row live-tv-table-header"><span>Channel</span><span>Key</span><span>ID</span><span>Category ID</span><span>Category</span><span>Format</span><span>Duration</span><span>Rating</span><span>Added</span><span>Status</span></header>
               <button v-for="channel in visibleLiveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :class="{selected:(liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`)}" @click="selectLiveTvChannel(channel)">
-                <span class="live-tv-channel"><span class="live-tv-channel-logo"><img v-if="channel.logo" :src="imageUrl(channel.logo)" :alt="channel.title"><b v-else>TV</b></span><strong>{{ channel.title }}</strong></span>
+                <span class="live-tv-channel"><span class="live-tv-channel-logo"><img v-if="channel.logo && !failedLogoUrls.has(channel.logo)" :src="imageUrl(channel.logo)" :alt="channel.title" @error="markLogoFailed(channel.logo)"><span v-else class="channel-name-fallback">{{ channel.title }}</span></span><strong>{{ channel.title }}</strong></span>
                 <code>{{ channel.key || channel.libraryKey || '—' }}</code><code>{{ channel.id || '—' }}</code><code>{{ channel.categoryId || '—' }}</code><span>{{ channel.categoryName || channel.category || '—' }}</span><span>{{ streamFormatLabel(channel) }}</span><span>{{ channel.duration || '—' }}</span><span>{{ channel.rating || '—' }}</span><span>{{ channel.added || '—' }}</span><span>{{ (liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`) ? 'Playing' : 'Preview' }}</span>
               </button>
             </div>
