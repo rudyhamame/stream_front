@@ -162,12 +162,15 @@
  .safari-compact-heading { display:flex; flex:0 0 auto; align-self:stretch; align-items:flex-end; justify-content:space-between; gap:18px; width:100%; max-width:none; margin-bottom:14px; }
  .safari-compact-heading h1 { margin-bottom:0; font-size:clamp(28px,4vw,42px); }
  .safari-compact-heading > span { padding-bottom:4px; color:#aeb7a0; font-size:12px; white-space:nowrap; }
+ .safari-page.safari-playlist-page.android-playlist-page { width:100%; max-width:none; margin-right:0; margin-left:0; }
  .safari-playlist-page { padding:0; }
  .safari-playlist-page .android-playlist-source-form { flex:0 0 auto; }
  .safari-playlist-page .android-playlist-items { overscroll-behavior:contain; -webkit-overflow-scrolling:touch; }
- .safari-playlist-page .android-playlist-source select { flex:0 1 280px; }
- .safari-playlist-page .android-playlist-source { display:grid; grid-template-columns:auto minmax(220px,280px) auto; align-items:center; gap:12px; }
+ .safari-playlist-page .android-playlist-source { display:flex; align-items:center; gap:12px; width:max-content; max-width:100%; }
+ .safari-playlist-page .android-playlist-source > span { flex:0 0 auto; white-space:nowrap; }
+ .safari-playlist-page .android-playlist-source select { flex:0 1 280px; min-width:220px; }
  .safari-playlist-page .android-playlist-source .android-playlist-save { width:auto; min-width:190px; margin:0; padding:10px 13px; }
+ .safari-playlist-page .android-playlist-search { align-self:flex-start; width:min(100%,420px); min-width:280px; }
  .safari-playlist-page { padding:clamp(16px,3vw,30px) clamp(16px,4vw,46px) 0; }
  .browser-main > .safari-page-shell > .safari-playlist-tabs { display:grid; flex:0 0 auto; grid-template-columns:repeat(3,minmax(0,1fr)); gap:0; width:100%; margin:0; padding:0; background:#172116; }
  .browser-main > .safari-page-shell > .safari-playlist-tabs button { min-height:46px; padding:10px 8px; border:0; border-radius:0; background:#24331e; color:#c3cfb8; cursor:pointer; font:700 13px 'DM Sans'; }
@@ -178,19 +181,20 @@
  .browser-playlist-loading { display:flex; flex:1 1 auto; min-height:0; align-items:center; justify-content:center; flex-direction:column; gap:12px; color:#b5bdae; font:500 13px 'DM Sans'; }
  .browser-playlist-loading .loading-ring { width:34px; height:34px; border:3px solid rgba(184,255,57,.2); border-top-color:#b8ff39; border-radius:50%; animation:browser-playlist-spin .8s linear infinite; box-shadow:0 0 18px rgba(184,255,57,.1); }
  @keyframes browser-playlist-spin { to { transform:rotate(360deg); } }
- .browser-playlist-table { display:block; padding:0; border:1px solid rgba(184,255,57,.12); border-radius:7px; background:rgba(8,12,8,.72); overflow:auto; scrollbar-width:none; }
+ .browser-playlist-table { display:block; padding:0; border:1px solid rgba(184,255,57,.12); background:rgba(8,12,8,.72); overflow:auto; scrollbar-width:none; }
  .browser-playlist-table::-webkit-scrollbar { display:none; width:0; height:0; }
  .browser-playlist-loading-more { min-width:600px; padding:14px; color:#aeb7a0; font-size:12px; text-align:center; }
  .browser-playlist-header,.browser-playlist-row { display:grid; grid-template-columns:minmax(0,1fr) 110px 130px !important; align-items:center; gap:11px; }
  .browser-playlist-header { min-width:600px; padding:13px 14px; color:#b8ff39; font:700 12px/1.1 'Space Grotesk'; letter-spacing:.08em; text-align:left; text-transform:uppercase; }
  .browser-playlist-header span:first-child { grid-column:1; }
  .browser-playlist-header span:nth-child(2),.browser-playlist-row>code { grid-column:2; }
- .browser-playlist-header span:nth-child(3),.browser-playlist-row>em { grid-column:3; }
+ .browser-playlist-header span:nth-child(3),.browser-playlist-row>.browser-playlist-status { grid-column:3; }
  .browser-playlist-row { width:100%; min-width:600px; min-height:96px; padding:9px 14px; border:0!important; border-top:1px solid rgba(255,255,255,.07)!important; border-radius:0!important; background:transparent!important; color:#f3f4ef; cursor:pointer; font:inherit; text-align:left; }
  .browser-playlist-row:hover,.browser-playlist-row:focus-within { background:rgba(184,255,57,.04)!important; }
  .browser-playlist-row:focus-visible { outline:2px solid #b8ff39; outline-offset:-2px; }
  .browser-playlist-row.enabled { opacity:.62; cursor:default; }
  .browser-playlist-row.pending { border-top-color:rgba(184,255,57,.35)!important; background:rgba(184,255,57,.06)!important; }
+ .browser-playlist-row.previewing { background:rgba(184,255,57,.11)!important; box-shadow:inset 3px 0 #b8ff39; }
  .browser-playlist-item { display:flex; align-items:center; gap:11px; min-width:0; width:100%; grid-column:1; }
  .browser-playlist-row .android-playlist-icon { width:54px; height:78px; flex:0 0 54px; }
  .browser-playlist-row .browser-item-poster.channel-logo { width:78px; height:64px; flex-basis:78px; overflow:visible; border-radius:0; background:transparent; }
@@ -208,6 +212,21 @@
  .browser-playlist-status.is-available { border-color:rgba(174,183,160,.28); background:rgba(174,183,160,.08); color:#b5bdae; }
  .browser-playlist-status.is-selected { border-color:#b8ff39; background:rgba(184,255,57,.14); color:#d7ff8e; box-shadow:0 0 12px rgba(184,255,57,.12); }
  .browser-playlist-status.is-added { border-color:#5fa52c; background:#355f20; color:#efffdc; }
+ .browser-playlist-browser { display:grid; grid-template-columns:minmax(560px,1.75fr) minmax(300px,.75fr); flex:1 1 auto; gap:22px; min-height:0; overflow:hidden; }
+ .browser-playlist-browser .browser-playlist-table { order:1; min-height:0; }
+ .browser-playlist-preview { order:2; display:flex; min-width:0; flex-direction:column; align-self:start; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.78); box-shadow:0 22px 52px rgba(0,0,0,.38); }
+ .browser-playlist-preview > footer { display:flex; align-items:center; gap:12px; min-height:68px; padding:11px 15px; }
+ .browser-playlist-preview > footer div { min-width:0; }
+ .browser-playlist-preview > footer strong,.browser-playlist-preview > footer small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+ .browser-playlist-preview > footer strong { color:#f3f4ef; font:600 15px 'Space Grotesk'; }
+ .browser-playlist-preview > footer small { margin-top:3px; color:#92998b; font-size:12px; }
+ .browser-playlist-status { cursor:pointer; font:600 12px 'DM Sans'; }
+ .browser-playlist-status:disabled { cursor:default; }
+ @media(max-width:1000px){
+   .browser-playlist-browser { grid-template-columns:1fr; overflow:auto; padding-bottom:90px; }
+   .browser-playlist-preview { align-self:stretch; }
+   .browser-playlist-browser .browser-playlist-table { min-height:420px; }
+ }
 .safari-library-page { display:flex; width:100%; max-width:none; flex-direction:column; margin-right:0; margin-left:0; }
 .live-tv-browser { display:grid; grid-template-columns:minmax(560px,1.75fr) minmax(300px,.75fr); flex:1 1 auto; gap:22px; width:100%; min-height:0; margin-bottom:24px; overflow:hidden; }
 .live-tv-preview { display:flex; min-width:0; flex-direction:column; align-self:start; border:1px solid rgba(184,255,57,.14); background:rgba(8,12,8,.78); box-shadow:0 22px 52px rgba(0,0,0,.38); }
@@ -356,7 +375,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
  @media(prefers-reduced-motion:reduce){.safari-library-rail-track.is-scrolling-left>button,.safari-library-rail-track.is-scrolling-right>button{animation:none}}
  @media(max-width:700px){
-   .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:13px}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .android-playlist-source{grid-template-columns:1fr auto;gap:8px}.safari-playlist-page .android-playlist-source>span{grid-column:1/-1}.safari-playlist-page .safari-playlist-source select{width:100%;min-width:0}.safari-playlist-page .android-playlist-source .android-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}.live-tv-browser{grid-template-columns:1fr;overflow:auto;padding-bottom:90px}.live-tv-preview{align-self:stretch}.live-tv-channel-list{min-height:420px}
+   .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,1fr);gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{font-size:13px}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .android-playlist-source{gap:8px}.safari-playlist-page .android-playlist-source select{width:auto;min-width:180px}.safari-playlist-page .android-playlist-source .android-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .android-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}.live-tv-browser{grid-template-columns:1fr;overflow:auto;padding-bottom:90px}.live-tv-preview{align-self:stretch}.live-tv-channel-list{min-height:420px}
   }
  .android-player { position:fixed; inset:0; z-index:20; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:24px 22px max(24px, env(safe-area-inset-bottom)); background:radial-gradient(ellipse at center,#181b16 0%,#0c0e0c 66%,#050605 100%); }
  .android-player:not(.is-fullscreen) { grid-template-rows:auto minmax(0,1fr); align-content:start; gap:10px; overflow:hidden; }

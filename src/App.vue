@@ -95,6 +95,10 @@ const liveTvSelected = ref(null);
 const liveTvLoading = ref(false);
 const liveTvError = ref("");
 const liveTvVisibleCount = ref(20);
+const playlistPreviewVideo = ref(null);
+const playlistPreviewSelected = ref(null);
+const playlistPreviewLoading = ref(false);
+const playlistPreviewError = ref("");
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
 const androidMuted = ref(false);
@@ -116,6 +120,8 @@ const androidPreviewTime = ref(-1);
 let androidHls = null;
 let liveTvHls = null;
 let liveTvRequestId = 0;
+let playlistPreviewHls = null;
+let playlistPreviewRequestId = 0;
 let androidRecoveryTimer = null;
 let androidSeekTimer = null;
 let androidPreviewTimer = null;
@@ -764,6 +770,76 @@ function stopLiveTvPreview({ clearSelection = false } = {}) {
   }
 }
 
+function stopPlaylistPreview({ clearSelection = false } = {}) {
+  playlistPreviewRequestId += 1;
+  if (playlistPreviewHls) {
+    playlistPreviewHls.destroy();
+    playlistPreviewHls = null;
+  }
+  const video = playlistPreviewVideo.value;
+  if (video) {
+    video.pause();
+    video.removeAttribute("src");
+    video.load();
+  }
+  playlistPreviewLoading.value = false;
+  if (clearSelection) {
+    playlistPreviewSelected.value = null;
+    playlistPreviewError.value = "";
+  }
+}
+
+async function selectPlaylistPreview(item) {
+  stopPlaylistPreview();
+  const requestId = playlistPreviewRequestId;
+  playlistPreviewSelected.value = item;
+  playlistPreviewLoading.value = true;
+  playlistPreviewError.value = "";
+  try {
+    if (!item?.sourceId || !item?.id) throw new Error("This item does not have a playable stream.");
+    let playable = item;
+    if (item.kind === "series") {
+      const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
+      const episode = details.episodes?.[0];
+      if (!episode?.id) throw new Error("This series has no playable episodes.");
+      playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4" };
+    }
+    const authorization = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind)}/${encodeURIComponent(playable.id)}`);
+    if (requestId !== playlistPreviewRequestId) return;
+    if (!authorization.ticket) throw new Error("Could not authorize this item.");
+    const extension = playable.extension ? `?ext=${encodeURIComponent(playable.extension)}` : "";
+    const target = new URL(browserPlaybackUrl(`/api/xtream/hls/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind)}/${encodeURIComponent(playable.id)}/master.m3u8${extension}`));
+    target.searchParams.set("streamTicket", authorization.ticket);
+    await nextTick();
+    if (requestId !== playlistPreviewRequestId) return;
+    const video = playlistPreviewVideo.value;
+    if (!video) throw new Error("The preview player is unavailable.");
+    const startPlayback = async () => {
+      playlistPreviewLoading.value = false;
+      try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
+    };
+    if (Hls.isSupported()) {
+      playlistPreviewHls = new Hls({ enableWorker: true, lowLatencyMode: playable.kind === "channel", liveSyncDurationCount: 3 });
+      playlistPreviewHls.on(Hls.Events.MEDIA_ATTACHED, () => playlistPreviewHls?.loadSource(target.toString()));
+      playlistPreviewHls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
+      playlistPreviewHls.on(Hls.Events.ERROR, (_event, data) => {
+        if (!data.fatal) return;
+        playlistPreviewLoading.value = false;
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) playlistPreviewHls?.recoverMediaError();
+        else playlistPreviewError.value = "This item is unavailable right now.";
+      });
+      playlistPreviewHls.attachMedia(video);
+    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+      video.src = target.toString();
+      await startPlayback();
+    } else throw new Error("Preview playback is not supported in this browser.");
+  } catch (error) {
+    if (requestId !== playlistPreviewRequestId) return;
+    playlistPreviewLoading.value = false;
+    playlistPreviewError.value = error.message || "This item is unavailable right now.";
+  }
+}
+
 function handleLiveTvScroll(event) {
   const element = event.currentTarget;
   if (element.scrollTop + element.clientHeight < element.scrollHeight - 32) return;
@@ -816,7 +892,10 @@ async function selectLiveTvChannel(item) {
 watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
   liveTvVisibleCount.value = 20;
   if (pageName !== "channels" || tab !== "channel") stopLiveTvPreview({ clearSelection: true });
+  if (pageName !== "playlist") stopPlaylistPreview({ clearSelection: true });
 });
+
+watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 
 async function lockAndroidLandscape() {
   try { await ScreenOrientation.lock({ orientation: "landscape" }); } catch { /* Browser preview may not expose orientation locking. */ }
@@ -993,6 +1072,7 @@ async function fullscreenAndroidMovie(event) {
 onBeforeUnmount(() => {
   if (androidHls) androidHls.destroy();
   stopLiveTvPreview({ clearSelection: true });
+  stopPlaylistPreview({ clearSelection: true });
   clearAndroidRecoveryTimer();
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
   document.removeEventListener("pointermove", handleAndroidPlayerPointerMove);
@@ -1284,6 +1364,29 @@ async function deleteSource(source) {
 async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; await loadSources(id); }
 async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
 function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
+async function addPlaylistItem(item) {
+  if (busy.value || savedKeys.value.has(item.key)) return;
+  busy.value = true;
+  try {
+    rememberItems([item]);
+    const enabledItems = [...new Map([...savedItems.value, item].map(entry => [entry.key, entry])).values()];
+    const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabledKeys: enabledItems.map(entry => entry.key), enabledItems }),
+    });
+    applySource(data);
+    await loadManagedLibrary();
+    selectedKeys.value = selectedKeys.value.filter(key => key !== item.key);
+    messageType.value = "success";
+    message.value = `Added “${item.title}” to the library.`;
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error.message;
+  } finally {
+    busy.value = false;
+  }
+}
 function selectPage() { const available = items.value.filter(item => !savedKeys.value.has(item.key)); rememberItems(available); selectedKeys.value = [...new Set([...selectedKeys.value, ...available.map(item => item.key)])]; }
 function clearType() { const prefix = `${kind.value}:`; selectedKeys.value = selectedKeys.value.filter(key => !key.startsWith(prefix)); }
 async function movePage(delta) { page.value += delta; await loadCatalog(false); }
@@ -1470,13 +1573,32 @@ onMounted(async () => {
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div><span>{{ selectedCount }} selected</span></div>
+        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><button type="button" class="android-playlist-save" :disabled="busy || !selectedCount" @click="saveSelection">Add {{ selectedCount }} selected</button></div>
+          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div>
           <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
-          <div v-else-if="visibleItems.length" class="android-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll"><div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div><button v-for="item in visibleItems" :key="item.key" type="button" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),pending:selectedKeys.includes(item.key)}" :aria-pressed="selectedKeys.includes(item.key)" @click="toggle(item)"><span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span><code>{{ item.id }}</code><em class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : selectedKeys.includes(item.key) ? 'is-selected' : 'is-available'">{{ savedKeys.has(item.key) ? 'Added' : selectedKeys.includes(item.key) ? 'Selected' : 'Not selected' }}</em></button><div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div></div>
+          <div v-else-if="visibleItems.length" class="browser-playlist-browser">
+            <section class="browser-playlist-preview" aria-label="Playlist preview">
+              <div class="live-tv-screen">
+                <video ref="playlistPreviewVideo" controls playsinline @loadstart="playlistPreviewLoading = true" @playing="playlistPreviewLoading = false" @waiting="playlistPreviewLoading = true" @stalled="playlistPreviewLoading = true" @error="playlistPreviewLoading = false; playlistPreviewError = 'This item is unavailable right now.'"></video>
+                <div v-if="!playlistPreviewSelected" class="live-tv-placeholder"><span>PREVIEW</span><strong>Select an item from the table</strong></div>
+                <div v-else-if="playlistPreviewLoading" class="live-tv-loader" aria-label="Loading preview"></div>
+                <p v-if="playlistPreviewError" class="live-tv-error">{{ playlistPreviewError }}</p>
+              </div>
+              <footer><span class="live-tv-on-air">{{ kind === 'channel' ? 'LIVE' : 'VOD' }}</span><div><strong>{{ playlistPreviewSelected?.title || 'Playlist preview' }}</strong><small>{{ playlistPreviewSelected ? (playlistPreviewSelected.categoryId || 'Uncategorized') : 'Choose an item from the table' }}</small></div></footer>
+            </section>
+            <div class="android-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll">
+              <div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div>
+              <div v-for="item in visibleItems" :key="item.key" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),previewing:playlistPreviewSelected?.key === item.key}" tabindex="0" role="button" @click="selectPlaylistPreview(item)" @keydown.enter="selectPlaylistPreview(item)">
+                <span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
+                <code>{{ item.id }}</code>
+                <button type="button" class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'" :disabled="busy || savedKeys.has(item.key)" @click.stop="addPlaylistItem(item)">{{ savedKeys.has(item.key) ? 'Added' : 'Add' }}</button>
+              </div>
+              <div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div>
+            </div>
+          </div>
           <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
       </article>
