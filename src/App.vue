@@ -16,7 +16,7 @@ const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend
 // service lacks the Library category routes loaded immediately after login,
 // causing a misleading "Request failed (404)" despite successful auth.
 const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
-const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-browser-streamer.onrender.com").replace(/\/$/, "");
+const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-stream-backend-tbm7.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
 
 function browserPlaybackUrl(raw) {
@@ -99,6 +99,7 @@ const androidBuffering = ref(false);
 const androidControlsVisible = ref(true);
 const androidQuality = ref("Auto");
 const androidPlayerError = ref("");
+const androidStreamTicket = ref("");
 const androidFullscreen = ref(false);
 const androidPreviewUrl = ref("");
 const androidPreviewTime = ref(-1);
@@ -419,14 +420,17 @@ const androidPlayerSrc = computed(() => {
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
-  // Browser media is served by the dedicated streamer. The device token is
-  // only valid for authenticated requests to the Library API and must not be
-  // attached to cross-origin HLS manifests.
-  if (deviceToken.value && target.origin === new URL(base).origin) {
-    target.searchParams.set("deviceToken", deviceToken.value);
-  }
+  if (target.origin === new URL(browserStreamer).origin && androidStreamTicket.value) target.searchParams.set("streamTicket", androidStreamTicket.value);
+  else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
 });
+
+async function loadStreamTicket(item) {
+  if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
+  const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || "movie")}/${encodeURIComponent(item.id)}`);
+  androidStreamTicket.value = data.ticket || "";
+  if (!androidStreamTicket.value) throw new Error("Could not authorize this stream.");
+}
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -636,6 +640,7 @@ async function configureMoviePlayback(startSeconds = 0) {
 }
 
 async function playAndroidMovie(item) {
+  androidStreamTicket.value = "";
   androidNowPlaying.value = item;
   androidFullscreen.value = false;
   androidPlaying.value = false;
@@ -650,11 +655,13 @@ async function playAndroidMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  await loadStreamTicket(item);
   await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
 async function playWebMovie(item) {
+  androidStreamTicket.value = "";
   androidNowPlaying.value = item;
   androidPlaying.value = false;
   androidMuted.value = false;
@@ -668,6 +675,7 @@ async function playWebMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  await loadStreamTicket(item);
   await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }

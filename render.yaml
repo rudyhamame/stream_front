@@ -9,4 +9,4 @@ services:
       - key: VITE_API_BASE_URL
         value: https://rh-library-backend.onrender.com
       - key: VITE_PLAYBACK_BASE_URL
-        value: https://rh-browser-streamer.onrender.com
+        value: https://rh-stream-backend-tbm7.onrender.com
