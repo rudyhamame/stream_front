@@ -437,7 +437,7 @@ async function loadStreamTicket(item) {
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
-    playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4" };
+    playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
     androidNowPlaying.value = playable;
   }
   const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
@@ -479,9 +479,10 @@ function handleAndroidMetadata(event) {
 }
 
 async function loadMovieDuration(item) {
-  if (!item?.sourceId || !item?.id || item.kind !== "movie") return;
+  if (!item?.sourceId || !item?.id || !['movie', 'series'].includes(item.kind)) return;
   const catalogDuration = parseDuration(item.duration);
   if (catalogDuration > 0) androidDuration.value = Math.max(androidDuration.value, catalogDuration);
+  if (item.kind !== "movie") return;
   try {
     const params = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
     const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration${params}`);
@@ -669,7 +670,7 @@ async function playAndroidMovie(item) {
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
   await loadStreamTicket(item);
-  await loadMovieDuration(item);
+  await loadMovieDuration(androidNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
@@ -689,7 +690,7 @@ async function playWebMovie(item) {
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
   await loadStreamTicket(item);
-  await loadMovieDuration(item);
+  await loadMovieDuration(androidNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
