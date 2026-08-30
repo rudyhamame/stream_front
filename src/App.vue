@@ -398,13 +398,13 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
-const weatherLocations = ref([null, null]);
-const weatherQueries = ref(["", ""]);
-const weatherResults = ref([[], []]);
-const weatherSearching = ref([false, false]);
+const weatherLocations = ref([null]);
+const weatherQueries = ref([""]);
+const weatherResults = ref([[]]);
+const weatherSearching = ref([false]);
 const weatherMessage = ref("");
 const weatherMessageType = ref("info");
-const weatherSearchTimers = [null, null];
+const weatherSearchTimers = [null];
 const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername = ref(""), sourcePassword = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
 const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
@@ -1230,8 +1230,8 @@ async function loadLinkedDevices() {
 async function loadWeatherSettings() {
   if (!deviceToken.value) return;
   const data = await request("/api/account/weather-locations");
-  const locations = Array.isArray(data.locations) ? data.locations.slice(0, 2) : [];
-  while (locations.length < 2) locations.push(null);
+  const locations = Array.isArray(data.locations) ? data.locations.slice(0, 1) : [];
+  while (locations.length < 1) locations.push(null);
   weatherLocations.value = locations;
   weatherQueries.value = locations.map(location => location?.label || "");
 }
@@ -1582,8 +1582,7 @@ onMounted(async () => {
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div>
-          <label class="android-playlist-search"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label>
+          <div class="android-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span>⌕</span><input v-model="query" placeholder="Search this playlist"></label></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
             <section class="browser-playlist-preview" aria-label="Playlist preview">
@@ -1661,15 +1660,15 @@ onMounted(async () => {
         <section class="weather-settings">
           <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
           <div class="weather-location-grid">
-            <label v-for="slot in 2" :key="slot">
-              <span>Location {{ slot }}</span>
-              <input v-model="weatherQueries[slot - 1]" type="search" autocomplete="off" placeholder="Search city or postal code" @input="searchWeatherLocations(slot)">
-              <small v-if="weatherSearching[slot - 1]">Searching…</small>
-              <select v-if="weatherResults[slot - 1].length" value="" @change="selectWeatherLocation(slot, $event.target.value)">
+            <label>
+              <span>Location 1</span>
+              <input v-model="weatherQueries[0]" type="search" autocomplete="off" placeholder="Search city or postal code" @input="searchWeatherLocations(1)">
+              <small v-if="weatherSearching[0]">Searching…</small>
+              <select v-if="weatherResults[0].length" value="" @change="selectWeatherLocation(1, $event.target.value)">
                 <option value="" disabled>Select a location</option>
-                <option v-for="(location, resultIndex) in weatherResults[slot - 1]" :key="`${location.id}-${resultIndex}`" :value="resultIndex">{{ location.label }}</option>
+                <option v-for="(location, resultIndex) in weatherResults[0]" :key="`${location.id}-${resultIndex}`" :value="resultIndex">{{ location.label }}</option>
               </select>
-              <small v-else-if="weatherLocations[slot - 1]">Saved: {{ weatherLocations[slot - 1].label }}</small>
+              <small v-else-if="weatherLocations[0]">Saved: {{ weatherLocations[0].label }}</small>
             </label>
           </div>
           <p v-if="weatherMessage" :class="['weather-settings-message', `is-${weatherMessageType}`]">{{ weatherMessage }}</p>
