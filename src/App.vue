@@ -94,6 +94,7 @@ const liveTvVideo = ref(null);
 const liveTvSelected = ref(null);
 const liveTvLoading = ref(false);
 const liveTvError = ref("");
+const liveTvVisibleCount = ref(20);
 const androidNowPlaying = ref(null);
 const androidPlaying = ref(false);
 const androidMuted = ref(false);
@@ -436,6 +437,7 @@ const liveTvChannels = computed(() => {
   }
   return [...channels.values()];
 });
+const visibleLiveTvChannels = computed(() => liveTvChannels.value.slice(0, liveTvVisibleCount.value));
 
 const androidPlayerSrc = computed(() => {
   const item = androidNowPlaying.value;
@@ -762,6 +764,12 @@ function stopLiveTvPreview({ clearSelection = false } = {}) {
   }
 }
 
+function handleLiveTvScroll(event) {
+  const element = event.currentTarget;
+  if (element.scrollTop + element.clientHeight < element.scrollHeight - 32) return;
+  if (liveTvVisibleCount.value < liveTvChannels.value.length) liveTvVisibleCount.value += 20;
+}
+
 async function selectLiveTvChannel(item) {
   stopLiveTvPreview();
   const requestId = liveTvRequestId;
@@ -806,6 +814,7 @@ async function selectLiveTvChannel(item) {
 }
 
 watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
+  liveTvVisibleCount.value = 20;
   if (pageName !== "channels" || tab !== "channel") stopLiveTvPreview({ clearSelection: true });
 });
 
@@ -1499,9 +1508,9 @@ onMounted(async () => {
             <footer><span class="live-tv-on-air">LIVE</span><div><strong>{{ liveTvSelected?.title || 'TV preview' }}</strong><small>{{ liveTvSelected ? liveTvSelected.categoryName : 'Choose a channel from the table' }}</small></div></footer>
           </section>
           <section class="live-tv-channel-list" aria-label="Live TV channels">
-            <div class="live-tv-table-body">
+            <div class="live-tv-table-body" @scroll="handleLiveTvScroll">
               <header class="live-tv-table-row live-tv-table-header"><span>Channel</span><span>Key</span><span>ID</span><span>Category ID</span><span>Category</span><span>Format</span><span>Duration</span><span>Rating</span><span>Added</span><span>Status</span></header>
-              <button v-for="channel in liveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :class="{selected:(liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`)}" @click="selectLiveTvChannel(channel)">
+              <button v-for="channel in visibleLiveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :class="{selected:(liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`)}" @click="selectLiveTvChannel(channel)">
                 <span class="live-tv-channel"><span class="live-tv-channel-logo"><img v-if="channel.logo" :src="imageUrl(channel.logo)" :alt="channel.title"><b v-else>TV</b></span><strong>{{ channel.title }}</strong></span>
                 <code>{{ channel.key || channel.libraryKey || '—' }}</code><code>{{ channel.id || '—' }}</code><code>{{ channel.categoryId || '—' }}</code><span>{{ channel.categoryName || channel.category || '—' }}</span><span>{{ streamFormatLabel(channel) }}</span><span>{{ channel.duration || '—' }}</span><span>{{ channel.rating || '—' }}</span><span>{{ channel.added || '—' }}</span><span>{{ (liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`) ? 'Playing' : 'Preview' }}</span>
               </button>
