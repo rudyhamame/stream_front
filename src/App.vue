@@ -9,6 +9,10 @@ import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
 import GlobeAlt2Icon from "./components/icons/GlobeAlt2Icon.vue";
 import CogIcon from "./components/icons/CogIcon.vue";
 import MaximizeIcon from "./components/icons/MaximizeIcon.vue";
+import PauseIcon from "./components/icons/PauseIcon.vue";
+import PlayIcon from "./components/icons/PlayIcon.vue";
+import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
+import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 
 const canonicalBackend = "https://rh-library-backend.onrender.com";
 const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
@@ -16,7 +20,7 @@ const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend
 // service lacks the Library category routes loaded immediately after login,
 // causing a misleading "Request failed (404)" despite successful auth.
 const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
-const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-browser-streamer.onrender.com").replace(/\/$/, "");
+const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-stream-backend-tbm7.onrender.com").replace(/\/$/, "");
 const api = path => `${base}${path}`;
 
 function browserPlaybackUrl(raw) {
@@ -99,6 +103,7 @@ const androidBuffering = ref(false);
 const androidControlsVisible = ref(true);
 const androidQuality = ref("Auto");
 const androidPlayerError = ref("");
+const androidStreamTicket = ref("");
 const androidFullscreen = ref(false);
 const androidPreviewUrl = ref("");
 const androidPreviewTime = ref(-1);
@@ -419,9 +424,17 @@ const androidPlayerSrc = computed(() => {
   const raw = item.playbackUrl || item.url || fallback;
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
-  if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
+  if (target.origin === new URL(browserStreamer).origin && androidStreamTicket.value) target.searchParams.set("streamTicket", androidStreamTicket.value);
+  else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
 });
+
+async function loadStreamTicket(item) {
+  if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
+  const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || "movie")}/${encodeURIComponent(item.id)}`);
+  androidStreamTicket.value = data.ticket || "";
+  if (!androidStreamTicket.value) throw new Error("Could not authorize this stream.");
+}
 
 function formatTime(value) {
   const seconds = Math.max(0, Math.floor(Number(value) || 0));
@@ -631,6 +644,7 @@ async function configureMoviePlayback(startSeconds = 0) {
 }
 
 async function playAndroidMovie(item) {
+  androidStreamTicket.value = "";
   androidNowPlaying.value = item;
   androidFullscreen.value = false;
   androidPlaying.value = false;
@@ -645,11 +659,13 @@ async function playAndroidMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  await loadStreamTicket(item);
   await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
 
 async function playWebMovie(item) {
+  androidStreamTicket.value = "";
   androidNowPlaying.value = item;
   androidPlaying.value = false;
   androidMuted.value = false;
@@ -663,6 +679,7 @@ async function playWebMovie(item) {
   androidQuality.value = item.quality || "Auto";
   androidPlayerError.value = "";
   androidPlaybackRetryCount.value = 0;
+  await loadStreamTicket(item);
   await loadMovieDuration(item);
   await configureMoviePlayback(0);
 }
@@ -775,6 +792,7 @@ async function restartAndroidAt(target) {
   androidCurrentTime.value = target;
   androidPlayerError.value = "";
   androidBuffering.value = true;
+  androidMediaReady.value = false;
   showAndroidControls();
   await configureMoviePlayback(target);
 }
@@ -1227,7 +1245,7 @@ onMounted(async () => {
       <nav class="android-bottom-menu" aria-label="Main menu"><button v-for="item in [{id:'welcome',label:'Welcome',icon:'⌂'},{id:'playlist',label:'Playlist',icon:'＋'},{id:'series',label:'Series',icon:'▦'},{id:'movies',label:'Movies',icon:'▶'},{id:'channels',label:'Channels',icon:'◉'},{id:'settings',label:'Settings',icon:'⚙'}]" :key="item.id" type="button" :class="{active:androidPage === item.id}" @click="androidPage = item.id"><span>{{ item.icon }}</span><small>{{ item.label }}</small></button></nav>
       <section v-if="androidNowPlaying" class="android-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
         <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
-        <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false; showAndroidControls()" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || androidBuffering || androidPlayerError}"><button type="button" class="android-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenAndroidMovie"><MaximizeIcon /></button><div v-if="androidPreviewUrl" class="android-seek-preview"><img :src="androidPreviewUrl" alt="Preview at selected position"><strong>{{ formatTime(androidPreviewTime) }}</strong></div><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playAndroidMovie(androidNowPlaying)">Retry</button></div></div>
+        <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false; showAndroidControls()" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || androidBuffering || androidPlayerError}"><button type="button" class="android-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenAndroidMovie"><MaximizeIcon /></button><div v-if="androidPreviewUrl" class="android-seek-preview"><img :src="androidPreviewUrl" alt="Preview at selected position"><strong>{{ formatTime(androidPreviewTime) }}</strong></div><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)"><RotateCcw10Icon /></button><span class="android-center-loader-slot"><span v-if="androidBuffering && !androidPlayerError" class="android-buffering"></span></span><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)"><RotateCw10Icon /></button></div><div class="android-timeline"><button type="button" class="android-timeline-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback"><PauseIcon v-if="androidPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playAndroidMovie(androidNowPlaying)">Retry</button></div></div>
         <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playAndroidMovie(androidUpNext)">▶</button></article>
       </section>
     </section>
@@ -1387,7 +1405,7 @@ onMounted(async () => {
     </template>
       <section v-if="!androidApp && androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
       <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>Movie · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
-      <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false; showAndroidControls()" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div v-if="androidBuffering && androidMediaReady && !androidPlayerError" class="android-buffering"><span></span></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || androidBuffering || androidPlayerError}"><button type="button" class="android-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenAndroidMovie"><MaximizeIcon /></button><div v-if="androidPreviewUrl" class="android-seek-preview"><img :src="androidPreviewUrl" alt="Preview at selected position"><strong>{{ formatTime(androidPreviewTime) }}</strong></div><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)">↶<small>10</small></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback">{{ androidPlaying ? 'Ⅱ' : '▶' }}</button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)">↷<small>10</small></button></div><div class="android-timeline"><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(androidNowPlaying)">Retry</button></div></div>
+      <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false; showAndroidControls()" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"><span class="android-placeholder-mark">RH</span><strong>Preparing your stream</strong><small>{{ androidNowPlaying.title }}</small></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || androidBuffering || androidPlayerError}"><button type="button" class="android-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenAndroidMovie"><MaximizeIcon /></button><div v-if="androidPreviewUrl" class="android-seek-preview"><img :src="androidPreviewUrl" alt="Preview at selected position"><strong>{{ formatTime(androidPreviewTime) }}</strong></div><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)"><RotateCcw10Icon /></button><span class="android-center-loader-slot"><span v-if="androidBuffering && !androidPlayerError" class="android-buffering"></span></span><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)"><RotateCw10Icon /></button></div><div class="android-timeline"><button type="button" class="android-timeline-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback"><PauseIcon v-if="androidPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(androidNowPlaying)">Retry</button></div></div>
       <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(androidUpNext)">▶</button></article>
     </section>
     </template>
