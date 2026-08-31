@@ -1223,7 +1223,9 @@ async function loadSources(preferred = sourceId.value) {
   rememberItems([...savedItems.value, ...archivedItems.value]);
   if (source) await Promise.all([loadCatalog(), loadSaved()]);
   else { items.value = []; savedItems.value = []; archivedItems.value = []; }
-  await loadManagedLibrary();
+  // Playlist only needs the provider catalog. The managed-library payload is
+  // required by Series/Movies/Live TV pages and can be loaded lazily there.
+  if (safariPage.value !== "playlist") await loadManagedLibrary();
 }
 
 async function loadLinkedDevices() {
@@ -1461,6 +1463,12 @@ let deviceStatusTimer;
 watch(androidPage, value => window.localStorage.setItem("rh-android-page", value));
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
+watch(safariPage, value => {
+  if (value !== "playlist" && deviceToken.value) loadManagedLibrary().catch(error => {
+    messageType.value = "error";
+    message.value = error.message;
+  });
+});
 watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadCatalog(), 350); });
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
@@ -1486,7 +1494,10 @@ onMounted(async () => {
       return;
     }
     if (!deviceToken.value) return;
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]); watchLibraryRevision();
+    const healthRequest = request("/api/health");
+    await Promise.all([healthRequest, loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    online.value = true;
+    watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
     }, 10_000);
