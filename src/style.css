@@ -159,12 +159,6 @@
  .safari-library-stats button:hover,.safari-library-stats button:focus-visible { border-color:rgba(183,255,50,.55); box-shadow:0 0 24px rgba(183,255,50,.12); outline:none; transform:translateY(-1px); }
  .safari-library-stats strong { color:#d4f06a; font:600 clamp(28px,5vw,42px) 'Space Grotesk'; }
 .safari-library-stats span { min-width:0; flex:1 1 auto; color:#d8e2cf; font:600 21px/1.15 'Space Grotesk'; letter-spacing:-.02em; white-space:normal; overflow-wrap:anywhere; }
-.android-download-card { display:flex; align-items:center; justify-content:space-between; gap:20px; margin-top:18px; padding:18px 19px; border:1px solid rgba(184,255,57,.22); border-radius:12px; background:rgba(15,23,15,.78); }
-.android-download-card .eyebrow { margin:0 0 6px; color:#d4f06a; }
-.android-download-card h2 { margin:0; color:#f3f4ef; font:600 20px/1.15 'Space Grotesk'; }
-.android-download-card p:last-child { margin:7px 0 0; color:#92998b; font-size:12px; }
-.android-download-button { flex:0 0 auto; text-decoration:none; white-space:nowrap; }
-@media(max-width:600px){.android-download-card{align-items:flex-start;flex-direction:column}.android-download-button{width:100%;text-align:center}}
  .safari-compact-heading { display:flex; flex:0 0 auto; align-self:stretch; align-items:flex-end; justify-content:space-between; gap:18px; width:100%; max-width:none; margin-bottom:14px; }
  .safari-compact-heading h1 { margin-bottom:0; font-size:clamp(28px,4vw,42px); }
  .safari-compact-heading > span { padding-bottom:4px; color:#aeb7a0; font-size:12px; white-space:nowrap; }
