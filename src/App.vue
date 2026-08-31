@@ -443,6 +443,18 @@ const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", 
 const libraryRails = computed(() => {
   return managedCategoriesForTab.value.filter(category => category.items.length).map(category => ({ id: category.id, name: category.name, items: category.items }));
 });
+const safariLibraryRows = computed(() => {
+  const categoryByItem = new Map();
+  for (const category of managedCategoriesForTab.value) {
+    for (const item of category.items || []) {
+      const key = item.libraryKey || `${item.sourceId || "source"}:${item.id}`;
+      if (!categoryByItem.has(key)) categoryByItem.set(key, category.name);
+    }
+  }
+  return managedItemsForTab.value
+    .map(item => ({ ...item, categoryName: item.categoryName || categoryByItem.get(item.libraryKey || `${item.sourceId || "source"}:${item.id}`) || "Uncategorized" }))
+    .sort(compareCatalogTitles);
+});
 const liveTvChannels = computed(() => {
   const channels = new Map();
   for (const category of managedLibraryCategories.value.filter(entry => entry.kind === "channel")) {
@@ -1658,13 +1670,14 @@ onMounted(async () => {
             </div>
           </section>
         </div>
-        <div v-else-if="safariLibraryTab !== 'channel' && libraryRails.length" class="safari-library-rails">
-          <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
-            <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
-            <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" :class="{'is-playable': true}" @click="playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
-            </div>
-          </section>
+        <div v-else-if="safariLibraryTab !== 'channel' && safariLibraryRows.length" class="safari-library-table">
+          <div class="safari-library-table-header"><span>ITEM</span><span>CATEGORY</span><span>FORMAT</span><span>STATUS</span></div>
+          <button v-for="item in safariLibraryRows" :key="item.libraryKey" type="button" class="safari-library-table-row" @click="playWebMovie(item)">
+            <span class="safari-library-table-item"><span class="safari-library-table-logo"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else class="channel-name-fallback">{{ item.title }}</span></span><strong>{{ item.title }}</strong></span>
+            <span>{{ item.categoryName }}</span>
+            <span>{{ streamFormatLabel(item) }}</span>
+            <span class="safari-library-table-status">Play</span>
+          </button>
         </div>
         <p v-else class="android-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>
