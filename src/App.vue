@@ -1578,6 +1578,10 @@ onMounted(async () => {
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <div class="safari-page-heading"><p class="eyebrow">RH Library Manager</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your playlist and browse everything saved to your library without leaving this screen.</p><div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong></div><section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section></div>
         <div class="safari-library-stats"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span>Live Channels</span></button></div>
+        <section class="android-download-card" aria-label="Android app download">
+          <div><p class="eyebrow">ANDROID APP</p><h2>Take your library with you.</h2><p>Install the latest RH IPTV Player build on your Android device.</p></div>
+          <a class="primary-action android-download-button" href="/app-debug.apk" download="RH-Library.apk">Download APK</a>
+        </section>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
