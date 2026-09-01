@@ -440,6 +440,11 @@ const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), kno
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
+const homeRecommendations = ref([]);
+const homeRecent = ref({ series: [], movie: [], channel: [] });
+const homeLoading = ref(false);
+const homeError = ref("");
+let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
@@ -1126,6 +1131,43 @@ async function loadManagedLibrary() {
   applyManagedLibrary(await request(`/api/library/categories?refresh=${Date.now()}`, { cache: "no-store" }));
 }
 
+function homeItemKey(item) {
+  return item?.key || `${item?.sourceId || "source"}:${item?.kind || item?.type}:${item?.id}`;
+}
+
+function homeItem(item, kind) {
+  return { ...item, kind: item.kind || item.type || kind, key: homeItemKey({ ...item, kind: item.kind || item.type || kind }) };
+}
+
+async function loadHomeData() {
+  if (!deviceToken.value || homeLoading.value) return;
+  const requestId = ++homeRequestId;
+  homeLoading.value = true;
+  homeError.value = "";
+  try {
+    const catalog = await request(`/api/xtream/catalog-counts?refresh=${Date.now()}`, { cache: "no-store" });
+    if (requestId !== homeRequestId) return;
+    homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind))]));
+    try {
+      const language = document.documentElement.lang === "ar" ? "arabic" : "both";
+      const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
+      if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item.kind || item.type));
+    } catch (error) {
+      if (requestId === homeRequestId) homeRecommendations.value = [];
+      if (error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
+    }
+  } catch (error) {
+    if (requestId === homeRequestId) homeError.value = error.message || "Could not load the Home page.";
+  } finally {
+    if (requestId === homeRequestId) homeLoading.value = false;
+  }
+}
+
+function playHomeItem(item) {
+  if (!item?.id || !item?.sourceId) return;
+  playWebMovie(item).catch(error => { homeError.value = error.message || "This item could not be played."; });
+}
+
 async function watchLibraryRevision() {
   if (!deviceToken.value || libraryRevisionController) return;
   libraryRevisionController = new AbortController();
@@ -1464,6 +1506,7 @@ watch(safariPage, value => {
     messageType.value = "error";
     message.value = error.message;
   });
+  if (value === "welcome") loadHomeData();
 });
 watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => loadCatalog(), 350); });
 watch(category, () => loadCatalog());
@@ -1494,6 +1537,7 @@ onMounted(async () => {
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     online.value = true;
+    await loadHomeData();
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
