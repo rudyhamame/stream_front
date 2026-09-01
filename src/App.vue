@@ -129,6 +129,7 @@ let liveTvRequestId = 0;
 let playlistPreviewHls = null;
 let playlistPreviewRequestId = 0;
 let webRecoveryTimer = null;
+let webBufferingTimer = null;
 let webSeekTimer = null;
 let webControlsTimer = null;
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
@@ -628,10 +629,20 @@ function onWebPause() {
 }
 
 function onWebWaiting() {
-  // Any waiting or stalled event means the player is loading media. Keep the
-  // loader visible until the media element reports that playback is ready.
-  webBuffering.value = true;
-  showWebControls();
+  clearTimeout(webBufferingTimer);
+  webBufferingTimer = setTimeout(() => {
+    const video = webVideo.value;
+    if (video && !video.paused && video.readyState < 3) {
+      webBuffering.value = true;
+      showWebControls();
+    }
+  }, 300);
+}
+
+function onWebTimeUpdate(event) {
+  clearTimeout(webBufferingTimer);
+  webCurrentTime.value = webPlaybackOffset.value + event.target.currentTime;
+  if (!event.target.paused && event.target.readyState >= 3) webBuffering.value = false;
 }
 
 function clearWebRecoveryTimer() {
@@ -670,6 +681,7 @@ function handleWebVideoError() {
 }
 
 function onWebReady(event) {
+  clearTimeout(webBufferingTimer);
   if (event?.type === "playing") webPlaying.value = true;
   webBuffering.value = false;
   webPlaybackRetryCount.value = 0;
@@ -719,6 +731,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     webHls = null;
   }
   clearWebRecoveryTimer();
+  clearTimeout(webBufferingTimer);
   video.removeAttribute("src");
   video.style.opacity = "0";
   video.load();
@@ -929,6 +942,7 @@ watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 async function closeWebPlayer() {
   clearWebControlsTimer();
   clearWebRecoveryTimer();
+  clearTimeout(webBufferingTimer);
   if (webSeekTimer) {
     clearTimeout(webSeekTimer);
     webSeekTimer = null;
@@ -1041,6 +1055,7 @@ onBeforeUnmount(() => {
   stopLiveTvPreview({ clearSelection: true });
   stopPlaylistPreview({ clearSelection: true });
   clearWebRecoveryTimer();
+  clearTimeout(webBufferingTimer);
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
   document.removeEventListener("pointermove", handleWebPlayerPointerMove);
 });
@@ -1557,7 +1572,7 @@ onMounted(async () => {
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
             <section class="browser-playlist-preview" aria-label="Playlist preview">
               <div class="live-tv-screen">
-                <video ref="playlistPreviewVideo" controls playsinline @loadstart="playlistPreviewLoading = true" @playing="playlistPreviewLoading = false" @waiting="playlistPreviewLoading = true" @stalled="playlistPreviewLoading = true" @error="playlistPreviewLoading = false; playlistPreviewError = 'This item is unavailable right now.'"></video>
+                <video ref="playlistPreviewVideo" playsinline @loadstart="playlistPreviewLoading = true" @playing="playlistPreviewLoading = false" @waiting="playlistPreviewLoading = true" @stalled="playlistPreviewLoading = true" @error="playlistPreviewLoading = false; playlistPreviewError = 'This item is unavailable right now.'"></video>
                 <div v-if="!playlistPreviewSelected" class="live-tv-placeholder"><span>PREVIEW</span><strong>Select an item from the table</strong></div>
                 <div v-else-if="playlistPreviewLoading" class="live-tv-loader" aria-label="Loading preview"></div>
                 <p v-if="playlistPreviewError" class="live-tv-error">{{ playlistPreviewError }}</p>
@@ -1596,7 +1611,7 @@ onMounted(async () => {
         <div v-if="safariLibraryTab === 'channel' && liveTvChannels.length" class="live-tv-browser">
           <section class="live-tv-preview" aria-label="Live TV preview">
             <div class="live-tv-screen">
-              <video ref="liveTvVideo" controls playsinline @loadstart="liveTvLoading = true" @playing="liveTvLoading = false" @waiting="liveTvLoading = true" @stalled="liveTvLoading = true" @error="liveTvLoading = false; liveTvError = 'This channel is unavailable right now.'"></video>
+              <video ref="liveTvVideo" playsinline @loadstart="liveTvLoading = true" @playing="liveTvLoading = false" @waiting="liveTvLoading = true" @stalled="liveTvLoading = true" @error="liveTvLoading = false; liveTvError = 'This channel is unavailable right now.'"></video>
               <div v-if="!liveTvSelected" class="live-tv-placeholder"><span>LIVE TV</span><strong>Select a channel to preview it</strong></div>
               <div v-else-if="liveTvLoading" class="live-tv-loader" aria-label="Loading channel"></div>
               <p v-if="liveTvError" class="live-tv-error">{{ liveTvError }}</p>
@@ -1746,7 +1761,7 @@ onMounted(async () => {
     </template>
       <section v-if="webNowPlaying" class="web-player web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Movie player">
       <header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div><button type="button" class="web-player-close" aria-label="More options">⋮</button></header>
-      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="webCurrentTime = webPlaybackOffset + $event.target.currentTime" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @stalled="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
+      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
       <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
     </template>
