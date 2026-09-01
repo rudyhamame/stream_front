@@ -146,8 +146,6 @@ const scannerOpen = ref(false);
 const scannerError = ref("");
 const failedLogoUrls = ref(new Set());
 let qrScanner = null;
-let loginViewportFrame = null;
-let loginKeyboardLift = 0;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -333,33 +331,6 @@ async function startQrScanner() {
   }
 }
 
-function updateLoginKeyboardLift() {
-  if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
-  loginViewportFrame = requestAnimationFrame(() => {
-    loginViewportFrame = null;
-    const root = document.documentElement;
-    const active = document.activeElement;
-    if (!pairing.value || !active?.matches?.(".login-card input, .login-card select")) {
-      loginKeyboardLift = 0;
-      root.style.setProperty("--login-keyboard-lift", "0px");
-      return;
-    }
-    const viewport = window.visualViewport;
-    const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
-    const submit = active.closest("form")?.querySelector(".login-submit");
-    // Measurements include the previous CSS transform. Add the old lift back
-    // before calculating the next lift, otherwise email -> password snaps down.
-    const targetBottom = Math.max(active.getBoundingClientRect().bottom, submit?.getBoundingClientRect().bottom || 0) + loginKeyboardLift;
-    const lift = Math.min(window.innerHeight * .45, Math.max(0, targetBottom + 18 - viewportBottom));
-    loginKeyboardLift = Math.ceil(lift);
-    root.style.setProperty("--login-keyboard-lift", `${loginKeyboardLift}px`);
-  });
-}
-
-function resetLoginKeyboardLift() {
-  window.setTimeout(updateLoginKeyboardLift, 80);
-}
-
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
@@ -367,11 +338,6 @@ onBeforeUnmount(() => {
   if (deviceStatusTimer) clearInterval(deviceStatusTimer);
   if (libraryRevisionController) libraryRevisionController.abort();
   if (libraryRevisionRetryTimer) clearTimeout(libraryRevisionRetryTimer);
-  window.visualViewport?.removeEventListener("resize", updateLoginKeyboardLift);
-  window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
-  document.removeEventListener("focusin", updateLoginKeyboardLift);
-  document.removeEventListener("focusout", resetLoginKeyboardLift);
-  if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
@@ -1398,11 +1364,6 @@ watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
   document.addEventListener("keydown", handleNavigationKeydown);
-  window.visualViewport?.addEventListener("resize", updateLoginKeyboardLift);
-  window.visualViewport?.addEventListener("scroll", updateLoginKeyboardLift);
-  document.addEventListener("focusin", updateLoginKeyboardLift);
-  document.addEventListener("focusout", resetLoginKeyboardLift);
-  if (pairing.value) updateLoginKeyboardLift();
   try {
     if (pairCode) {
       await loadPairingInfo();
