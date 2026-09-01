@@ -136,6 +136,10 @@ const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
 const loginDevices = ref([]);
 const selectedLoginDevice = ref("");
+const profiles = ref([]);
+const profileChooser = ref(false);
+const profileBusy = ref(false);
+const profileError = ref("");
 const changePasswordOpen = ref(false);
 const currentPassword = ref("");
 const newPassword = ref("");
@@ -208,6 +212,26 @@ async function claimPairing() {
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
+async function chooseProfile(profile) {
+  if (!profile?.id || profileBusy.value) return;
+  profileBusy.value = true;
+  profileError.value = "";
+  try {
+    const data = await request(`/api/account/profiles/${encodeURIComponent(profile.id)}/select`, { method: "POST" });
+    deviceToken.value = data.token;
+    window.localStorage.setItem("rh-device-token", data.token);
+    profileChooser.value = false;
+    safariPage.value = "welcome";
+    await request("/api/health");
+    online.value = true;
+    await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+  } catch (error) {
+    profileError.value = error.message || "Could not open this profile.";
+  } finally {
+    profileBusy.value = false;
+  }
+}
+
 async function signIn() {
   try {
     if (loginDevices.value.length > 1 && !selectedLoginDevice.value) throw new Error("Select a linked Roku device");
@@ -219,9 +243,11 @@ async function signIn() {
     }
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
+    profiles.value = (await request("/api/account/profiles")).items || [];
+    profileError.value = "";
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    profileChooser.value = true;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
 }
 
@@ -1443,6 +1469,21 @@ onMounted(async () => {
           </form>
         </template>
         <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
+      </div>
+    </section>
+    <section v-else-if="profileChooser" class="profile-chooser-page">
+      <div class="profile-chooser-inner">
+        <p class="eyebrow">RH LIBRARY</p>
+        <h1>Who's watching?</h1>
+        <p class="profile-chooser-copy">Choose a profile to open your personalized library.</p>
+        <div class="profile-grid">
+          <button v-for="profile in profiles" :key="profile.id" type="button" class="profile-option" :disabled="profileBusy" @click="chooseProfile(profile)">
+            <span class="profile-avatar" :class="`profile-avatar-${profile.avatar || 'lime'}`">{{ profile.name.slice(0, 1).toUpperCase() }}</span>
+            <strong>{{ profile.name }}</strong>
+            <small>{{ profile.isDefault ? 'Main profile' : 'Library profile' }}</small>
+          </button>
+        </div>
+        <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
       </div>
     </section>
     <template v-else>
