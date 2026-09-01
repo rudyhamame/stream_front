@@ -443,6 +443,7 @@ const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categor
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
 const homeRecent = ref({ series: [], movie: [], channel: [] });
+const homeTotalCounts = ref({ series: 0, movie: 0, channel: 0 });
 const homeLoading = ref(false);
 const homeError = ref("");
 let homeRequestId = 0;
@@ -1148,6 +1149,7 @@ async function loadHomeData() {
   try {
     const catalog = await request(`/api/xtream/catalog-counts?refresh=${Date.now()}`, { cache: "no-store" });
     if (requestId !== homeRequestId) return;
+    homeTotalCounts.value = catalog.counts || { series: 0, movie: 0, channel: 0 };
     homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind))]));
     try {
       const language = document.documentElement.lang === "ar" ? "arabic" : "both";
