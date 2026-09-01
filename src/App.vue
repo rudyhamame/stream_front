@@ -504,13 +504,19 @@ const webPlayerSrc = computed(() => {
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
+  const streamFormat = String(item.streamFormat || '').trim().toLowerCase();
+  const originalFormat = String(item.originalFormat || item.extension || '').trim().toLowerCase();
+  const directVods = new Set(['mp4', 'm4v', 'mov']);
+  const shouldUseDirect = !webForceHls.value && playableKind !== 'channel'
+    && (streamFormat === 'mp4' || (!streamFormat && directVods.has(originalFormat)));
   const generated = playableSourceId && item.id
-    ? (!webForceHls.value && playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
+    ? (shouldUseDirect
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  // Prefer the generated direct VOD route over stale catalog playback URLs.
-  const raw = generated || item.playbackUrl || item.url;
+  // Match Roku: preserve the backend's transport decision and only generate
+  // a route for older catalog items that do not carry one.
+  const raw = webForceHls.value ? generated : (item.playbackUrl || item.url || generated);
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
