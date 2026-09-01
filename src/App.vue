@@ -245,13 +245,14 @@ async function chooseProfile(profile) {
     window.localStorage.setItem("rh-device-token", data.token);
     activeProfileId.value = profile.id;
     window.localStorage.setItem("rh-profile-id", profile.id);
-    window.sessionStorage.removeItem(profileSelectionKey);
-    profileChooser.value = false;
-    safariPage.value = "welcome";
     await request("/api/health");
     online.value = true;
     await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
     await loadHomeData();
+    await loadManagedLibrary();
+    window.sessionStorage.removeItem(profileSelectionKey);
+    profileChooser.value = false;
+    safariPage.value = "welcome";
   } catch (error) {
     profileError.value = error.message || "Could not open this profile.";
   } finally {
