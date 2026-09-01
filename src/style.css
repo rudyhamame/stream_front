@@ -424,16 +424,17 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .web-player-title { min-width:0; }
  .web-player-title > p:last-child { margin:6px 0 0; color:#aeb7a0; font-size:14px; }
  .web-player-back { flex:0 0 auto; width:36px; height:36px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#d4f06a; cursor:pointer; font:27px/1 'DM Sans'; }
-.safari-episodes-page { padding-bottom:80px; }
-.safari-episodes-heading { display:flex; align-items:flex-start; gap:14px; margin-bottom:28px; }
+.safari-episodes-page { display:flex; flex-direction:column; padding-bottom:0; }
+.safari-episodes-heading { display:flex; flex:0 0 auto; align-items:flex-start; gap:14px; margin-bottom:28px; }
 .safari-episodes-heading .eyebrow { margin:2px 0 5px; }
 .safari-episodes-heading h1 { margin:0; color:#f3f4ef; font:600 clamp(25px,4vw,38px)/1.1 'Space Grotesk'; }
 .safari-episodes-heading span { display:block; margin-top:7px; color:#8f978b; font-size:12px; }
-.series-season-selector { display:flex; gap:8px; margin-bottom:24px; padding-bottom:4px; overflow-x:auto; scrollbar-width:thin; }
+.series-episodes-content { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; }
+.series-season-selector { display:flex; flex:0 0 auto; gap:8px; margin-bottom:16px; padding-bottom:4px; overflow-x:auto; scrollbar-width:thin; }
 .series-season-selector button { flex:0 0 auto; border:1px solid #394236; border-radius:999px; padding:9px 14px; background:#191d17; color:#aab2a5; font:600 12px 'DM Sans'; cursor:pointer; }
 .series-season-selector button:hover,.series-season-selector button:focus-visible { border-color:#71804f; color:#f2f4ed; outline:none; }
 .series-season-selector button.active { border-color:#d4f06a; background:#d4f06a; color:#111210; }
-.series-seasons { display:grid; gap:30px; }
+.series-seasons { display:grid; flex:1 1 auto; min-height:0; gap:30px; padding-bottom:80px; overflow-y:auto; overscroll-behavior:contain; }
 .series-season > header { display:flex; align-items:baseline; justify-content:space-between; gap:15px; margin-bottom:12px; border-bottom:1px solid #30362d; padding-bottom:10px; }
 .series-season > header h2 { margin:0; color:#f1f2ed; font:600 19px 'Space Grotesk'; }
 .series-season > header span { color:#899284; font-size:11px; text-transform:uppercase; letter-spacing:.08em; }

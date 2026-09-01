@@ -458,7 +458,7 @@ const kind = ref("channel"), items = ref([]), categories = ref([]), languages = 
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
-const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber = ref("all"), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
+const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber = ref(null), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
 const homeLoading = ref(false);
@@ -560,9 +560,7 @@ const seriesEpisodeSeasons = computed(() => {
     .sort((a, b) => a.number - b.number)
     .map(season => ({ ...season, episodes: season.episodes.sort((a, b) => (Number(a.episodeNumber) || 0) - (Number(b.episodeNumber) || 0)) }));
 });
-const displayedSeriesEpisodeSeasons = computed(() => selectedSeasonNumber.value === "all"
-  ? seriesEpisodeSeasons.value
-  : seriesEpisodeSeasons.value.filter(season => season.number === selectedSeasonNumber.value));
+const displayedSeriesEpisodeSeasons = computed(() => seriesEpisodeSeasons.value.filter(season => season.number === selectedSeasonNumber.value));
 
 const webPlayerSrc = computed(() => {
   const item = webNowPlaying.value;
@@ -887,7 +885,7 @@ async function openSeriesEpisodes(item) {
   const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
   selectedSeries.value = item;
   seriesEpisodes.value = [];
-  selectedSeasonNumber.value = "all";
+  selectedSeasonNumber.value = null;
   seriesEpisodesError.value = "";
   seriesEpisodesLoading.value = true;
   safariPage.value = "episodes";
@@ -906,6 +904,7 @@ async function openSeriesEpisodes(item) {
       logo: episode.thumbnail || item.logo,
       key: `${item.sourceId}:series:${item.id}:episode:${episode.id}`,
     }));
+    selectedSeasonNumber.value = seriesEpisodeSeasons.value[0]?.number ?? null;
   } catch (error) {
     if (`${selectedSeries.value?.sourceId || ""}:${selectedSeries.value?.id || ""}` === requestSeriesKey) seriesEpisodesError.value = error?.message || "The episodes could not be loaded.";
   } finally {
@@ -1800,7 +1799,6 @@ onMounted(async () => {
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }}</p>
         <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
           <nav class="series-season-selector" aria-label="Select season">
-            <button type="button" :class="{active:selectedSeasonNumber === 'all'}" @click="selectedSeasonNumber = 'all'">All seasons</button>
             <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" @click="selectedSeasonNumber = season.number">{{ season.title }}</button>
           </nav>
           <div class="series-seasons">
