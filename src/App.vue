@@ -444,6 +444,8 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
+const playlistHealthBySource = ref({});
+let playlistHealthRequestId = 0;
 const weatherLocations = ref([null]);
 const weatherQueries = ref([""]);
 const weatherResults = ref([[]]);
@@ -1395,6 +1397,40 @@ async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPa
   if (safariPage.value !== "playlist") await loadManagedLibrary();
 }
 
+function playlistConnectionStatus(source) {
+  return playlistHealthBySource.value[source.id]?.status || source.connectionStatus || "unknown";
+}
+
+function playlistConnectionLabel(source) {
+  return ({ online: "Connected", offline: "Offline", checking: "Checking…" })[playlistConnectionStatus(source)] || "Unknown";
+}
+
+function playlistConnectionTitle(source) {
+  const health = playlistHealthBySource.value[source.id];
+  if (health?.status === "offline" && health.error) return health.error;
+  if (!health && source.connectionMessage) return source.connectionMessage;
+  return `${source.name}: ${playlistConnectionLabel(source)}`;
+}
+
+async function loadPlaylistHealth() {
+  const requestId = ++playlistHealthRequestId;
+  playlistHealthBySource.value = Object.fromEntries(sources.value.map(source => [source.id, { status: "checking" }]));
+  try {
+    const data = await request("/api/playlist-health?refresh=1", { cache: "no-store" });
+    if (requestId !== playlistHealthRequestId) return;
+    playlistHealthBySource.value = Object.fromEntries((data.results || []).map(result => [result.sourceId, {
+      status: result.ok ? "online" : "offline",
+      error: result.error || "",
+    }]));
+  } catch (error) {
+    if (requestId !== playlistHealthRequestId) return;
+    playlistHealthBySource.value = Object.fromEntries(sources.value.map(source => [source.id, {
+      status: "offline",
+      error: error.message || "Could not check this playlist.",
+    }]));
+  }
+}
+
 async function loadLinkedDevices() {
   const data = await request(`/api/account/devices?refresh=${Date.now()}`, { cache: "no-store" });
   linkedDevices.value = data.items || [];
@@ -1527,6 +1563,7 @@ async function saveSource() {
     });
     name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; editing.value = null;
     await loadSources(data.id, { loadPlaylist: false });
+    if (safariPage.value === "settings") await loadPlaylistHealth();
     items.value = []; categories.value = []; languages.value = []; page.value = 1; pages.value = 1; total.value = 0;
     messageType.value = "success";
     message.value = data.warning || "Source saved.";
@@ -1541,6 +1578,7 @@ async function deleteSource(source) {
   try {
     await request(`/api/xtream/sources/${source.id}`, { method: "DELETE" });
     await loadSources();
+    if (safariPage.value === "settings") await loadPlaylistHealth();
     messageType.value = "success";
     message.value = `Deleted “${source.name}”.`;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -1635,7 +1673,11 @@ watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value =
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
   if (!deviceToken.value) return;
-  const pageRequest = value === "playlist" ? loadSources() : loadManagedLibrary();
+  const pageRequest = value === "playlist"
+    ? loadSources()
+    : value === "settings"
+      ? Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadPlaylistHealth()])
+      : loadManagedLibrary();
   pageRequest.catch(error => {
     messageType.value = "error";
     message.value = error.message;
@@ -1680,6 +1722,7 @@ onMounted(async () => {
       messageType.value = "error";
       message.value = error.message;
     });
+    if (safariPage.value === "settings") void loadPlaylistHealth();
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
@@ -1928,7 +1971,7 @@ onMounted(async () => {
             <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (editing ? 'Save changes' : 'Add playlist') }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
           </form>
           <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
-          <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
+          <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
           <p v-else class="web-empty">No playlists added yet.</p>
         </section>
         <section class="web-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="web-empty">No linked Roku devices.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
@@ -1965,7 +2008,7 @@ onMounted(async () => {
       </form>
       <div class="xtream-source-list">
         <article v-for="source in sources" :key="source.id" :class="{active:source.id===sourceId}">
-          <button type="button" class="xtream-source-choice" @click="chooseSource(source.id)"><span class="source-pulse"></span><strong>{{source.name}}</strong><small>{{source.endpoint}}</small></button>
+          <button type="button" class="xtream-source-choice" @click="chooseSource(source.id)"><strong>{{source.name}}</strong><small>{{source.endpoint}}</small></button>
           <button class="source-action" @click="editSource(source)">Edit</button><button class="source-delete" @click="deleteSource(source)">Delete</button>
         </article>
       </div>

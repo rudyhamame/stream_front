@@ -368,8 +368,16 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .settings-playlist-copy { display:grid; min-width:0; flex:1; gap:3px; }
  .settings-playlist-copy>span { width:max-content; padding:3px 6px; border-radius:5px; background:#26371f; color:#b8ff39; font-size:9px; font-weight:700; letter-spacing:.08em; }
  .settings-playlist-copy strong { color:#f3f4f1; font-size:13px; }
- .settings-playlist-copy small { overflow:hidden; color:#899383; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
- .settings-playlist-actions { display:flex; gap:7px; }
+.settings-playlist-copy small { overflow:hidden; color:#899383; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.settings-playlist-status { display:flex; align-items:center; gap:7px; flex:0 0 auto; color:#aeb7a0; font-size:11px; font-weight:600; white-space:nowrap; }
+.settings-playlist-status>i { display:block; width:9px; height:9px; border-radius:50%; background:#7b8276; box-shadow:0 0 8px rgba(123,130,118,.45); }
+.settings-playlist-status.is-online { color:#b8ff39; }
+.settings-playlist-status.is-online>i { background:#b8ff39; box-shadow:0 0 11px rgba(184,255,57,.72); }
+.settings-playlist-status.is-offline { color:#ef9d91; }
+.settings-playlist-status.is-offline>i { background:#ef7468; box-shadow:0 0 10px rgba(239,116,104,.62); }
+.settings-playlist-status.is-checking>i { background:#e8c96c; box-shadow:0 0 10px rgba(232,201,108,.58); animation:playlist-status-pulse 1s ease-in-out infinite alternate; }
+@keyframes playlist-status-pulse { to { opacity:.38; } }
+.settings-playlist-actions { display:flex; gap:7px; }
  @media(max-width:600px){.settings-playlist-form{grid-template-columns:1fr}.settings-playlist-link,.settings-playlist-form-actions{grid-column:1}.settings-playlist-list article{align-items:flex-start;flex-direction:column}.settings-playlist-actions{width:100%}.settings-playlist-actions button{flex:1}}
  .safari-bottom-menu { position:fixed; z-index:10; right:0; bottom:0; left:0; display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); height:calc(76px + env(safe-area-inset-bottom)); background:rgba(17,18,16,.96); -webkit-backdrop-filter:blur(16px); backdrop-filter:blur(16px); }
  .safari-bottom-menu button { display:grid; place-items:center; align-content:center; gap:3px; border:0; background:transparent; color:#858c82; cursor:pointer; }
