@@ -206,12 +206,16 @@ async function loadPairingInfo() {
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    profiles.value = (await request("/api/account/profiles")).items || [];
+    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     return;
   }
   if (data.authenticated) {
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    profiles.value = (await request("/api/account/profiles")).items || [];
+    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
   }
 }
 
@@ -1487,6 +1491,8 @@ onMounted(async () => {
     }
     const healthRequest = request("/api/health");
     await Promise.all([healthRequest, loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    profiles.value = (await request("/api/account/profiles")).items || [];
+    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     online.value = true;
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
@@ -1581,7 +1587,7 @@ onMounted(async () => {
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
-        <div class="safari-page-heading"><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your Roku library, browse your selected content, and keep your devices connected from one place.</p><div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div><section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section></div>
+        <div class="safari-page-heading"><button v-if="activeProfile" type="button" class="welcome-profile-button" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span><strong>{{ activeProfileFirstName }}</strong></button><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your Roku library, browse your selected content, and keep your devices connected from one place.</p><div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div><section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section></div>
         <div class="safari-library-stats"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span>Live Channels</span></button></div>
       </article>
 
@@ -1664,6 +1670,13 @@ onMounted(async () => {
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
         <div class="web-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
+        <section v-if="activeProfile" class="settings-profile-card">
+          <div class="settings-section-heading"><div><p class="eyebrow">PROFILE</p><h2>Profile picture</h2></div><span>{{ activeProfile.name }}</span></div>
+          <div class="profile-picture-options" role="radiogroup" aria-label="Choose profile picture">
+            <button v-for="avatar in ['lime','teal','amber','violet','rose','blue']" :key="avatar" type="button" class="profile-picture-option" :class="[`profile-avatar-${avatar}`, {selected: activeProfile.avatar === avatar}]" :aria-checked="activeProfile.avatar === avatar" role="radio" :disabled="profileBusy" @click="setProfileAvatar(avatar)">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</button>
+          </div>
+          <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+        </section>
         <section class="weather-settings">
           <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
           <div class="weather-location-grid">
