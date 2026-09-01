@@ -418,11 +418,11 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .web-player { position:fixed; inset:0; z-index:20; display:grid; grid-template-rows:auto minmax(0,1fr) auto; padding:24px 22px max(24px, env(safe-area-inset-bottom)); background:radial-gradient(ellipse at center,#181b16 0%,#0c0e0c 66%,#050605 100%); }
 @media(max-width:700px){.safari-playlist-page .web-playlist-source{grid-template-columns:1fr;gap:8px}.safari-playlist-page .playlist-control{min-width:0}.safari-playlist-page .web-playlist-source select{width:100%;min-width:0;}}
  .web-player:not(.is-fullscreen) { grid-template-rows:auto minmax(0,1fr); align-content:start; gap:10px; overflow:hidden; }
- .web-player-header { display:flex; align-items:center; gap:14px; min-width:0; padding-bottom:20px; }
+ .web-player-header { position:absolute; z-index:5; top:14px; right:62px; left:14px; display:flex; align-items:center; gap:12px; min-width:0; }
  .web-player-header .eyebrow { margin:0 0 4px; }
  .web-player-header h2 { margin:0; overflow:visible; color:#f3f4f1; font:600 clamp(16px,3vw,22px)/1.2 'Space Grotesk'; overflow-wrap:anywhere; white-space:normal; }
  .web-player-title { min-width:0; }
- .web-player-title > p:last-child { margin:6px 0 0; color:#aeb7a0; font-size:14px; }
+ .web-player-title > p:last-child { margin:4px 0 0; color:#aeb7a0; font-size:12px; }
  .web-player-format-badge { flex:0 0 auto; margin-left:auto; border:1px solid rgba(212,240,106,.55); border-radius:999px; padding:6px 10px; background:rgba(35,47,26,.92); color:#d4f06a; font:700 10px 'DM Sans'; letter-spacing:.08em; text-transform:uppercase; }
  .web-player-back { flex:0 0 auto; width:36px; height:36px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#d4f06a; cursor:pointer; font:27px/1 'DM Sans'; }
 .safari-episodes-page { display:flex; flex-direction:column; }
@@ -506,7 +506,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .web-playable-row:hover { border-color:#d4f06a; background:#20271c; }
  .web-player { padding:2rem; }
  .web-player .web-video-frame { width:min(1200px,calc(100% - 24px)); justify-self:center; }
- .web-player .web-player-header,.web-player .web-player-controls { width:min(1200px,100%); justify-self:center; }
+ .web-player .web-player-controls { width:min(1200px,100%); justify-self:center; }
  @media(max-width:700px){.web-player{padding:10px 12px}.web-player .web-player-control-row{flex-wrap:wrap}.web-player .web-player-control-row span{width:100%;margin:0 0 4px}.web-player .web-player-control-row button{flex:1}}
  /* The topbar has no separator; keep this override after all responsive rules. */
  .topbar,.safari-app-mode .topbar { border-bottom:0; }
