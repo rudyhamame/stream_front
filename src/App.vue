@@ -1676,12 +1676,9 @@ onMounted(async () => {
             <h1>Your library,<br><em>ready to watch.</em></h1>
             <p>Pick up where you left off or discover something new from your connected library.</p>
           </div>
-          <div class="home-status-panel">
-            <section v-if="linkedDevices.length" class="home-devices home-device-panel" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section>
-          </div>
+          <section class="home-saved-stats" aria-label="Saved library items"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span><b>SAVED</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span><b>SAVED</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span><b>SAVED</b> LIVE CHANNELS</span></div></section>
         </header>
 
-        <section class="safari-library-stats" aria-label="Saved library items"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span><b>SAVED</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span><b>SAVED</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span><b>SAVED</b> LIVE CHANNELS</span></div></section>
         <div v-if="homeLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Refreshing recommendations…</span></div>
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
