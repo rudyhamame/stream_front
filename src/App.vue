@@ -251,6 +251,7 @@ async function chooseProfile(profile) {
     await request("/api/health");
     online.value = true;
     await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    await loadHomeData();
   } catch (error) {
     profileError.value = error.message || "Could not open this profile.";
   } finally {
@@ -1631,8 +1632,32 @@ onMounted(async () => {
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
-        <div class="safari-page-heading"><button v-if="activeProfile" type="button" class="welcome-profile-button" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span><strong>{{ activeProfileFirstName }}</strong></button><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1><p>Manage your Roku library, browse your selected content, and keep your devices connected from one place.</p><div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div><section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section></div>
-        <div class="safari-library-stats"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span>Live Channels</span></button></div>
+        <header class="home-hero">
+          <div class="home-hero-copy">
+            <button v-if="activeProfile" type="button" class="welcome-profile-button" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span><strong>{{ activeProfileFirstName }}</strong></button>
+            <p class="eyebrow">WELCOME BACK</p>
+            <h1>Your library,<br><em>ready to watch.</em></h1>
+            <p>Pick up where you left off or discover something new from your connected library.</p>
+          </div>
+          <div class="home-status-panel">
+            <div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div>
+            <section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section>
+          </div>
+        </header>
+
+        <section class="safari-library-stats" aria-label="Library totals"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span>Live Channels</span></button></section>
+        <div v-if="homeLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Refreshing your library…</span></div>
+        <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
+
+        <section v-if="homeRecommendations.length" class="home-rail home-ai-rail">
+          <header><div><p class="eyebrow">AI CURATED</p><h2>Recommended for you</h2></div><span>{{ homeRecommendations.length }} picks</span></header>
+          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="playHomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small></button></div>
+        </section>
+
+        <section v-for="rail in [{kind:'series', title:'New series'}, {kind:'movie', title:'New movies'}, {kind:'channel', title:'Live channels'}]" :key="rail.kind" v-if="homeRecent[rail.kind]?.length" class="home-rail">
+          <header><div><p class="eyebrow">NEW RELEASES</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
+          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="playHomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Newly added' }}</small></button></div>
+        </section>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
