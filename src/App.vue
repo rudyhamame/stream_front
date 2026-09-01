@@ -458,6 +458,7 @@ const kind = ref("channel"), items = ref([]), categories = ref([]), languages = 
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
+const selectedSeries = ref(null), seriesEpisodes = ref([]), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
 const homeLoading = ref(false);
@@ -548,6 +549,17 @@ const liveTvChannels = computed(() => {
   return [...channels.values()];
 });
 const visibleLiveTvChannels = computed(() => liveTvChannels.value.slice(0, liveTvVisibleCount.value));
+const seriesEpisodeSeasons = computed(() => {
+  const seasons = new Map();
+  for (const episode of seriesEpisodes.value) {
+    const seasonNumber = Number(episode.seasonNumber) || 1;
+    if (!seasons.has(seasonNumber)) seasons.set(seasonNumber, { number: seasonNumber, title: episode.seasonTitle || `Season ${seasonNumber}`, episodes: [] });
+    seasons.get(seasonNumber).episodes.push(episode);
+  }
+  return [...seasons.values()]
+    .sort((a, b) => a.number - b.number)
+    .map(season => ({ ...season, episodes: season.episodes.sort((a, b) => (Number(a.episodeNumber) || 0) - (Number(b.episodeNumber) || 0)) }));
+});
 
 const webPlayerSrc = computed(() => {
   const item = webNowPlaying.value;
@@ -578,7 +590,7 @@ const webPlayerSrc = computed(() => {
 async function loadStreamTicket(item) {
   if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
   let playable = item;
-  if (item.kind === "series") {
+  if (item.kind === "series" && !item.isEpisode) {
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
@@ -855,6 +867,10 @@ async function playWebMovie(item) {
 
 async function playLibraryItem(item) {
   stopLiveTvPreview({ clearSelection: true });
+  if (item?.kind === "series" && !item.isEpisode) {
+    await openSeriesEpisodes(item);
+    return;
+  }
   try {
     await playWebMovie(item);
   } catch (error) {
@@ -862,6 +878,38 @@ async function playLibraryItem(item) {
     webPlayerError.value = error?.message || "This item could not be played right now.";
     showWebControls();
   }
+}
+
+async function openSeriesEpisodes(item) {
+  selectedSeries.value = item;
+  seriesEpisodes.value = [];
+  seriesEpisodesError.value = "";
+  seriesEpisodesLoading.value = true;
+  safariPage.value = "episodes";
+  try {
+    if (!item?.sourceId || !item?.id) throw new Error("This series does not have episode information.");
+    const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
+    if (selectedSeries.value !== item) return;
+    seriesEpisodes.value = (Array.isArray(details?.episodes) ? details.episodes : []).map(episode => ({
+      ...episode,
+      sourceId: item.sourceId,
+      kind: "series",
+      isEpisode: true,
+      seriesId: item.id,
+      seriesTitle: details.title || item.title,
+      title: episode.title || `Episode ${episode.episodeNumber || ""}`.trim(),
+      logo: episode.thumbnail || item.logo,
+      key: `${item.sourceId}:series:${item.id}:episode:${episode.id}`,
+    }));
+  } catch (error) {
+    if (selectedSeries.value === item) seriesEpisodesError.value = error?.message || "The episodes could not be loaded.";
+  } finally {
+    if (selectedSeries.value === item) seriesEpisodesLoading.value = false;
+  }
+}
+
+function playSeriesEpisode(episode) {
+  return playLibraryItem({ ...episode, title: `${episode.seriesTitle || selectedSeries.value?.title} · ${episode.title}` });
 }
 
 function stopLiveTvPreview({ clearSelection = false } = {}) {
@@ -1906,7 +1954,7 @@ onMounted(async () => {
     </section>
     </template>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Media player">
-      <header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div><button type="button" class="web-player-close" aria-label="More options">⋮</button></header>
+      <header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div></header>
       <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
       <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
