@@ -583,6 +583,7 @@ const webPlayerSrc = computed(() => {
   const raw = webForceHls.value ? generated : (item.playbackUrl || item.url || generated);
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
+  if (target.pathname.includes('/api/xtream/hls/')) target.searchParams.set("client", "browser");
   if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
   else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
@@ -996,6 +997,7 @@ async function selectPlaylistPreview(item) {
     if (!authorization.ticket) throw new Error("Could not authorize this item.");
     const extension = playable.extension ? `?ext=${encodeURIComponent(playable.extension)}` : "";
     const target = new URL(browserPlaybackUrl(`/api/xtream/hls/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind)}/${encodeURIComponent(playable.id)}/master.m3u8${extension}`));
+    target.searchParams.set("client", "browser");
     target.searchParams.set("streamTicket", authorization.ticket);
     await nextTick();
     if (requestId !== playlistPreviewRequestId) return;
@@ -1047,6 +1049,7 @@ async function selectLiveTvChannel(item) {
     if (!authorization.ticket) throw new Error("Could not authorize this channel.");
     const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
     const target = new URL(browserPlaybackUrl(`/api/xtream/hls/${encodeURIComponent(item.sourceId)}/channel/${encodeURIComponent(item.id)}/master.m3u8${extension}`));
+    target.searchParams.set("client", "browser");
     target.searchParams.set("streamTicket", authorization.ticket);
     await nextTick();
     if (requestId !== liveTvRequestId) return;
