@@ -1661,10 +1661,12 @@ onMounted(async () => {
           <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small><em>Add to library</em></button></div>
         </section>
 
-        <section v-for="rail in [{kind:'series', title:'New series'}, {kind:'movie', title:'New movies'}, {kind:'channel', title:'Live channels'}]" :key="rail.kind" v-if="homeRecent[rail.kind]?.length" class="home-rail">
-          <header><div><p class="eyebrow">NEW RELEASES</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
-          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Newly added' }}</small><em>Add to library</em></button></div>
-        </section>
+        <template v-for="rail in [{kind:'series', title:'New series'}, {kind:'movie', title:'New movies'}, {kind:'channel', title:'Live channels'}]" :key="rail.kind">
+          <section v-if="homeRecent[rail.kind]?.length" class="home-rail">
+            <header><div><p class="eyebrow">NEW RELEASES</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
+            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Newly added' }}</small><em>Add to library</em></button></div>
+          </section>
+        </template>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
