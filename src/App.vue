@@ -1135,11 +1135,15 @@ async function loadManagedLibrary() {
 }
 
 function homeItemKey(item) {
-  return item?.key || `${item?.sourceId || "source"}:${item?.kind || item?.type}:${item?.id}`;
+  return item?.libraryKey || `${item?.sourceId || "source"}:${item?.kind || item?.type || "item"}:${item?.id || item?.key || "unknown"}`;
 }
 
 function homeItem(item, kind) {
-  return { ...item, kind: item.kind || item.type || kind, key: homeItemKey({ ...item, kind: item.kind || item.type || kind }) };
+  if (!item || typeof item !== "object" || !item.id || !item.sourceId) return null;
+  const resolvedKind = item.kind || item.type || kind;
+  if (!["series", "movie", "channel"].includes(resolvedKind)) return null;
+  const normalized = { ...item, kind: resolvedKind };
+  return { ...normalized, key: homeItemKey(normalized) };
 }
 
 async function loadHomeData() {
@@ -1151,11 +1155,11 @@ async function loadHomeData() {
     const catalog = await request(`/api/xtream/catalog-counts?refresh=${Date.now()}`, { cache: "no-store" });
     if (requestId !== homeRequestId) return;
     homeTotalCounts.value = catalog.counts || { series: 0, movie: 0, channel: 0 };
-    homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind))]));
+    homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind)).filter(Boolean)]));
     try {
       const language = document.documentElement.lang === "ar" ? "arabic" : "both";
       const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
-      if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item.kind || item.type));
+      if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item?.kind || item?.type)).filter(Boolean);
     } catch (error) {
       if (requestId === homeRequestId) homeRecommendations.value = [];
       if (error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";

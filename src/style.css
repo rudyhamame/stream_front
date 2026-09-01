@@ -573,6 +573,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .home-card-art b { position:absolute; right:7px; bottom:7px; padding:4px 6px; border-radius:5px; background:rgba(5,8,5,.82); color:#d4f06a; font:700 9px/1 'Space Grotesk'; letter-spacing:.08em; }
 .home-content-card > strong { display:block; overflow:hidden; color:#f2f2ea; font:600 14px/1.25 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
 .home-content-card > small { display:block; overflow:hidden; margin-top:4px; color:#899486; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.home-content-card > em { display:block; margin-top:8px; color:#d4f06a; font-size:11px; font-style:normal; font-weight:700; }
 @media(max-width:700px){
   .safari-welcome-page { padding-bottom:90px !important; }
   .home-hero { grid-template-columns:1fr; gap:8px; min-height:0; padding-top:8px; }
