@@ -1799,8 +1799,7 @@ onMounted(async () => {
             <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
             <div class="series-episode-list">
               <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
-                <span class="series-episode-art"><img v-if="episode.logo && !failedLogoUrls.has(episode.logo)" :src="imageUrl(episode.logo)" :alt="episode.title" @error="markLogoFailed(episode.logo)"><b v-else>▶</b></span>
-                <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play">▶</span>
+                <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
               </button>
             </div>
           </section>
