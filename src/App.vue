@@ -1518,12 +1518,6 @@ onMounted(async () => {
 <template>
   <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': browserApp && !androidApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
-      <div v-if="browserApp && !androidApp" class="login-visual" aria-hidden="true">
-        <div class="login-visual-city"></div>
-        <div class="login-visual-glow"></div>
-        <img src="/login/couple-foreground.png" alt="" class="login-visual-couple">
-        <div class="login-visual-copy"><span>RH LIBRARY</span><strong>Your screen.<br><em>Your story.</em></strong><small>One account for every connected Roku.</small></div>
-      </div>
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
         <div class="login-art">
           <img class="login-rh-art" src="/login/rh-login-art.png" alt="">
