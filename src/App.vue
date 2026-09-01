@@ -1676,7 +1676,7 @@ watch(safariPage, value => {
   const pageRequest = value === "playlist"
     ? loadSources()
     : value === "settings"
-      ? Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadPlaylistHealth()])
+      ? loadSources(sourceId.value, { loadPlaylist: false }).then(loadPlaylistHealth)
       : loadManagedLibrary();
   pageRequest.catch(error => {
     messageType.value = "error";
