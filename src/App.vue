@@ -119,6 +119,7 @@ let webRecoveryTimer = null;
 let webSeekTimer = null;
 let webControlsTimer = null;
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
+const profileSelectionKey = "rh-profile-selection-pending";
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
 // A Roku QR is an explicit request to authenticate for that Roku. Never let
 // an existing Library browser token silently approve or bypass this flow.
@@ -220,6 +221,7 @@ async function chooseProfile(profile) {
     const data = await request(`/api/account/profiles/${encodeURIComponent(profile.id)}/select`, { method: "POST" });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
+    window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
     await request("/api/health");
@@ -245,6 +247,7 @@ async function signIn() {
     window.localStorage.setItem("rh-device-token", data.token);
     profiles.value = (await request("/api/account/profiles")).items || [];
     profileError.value = "";
+    window.sessionStorage.setItem(profileSelectionKey, "1");
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     profileChooser.value = true;
@@ -266,6 +269,7 @@ async function signUp() {
 function logout() {
   deviceToken.value = "";
   window.localStorage.removeItem("rh-device-token");
+  window.sessionStorage.removeItem(profileSelectionKey);
   pairing.value = true;
   pairingReady.value = false;
   pairingMode.value = "login";
@@ -323,6 +327,13 @@ function blurRestoredLoginFocus() {
   if (active?.matches?.(".login-card input, .login-card select")) active.blur();
 }
 
+function enforceProfileSelection() {
+  if (deviceToken.value && window.sessionStorage.getItem(profileSelectionKey)) {
+    profileChooser.value = true;
+    pairing.value = false;
+  }
+}
+
 function pairingUrlFromScan(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -364,6 +375,7 @@ async function startQrScanner() {
 }
 
 onBeforeUnmount(stopQrScanner);
+onBeforeUnmount(() => window.removeEventListener("popstate", enforceProfileSelection));
 onBeforeUnmount(() => window.removeEventListener("pageshow", blurRestoredLoginFocus));
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
@@ -1397,6 +1409,7 @@ watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
   document.addEventListener("keydown", handleNavigationKeydown);
+  window.addEventListener("popstate", enforceProfileSelection);
   window.addEventListener("pageshow", blurRestoredLoginFocus);
   if (pairing.value) {
     blurRestoredLoginFocus();
@@ -1408,6 +1421,13 @@ onMounted(async () => {
       return;
     }
     if (!deviceToken.value) return;
+    if (window.sessionStorage.getItem(profileSelectionKey)) {
+      profiles.value = (await request("/api/account/profiles")).items || [];
+      profileError.value = "";
+      pairing.value = false;
+      profileChooser.value = true;
+      return;
+    }
     const healthRequest = request("/api/health");
     await Promise.all([healthRequest, loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
     online.value = true;
