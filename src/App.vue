@@ -11,13 +11,11 @@ import PlayIcon from "./components/icons/PlayIcon.vue";
 import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
 import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 
-const canonicalBackend = "https://rh-library-backend.onrender.com";
+const browserOrigin = window.location.origin;
+const canonicalBackend = browserOrigin;
 const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
-// Render still has the retired backend URL in one frontend environment. That
-// service lacks the Library category routes loaded immediately after login,
-// causing a misleading "Request failed (404)" despite successful auth.
-const base = configuredBackend === "https://rh-stream-backend.onrender.com" ? canonicalBackend : configuredBackend;
-const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || "https://rh-stream-backend-tbm7.onrender.com").replace(/\/$/, "");
+const base = configuredBackend;
+const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || browserOrigin).replace(/\/$/, "");
 const api = path => `${base}${path}`;
 
 function browserPlaybackUrl(raw) {
