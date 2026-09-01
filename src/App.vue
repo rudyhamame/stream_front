@@ -291,6 +291,12 @@ async function stopQrScanner() {
   scannerOpen.value = false;
 }
 
+function blurRestoredLoginFocus() {
+  if (!pairing.value) return;
+  const active = document.activeElement;
+  if (active?.matches?.(".login-card input, .login-card select")) active.blur();
+}
+
 function pairingUrlFromScan(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
@@ -332,6 +338,7 @@ async function startQrScanner() {
 }
 
 onBeforeUnmount(stopQrScanner);
+onBeforeUnmount(() => window.removeEventListener("pageshow", blurRestoredLoginFocus));
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
 onBeforeUnmount(() => {
@@ -1364,6 +1371,11 @@ watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
   document.addEventListener("keydown", handleNavigationKeydown);
+  window.addEventListener("pageshow", blurRestoredLoginFocus);
+  if (pairing.value) {
+    blurRestoredLoginFocus();
+    window.setTimeout(blurRestoredLoginFocus, 0);
+  }
   try {
     if (pairCode) {
       await loadPairingInfo();
