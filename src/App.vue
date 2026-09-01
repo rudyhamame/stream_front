@@ -213,8 +213,8 @@ async function loadPairingInfo() {
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
-    await loadHomeData();
     appReady.value = true;
+    void loadHomeData();
     return;
   }
   if (data.authenticated) {
@@ -224,8 +224,8 @@ async function loadPairingInfo() {
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
-    await loadHomeData();
     appReady.value = true;
+    void loadHomeData();
   }
 }
 
@@ -242,8 +242,8 @@ async function claimPairing() {
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    await loadHomeData();
     appReady.value = true;
+    void loadHomeData();
   } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { authBusy.value = false; }
 }
@@ -262,12 +262,11 @@ async function chooseProfile(profile) {
     await request("/api/health");
     online.value = true;
     await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    await loadManagedLibrary();
-    await loadHomeData();
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
     appReady.value = true;
+    void loadHomeData();
   } catch (error) {
     profileError.value = error.message || "Could not open this profile.";
   } finally {
@@ -1645,10 +1644,10 @@ onMounted(async () => {
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     online.value = true;
-    // Totals and recommendations enrich an already usable page and must not
-    // delay startup when an IPTV provider is slow or unavailable.
-    await loadHomeData();
     appReady.value = true;
+    // Recommendations enrich an already usable page and load in the
+    // background so a slow AI/provider response cannot delay startup.
+    void loadHomeData();
     if (safariPage.value === "playlist") loadSources().catch(error => {
       messageType.value = "error";
       message.value = error.message;
