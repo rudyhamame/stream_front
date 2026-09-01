@@ -62,7 +62,7 @@ function focusMainMenu() {
   active?.focus({ preventScroll: true });
 }
 function handleNavigationKeydown(event) {
-  if (event.key !== "ArrowLeft" || pairing.value || androidNowPlaying.value) return;
+  if (event.key !== "ArrowLeft" || pairing.value || webNowPlaying.value) return;
   const page = safariPage.value;
   if (page !== "welcome") return;
   event.preventDefault();
@@ -84,7 +84,7 @@ function handleSafariRailScroll(event, railKey) {
     safariRailMotionTimers.delete(railKey);
   }, 180));
 }
-const androidVideo = ref(null);
+const webVideo = ref(null);
 const liveTvVideo = ref(null);
 const liveTvSelected = ref(null);
 const liveTvLoading = ref(false);
@@ -94,30 +94,30 @@ const playlistPreviewVideo = ref(null);
 const playlistPreviewSelected = ref(null);
 const playlistPreviewLoading = ref(false);
 const playlistPreviewError = ref("");
-const androidNowPlaying = ref(null);
-const androidPlaying = ref(false);
-const androidMuted = ref(false);
-const androidCurrentTime = ref(0);
-const androidDuration = ref(0);
-const androidPlaybackOffset = ref(0);
-const androidPendingSeek = ref(-1);
-const androidMediaReady = ref(false);
-const androidPlaybackRetryCount = ref(0);
-const androidBuffering = ref(false);
-const androidControlsVisible = ref(true);
-const androidQuality = ref("Auto");
-const androidPlayerError = ref("");
-const androidStreamTicket = ref("");
-const androidForceHls = ref(false);
-const androidFullscreen = ref(false);
-let androidHls = null;
+const webNowPlaying = ref(null);
+const webPlaying = ref(false);
+const webMuted = ref(false);
+const webCurrentTime = ref(0);
+const webDuration = ref(0);
+const webPlaybackOffset = ref(0);
+const webPendingSeek = ref(-1);
+const webMediaReady = ref(false);
+const webPlaybackRetryCount = ref(0);
+const webBuffering = ref(false);
+const webControlsVisible = ref(true);
+const webQuality = ref("Auto");
+const webPlayerError = ref("");
+const webStreamTicket = ref("");
+const webForceHls = ref(false);
+const webFullscreen = ref(false);
+let webHls = null;
 let liveTvHls = null;
 let liveTvRequestId = 0;
 let playlistPreviewHls = null;
 let playlistPreviewRequestId = 0;
-let androidRecoveryTimer = null;
-let androidSeekTimer = null;
-let androidControlsTimer = null;
+let webRecoveryTimer = null;
+let webSeekTimer = null;
+let webControlsTimer = null;
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
 // A Roku QR is an explicit request to authenticate for that Roku. Never let
@@ -147,7 +147,6 @@ const scannerError = ref("");
 const failedLogoUrls = ref(new Set());
 let qrScanner = null;
 let loginViewportFrame = null;
-let nativeKeyboardHeight = 0;
 let loginKeyboardLift = 0;
 const imageUrl = value => {
   const url = String(value || '').trim();
@@ -186,14 +185,12 @@ async function loadPairingInfo() {
     deviceToken.value = claimed.token;
     window.localStorage.setItem("rh-device-token", claimed.token);
     pairing.value = false;
-    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
     return;
   }
   if (data.authenticated) {
     pairing.value = false;
-    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   }
@@ -208,7 +205,6 @@ async function claimPairing() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
-    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -226,7 +222,6 @@ async function signIn() {
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
-    await setAndroidLoginWindow(true);
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
@@ -253,7 +248,6 @@ function logout() {
   pairingEmail.value = "";
   pairingPassword.value = "";
   pairingPasswordConfirmation.value = "";
-  setAndroidLoginWindow(true);
   window.history.replaceState({}, "", window.location.pathname);
 }
 
@@ -294,7 +288,7 @@ async function stopQrScanner() {
   try {
     if (qrScanner.isScanning) await qrScanner.stop();
     qrScanner.clear();
-  } catch { /* Camera may already have been released by Android. */ }
+  } catch { /* Camera may already have been released by Web. */ }
   qrScanner = null;
   scannerOpen.value = false;
 }
@@ -351,9 +345,7 @@ function updateLoginKeyboardLift() {
       return;
     }
     const viewport = window.visualViewport;
-    const viewportBottom = nativeKeyboardHeight > 0
-      ? window.innerHeight - nativeKeyboardHeight
-      : viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
+    const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight;
     const submit = active.closest("form")?.querySelector(".login-submit");
     // Measurements include the previous CSS transform. Add the old lift back
     // before calculating the next lift, otherwise email -> password snaps down.
@@ -368,11 +360,6 @@ function resetLoginKeyboardLift() {
   window.setTimeout(updateLoginKeyboardLift, 80);
 }
 
-function handleNativeKeyboardHeight(event) {
-  nativeKeyboardHeight = Math.max(0, Number(event.detail?.height) || 0);
-  updateLoginKeyboardLift();
-}
-
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
@@ -384,7 +371,6 @@ onBeforeUnmount(() => {
   window.visualViewport?.removeEventListener("scroll", updateLoginKeyboardLift);
   document.removeEventListener("focusin", updateLoginKeyboardLift);
   document.removeEventListener("focusout", resetLoginKeyboardLift);
-  window.removeEventListener("rh-keyboard-height", handleNativeKeyboardHeight);
   if (loginViewportFrame) cancelAnimationFrame(loginViewportFrame);
 });
 
@@ -446,7 +432,7 @@ const savedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "c
 const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
 const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
 const hasMoreCatalog = computed(() => page.value < pages.value);
-// Managed category assignments are the single Library shown by Roku, Android,
+// Managed category assignments are the single Library shown by Roku, Web,
 // and Browser. Source enabledItems remain an import pool for Playlist only.
 const rokuLibraryItems = computed(() => {
   const unique = new Map();
@@ -480,14 +466,14 @@ const liveTvChannels = computed(() => {
 });
 const visibleLiveTvChannels = computed(() => liveTvChannels.value.slice(0, liveTvVisibleCount.value));
 
-const androidPlayerSrc = computed(() => {
-  const item = androidNowPlaying.value;
+const webPlayerSrc = computed(() => {
+  const item = webNowPlaying.value;
   if (!item) return "";
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
   const generated = playableSourceId && item.id
-    ? (!androidForceHls.value && playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
+    ? (!webForceHls.value && playableKind !== 'channel' && ['mp4', 'm4v', 'webm'].includes(String(item.extension || '').toLowerCase())
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
@@ -495,7 +481,7 @@ const androidPlayerSrc = computed(() => {
   const raw = generated || item.playbackUrl || item.url;
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
-  if (target.origin === new URL(browserStreamer).origin && androidStreamTicket.value) target.searchParams.set("streamTicket", androidStreamTicket.value);
+  if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
   else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
 });
@@ -508,11 +494,11 @@ async function loadStreamTicket(item) {
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
     playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
-    androidNowPlaying.value = playable;
+    webNowPlaying.value = playable;
   }
   const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
-  androidStreamTicket.value = data.ticket || "";
-  if (!androidStreamTicket.value) throw new Error("Could not authorize this stream.");
+  webStreamTicket.value = data.ticket || "";
+  if (!webStreamTicket.value) throw new Error("Could not authorize this stream.");
 }
 
 function formatTime(value) {
@@ -535,147 +521,147 @@ function parseDuration(value) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
-function handleAndroidMetadata(event) {
+function handleWebMetadata(event) {
   const duration = Number(event.target.duration) || 0;
   // Movie playback is delivered through a deliberately rolling HLS manifest.
   // Safari reports that short window as media duration, so it must never be
   // used as the movie's timeline length.
-  if (androidNowPlaying.value?.kind === "movie") return;
+  if (webNowPlaying.value?.kind === "movie") return;
   if (!Number.isFinite(duration) || duration <= 0) return;
-  const absoluteDuration = androidPlaybackOffset.value + duration;
+  const absoluteDuration = webPlaybackOffset.value + duration;
   // Safari can expose only the currently buffered HLS window here. Never let
   // that shorter value replace the full duration returned by Xtream.
-  if (absoluteDuration > androidDuration.value) androidDuration.value = absoluteDuration;
+  if (absoluteDuration > webDuration.value) webDuration.value = absoluteDuration;
 }
 
 async function loadMovieDuration(item) {
   if (!item?.sourceId || !item?.id || !['movie', 'series'].includes(item.kind)) return;
   const catalogDuration = parseDuration(item.duration);
-  if (catalogDuration > 0) androidDuration.value = Math.max(androidDuration.value, catalogDuration);
+  if (catalogDuration > 0) webDuration.value = Math.max(webDuration.value, catalogDuration);
   if (item.kind !== "movie") return;
   try {
     const params = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
     const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration${params}`);
-    if (androidNowPlaying.value?.key !== item.key) return;
+    if (webNowPlaying.value?.key !== item.key) return;
     const seconds = Number(data.seconds) || parseDuration(data.duration);
-    if (seconds > 0) androidDuration.value = Math.max(androidDuration.value, seconds);
+    if (seconds > 0) webDuration.value = Math.max(webDuration.value, seconds);
   } catch { /* The media element can still provide duration when available. */ }
 }
 
-const androidRemainingTime = computed(() => Math.max(0, androidDuration.value - androidCurrentTime.value));
-const androidTimelineStyle = computed(() => {
-  const percent = androidDuration.value ? Math.min(100, Math.max(0, (androidCurrentTime.value / androidDuration.value) * 100)) : 0;
-  return { "--android-progress": `${percent}%` };
+const webRemainingTime = computed(() => Math.max(0, webDuration.value - webCurrentTime.value));
+const webTimelineStyle = computed(() => {
+  const percent = webDuration.value ? Math.min(100, Math.max(0, (webCurrentTime.value / webDuration.value) * 100)) : 0;
+  return { "--web-progress": `${percent}%` };
 });
-const androidUpNext = computed(() => null);
+const webUpNext = computed(() => null);
 
-function clearAndroidControlsTimer() {
-  if (androidControlsTimer) clearTimeout(androidControlsTimer);
-  androidControlsTimer = null;
+function clearWebControlsTimer() {
+  if (webControlsTimer) clearTimeout(webControlsTimer);
+  webControlsTimer = null;
 }
 
-function scheduleAndroidControlsHide() {
-  clearAndroidControlsTimer();
-  if (!androidPlaying.value || androidBuffering.value || androidPlayerError.value) return;
-  androidControlsTimer = setTimeout(() => { androidControlsVisible.value = false; }, 3600);
+function scheduleWebControlsHide() {
+  clearWebControlsTimer();
+  if (!webPlaying.value || webBuffering.value || webPlayerError.value) return;
+  webControlsTimer = setTimeout(() => { webControlsVisible.value = false; }, 3600);
 }
 
-function showAndroidControls() {
-  androidControlsVisible.value = true;
-  scheduleAndroidControlsHide();
+function showWebControls() {
+  webControlsVisible.value = true;
+  scheduleWebControlsHide();
 }
 
-function handleAndroidPlayerPointerMove(event) {
-  if (!androidNowPlaying.value || !event.target?.closest?.(".android-video-frame")) return;
-  showAndroidControls();
+function handleWebPlayerPointerMove(event) {
+  if (!webNowPlaying.value || !event.target?.closest?.(".web-video-frame")) return;
+  showWebControls();
 }
 
-function toggleAndroidControls(event) {
+function toggleWebControls(event) {
   if (event?.target?.closest?.("button, input")) return;
   // A tap on the video means playback is interactive again; clear any
   // transient buffering state so the spinner cannot remain stuck over it.
-  androidBuffering.value = false;
-  androidControlsVisible.value = !androidControlsVisible.value;
-  if (androidControlsVisible.value) scheduleAndroidControlsHide(); else clearAndroidControlsTimer();
+  webBuffering.value = false;
+  webControlsVisible.value = !webControlsVisible.value;
+  if (webControlsVisible.value) scheduleWebControlsHide(); else clearWebControlsTimer();
 }
 
-function onAndroidPlay() {
-  androidPlaying.value = true;
-  androidBuffering.value = false;
-  scheduleAndroidControlsHide();
+function onWebPlay() {
+  webPlaying.value = true;
+  webBuffering.value = false;
+  scheduleWebControlsHide();
 }
 
-function onAndroidPause() {
-  androidPlaying.value = false;
-  showAndroidControls();
+function onWebPause() {
+  webPlaying.value = false;
+  showWebControls();
 }
 
-function onAndroidWaiting() {
+function onWebWaiting() {
   // Any waiting or stalled event means the player is loading media. Keep the
   // loader visible until the media element reports that playback is ready.
-  androidBuffering.value = true;
-  showAndroidControls();
+  webBuffering.value = true;
+  showWebControls();
 }
 
-function clearAndroidRecoveryTimer() {
-  if (androidRecoveryTimer) clearTimeout(androidRecoveryTimer);
-  androidRecoveryTimer = null;
+function clearWebRecoveryTimer() {
+  if (webRecoveryTimer) clearTimeout(webRecoveryTimer);
+  webRecoveryTimer = null;
 }
 
-function handleAndroidVideoError() {
-  if (!androidNowPlaying.value) return;
-  const failedSource = androidPlayerSrc.value;
-  if (failedSource && !isHlsPlaybackUrl(failedSource) && !androidForceHls.value) {
-    androidForceHls.value = true;
-    androidPlaybackRetryCount.value = 0;
-    androidBuffering.value = true;
-    showAndroidControls();
-    configureMoviePlayback(androidCurrentTime.value);
+function handleWebVideoError() {
+  if (!webNowPlaying.value) return;
+  const failedSource = webPlayerSrc.value;
+  if (failedSource && !isHlsPlaybackUrl(failedSource) && !webForceHls.value) {
+    webForceHls.value = true;
+    webPlaybackRetryCount.value = 0;
+    webBuffering.value = true;
+    showWebControls();
+    configureMoviePlayback(webCurrentTime.value);
     return;
   }
   // A WebView can emit a media error while HLS.js is recovering a segment.
   // Keep the player alive and show the final error only after retries fail.
-  if (androidPlaybackRetryCount.value < 3) {
-    androidPlaybackRetryCount.value += 1;
-    androidBuffering.value = true;
-    showAndroidControls();
-    clearAndroidRecoveryTimer();
-    androidRecoveryTimer = setTimeout(() => {
-      androidRecoveryTimer = null;
-      if (androidHls) androidHls.startLoad();
-      else configureMoviePlayback(androidPlaybackOffset.value);
-    }, 900 * androidPlaybackRetryCount.value);
+  if (webPlaybackRetryCount.value < 3) {
+    webPlaybackRetryCount.value += 1;
+    webBuffering.value = true;
+    showWebControls();
+    clearWebRecoveryTimer();
+    webRecoveryTimer = setTimeout(() => {
+      webRecoveryTimer = null;
+      if (webHls) webHls.startLoad();
+      else configureMoviePlayback(webPlaybackOffset.value);
+    }, 900 * webPlaybackRetryCount.value);
     return;
   }
-  androidPlayerError.value = "Playback unavailable";
-  androidBuffering.value = false;
-  showAndroidControls();
+  webPlayerError.value = "Playback unavailable";
+  webBuffering.value = false;
+  showWebControls();
 }
 
-function onAndroidReady(event) {
-  if (event?.type === "playing") androidPlaying.value = true;
-  androidBuffering.value = false;
-  androidPlaybackRetryCount.value = 0;
-  if (event?.type === "playing" && !androidMediaReady.value) {
+function onWebReady(event) {
+  if (event?.type === "playing") webPlaying.value = true;
+  webBuffering.value = false;
+  webPlaybackRetryCount.value = 0;
+  if (event?.type === "playing" && !webMediaReady.value) {
     const video = event.target;
     const reveal = () => {
-      if (video !== androidVideo.value || androidMediaReady.value) return;
+      if (video !== webVideo.value || webMediaReady.value) return;
       video.style.opacity = "1";
-      androidMediaReady.value = true;
+      webMediaReady.value = true;
     };
     if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(reveal);
     else setTimeout(reveal, 500);
   }
-  scheduleAndroidControlsHide();
+  scheduleWebControlsHide();
 }
 
-function onAndroidFirstFrame() {
-  androidMediaReady.value = true;
-  onAndroidReady();
+function onWebFirstFrame() {
+  webMediaReady.value = true;
+  onWebReady();
 }
 
 function movieStreamUrl(startSeconds = 0) {
-  const source = androidPlayerSrc.value;
+  const source = webPlayerSrc.value;
   if (!source) return "";
   const target = new URL(source);
   if (startSeconds > 0 && isHlsPlaybackUrl(target.toString())) target.searchParams.set("start", String(Math.floor(startSeconds)));
@@ -691,17 +677,17 @@ function isHlsPlaybackUrl(source) {
 
 async function configureMoviePlayback(startSeconds = 0) {
   await nextTick();
-  const video = androidVideo.value;
+  const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
   if (!video || !source) {
-    androidPlayerError.value = "This movie does not have a playable stream.";
+    webPlayerError.value = "This movie does not have a playable stream.";
     return;
   }
-  if (androidHls) {
-    androidHls.destroy();
-    androidHls = null;
+  if (webHls) {
+    webHls.destroy();
+    webHls = null;
   }
-  clearAndroidRecoveryTimer();
+  clearWebRecoveryTimer();
   video.removeAttribute("src");
   video.style.opacity = "0";
   video.load();
@@ -710,78 +696,56 @@ async function configureMoviePlayback(startSeconds = 0) {
     if (directPlayback) {
       video.src = source;
       await video.play();
-      androidPlaying.value = true;
+      webPlaying.value = true;
     } else if (Hls.isSupported()) {
-      androidHls = new Hls({ enableWorker: true, lowLatencyMode: false });
-      androidHls.on(Hls.Events.ERROR, (_event, data) => {
+      webHls = new Hls({ enableWorker: true, lowLatencyMode: false });
+      webHls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
-        if (androidPlaybackRetryCount.value < 3) {
-          androidPlaybackRetryCount.value += 1;
-          androidBuffering.value = true;
-          showAndroidControls();
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) androidHls.recoverMediaError();
+        if (webPlaybackRetryCount.value < 3) {
+          webPlaybackRetryCount.value += 1;
+          webBuffering.value = true;
+          showWebControls();
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) webHls.recoverMediaError();
           else {
-            clearAndroidRecoveryTimer();
-            androidRecoveryTimer = setTimeout(() => androidHls?.startLoad(), 900 * androidPlaybackRetryCount.value);
+            clearWebRecoveryTimer();
+            webRecoveryTimer = setTimeout(() => webHls?.startLoad(), 900 * webPlaybackRetryCount.value);
           }
         } else {
-          androidPlayerError.value = "This movie could not be played right now.";
-          androidBuffering.value = false;
+          webPlayerError.value = "This movie could not be played right now.";
+          webBuffering.value = false;
         }
       });
-      androidHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
-        try { await video.play(); androidPlaying.value = true; } catch { /* The user can press Play. */ }
+      webHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
+        try { await video.play(); webPlaying.value = true; } catch { /* The user can press Play. */ }
       });
-      androidHls.loadSource(source);
-      androidHls.attachMedia(video);
+      webHls.loadSource(source);
+      webHls.attachMedia(video);
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
       video.src = source;
       await video.play();
-      androidPlaying.value = true;
-    } else androidPlayerError.value = "HLS playback is not supported on this device.";
-  } catch { androidPlayerError.value = "This movie could not be played right now."; }
-}
-
-async function playAndroidMovie(item) {
-  androidStreamTicket.value = "";
-  androidForceHls.value = false;
-  androidNowPlaying.value = item;
-  androidFullscreen.value = false;
-  androidPlaying.value = false;
-  androidMuted.value = false;
-  androidCurrentTime.value = 0;
-  androidDuration.value = 0;
-  androidPlaybackOffset.value = 0;
-  androidPendingSeek.value = -1;
-  androidMediaReady.value = false;
-  androidBuffering.value = true;
-  androidControlsVisible.value = true;
-  androidQuality.value = item.quality || "Auto";
-  androidPlayerError.value = "";
-  androidPlaybackRetryCount.value = 0;
-  await loadStreamTicket(item);
-  await loadMovieDuration(androidNowPlaying.value);
-  await configureMoviePlayback(0);
+      webPlaying.value = true;
+    } else webPlayerError.value = "HLS playback is not supported on this device.";
+  } catch { webPlayerError.value = "This movie could not be played right now."; }
 }
 
 async function playWebMovie(item) {
-  androidStreamTicket.value = "";
-  androidForceHls.value = false;
-  androidNowPlaying.value = item;
-  androidPlaying.value = false;
-  androidMuted.value = false;
-  androidCurrentTime.value = 0;
-  androidDuration.value = 0;
-  androidPlaybackOffset.value = 0;
-  androidPendingSeek.value = -1;
-  androidMediaReady.value = false;
-  androidBuffering.value = true;
-  androidControlsVisible.value = true;
-  androidQuality.value = item.quality || "Auto";
-  androidPlayerError.value = "";
-  androidPlaybackRetryCount.value = 0;
+  webStreamTicket.value = "";
+  webForceHls.value = false;
+  webNowPlaying.value = item;
+  webPlaying.value = false;
+  webMuted.value = false;
+  webCurrentTime.value = 0;
+  webDuration.value = 0;
+  webPlaybackOffset.value = 0;
+  webPendingSeek.value = -1;
+  webMediaReady.value = false;
+  webBuffering.value = true;
+  webControlsVisible.value = true;
+  webQuality.value = item.quality || "Auto";
+  webPlayerError.value = "";
+  webPlaybackRetryCount.value = 0;
   await loadStreamTicket(item);
-  await loadMovieDuration(androidNowPlaying.value);
+  await loadMovieDuration(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
@@ -931,174 +895,132 @@ watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
 
 watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 
-async function lockAndroidLandscape() {
-  try { await ScreenOrientation.lock({ orientation: "landscape" }); } catch { /* Browser preview may not expose orientation locking. */ }
-}
-
-async function unlockAndroidOrientation() {
-  try { await ScreenOrientation.unlock(); } catch { /* Browser preview may not expose orientation unlocking. */ }
-}
-
-async function setAndroidLoginWindow(active) {
-  if (!androidApp.value || !Immersive) return;
-  try {
-    if (active) await Immersive.enter();
-    else await Immersive.exit();
-  } catch { /* Native window controls are unavailable in browser preview. */ }
-}
-
-async function restoreAndroidWindow() {
-  await unlockAndroidOrientation();
-  await new Promise(resolve => setTimeout(resolve, 180));
-  if (androidApp.value && Immersive) {
-    try { await Immersive.enter(); } catch { /* Native immersive mode may already be active. */ }
+async function closeWebPlayer() {
+  clearWebControlsTimer();
+  clearWebRecoveryTimer();
+  if (webSeekTimer) {
+    clearTimeout(webSeekTimer);
+    webSeekTimer = null;
   }
-}
-
-async function closeAndroidPlayer() {
-  clearAndroidControlsTimer();
-  clearAndroidRecoveryTimer();
-  if (androidSeekTimer) {
-    clearTimeout(androidSeekTimer);
-    androidSeekTimer = null;
-  }
-  if (androidHls) {
-    androidHls.destroy();
-    androidHls = null;
+  if (webHls) {
+    webHls.destroy();
+    webHls = null;
   }
   if (document.fullscreenElement) {
     try { await document.exitFullscreen(); } catch { /* Fullscreen may already be closing. */ }
   }
-  androidVideo.value?.pause();
-  androidVideo.value?.removeAttribute("src");
-  androidVideo.value?.load();
-  androidNowPlaying.value = null;
-  androidPlaying.value = false;
-  androidPlayerError.value = "";
-  androidFullscreen.value = false;
-  androidPendingSeek.value = -1;
-  androidMediaReady.value = false;
-  androidBuffering.value = false;
-  await restoreAndroidWindow();
+  webVideo.value?.pause();
+  webVideo.value?.removeAttribute("src");
+  webVideo.value?.load();
+  webNowPlaying.value = null;
+  webPlaying.value = false;
+  webPlayerError.value = "";
+  webFullscreen.value = false;
+  webPendingSeek.value = -1;
+  webMediaReady.value = false;
+  webBuffering.value = false;
 }
 
-async function toggleAndroidPlayback() {
-  if (!androidVideo.value) return;
-  if (androidVideo.value.paused) {
-    try { await androidVideo.value.play(); } catch { androidPlayerError.value = "Playback could not start."; }
-  } else androidVideo.value.pause();
+async function toggleWebPlayback() {
+  if (!webVideo.value) return;
+  if (webVideo.value.paused) {
+    try { await webVideo.value.play(); } catch { webPlayerError.value = "Playback could not start."; }
+  } else webVideo.value.pause();
 }
 
-function seekAndroidMovie(event) {
-  if (!androidVideo.value) return;
-  seekAndroidTo(Number(event.target.value));
+function seekWebMovie(event) {
+  if (!webVideo.value) return;
+  seekWebTo(Number(event.target.value));
 }
 
-function seekAndroidTo(target) {
-  const duration = androidDuration.value || Infinity;
+function seekWebTo(target) {
+  const duration = webDuration.value || Infinity;
   const next = Math.max(0, Math.min(Number(target) || 0, duration));
-  androidPendingSeek.value = next;
-  androidCurrentTime.value = next;
-  showAndroidControls();
-  if (androidSeekTimer) clearTimeout(androidSeekTimer);
-  androidSeekTimer = setTimeout(() => restartAndroidAt(next), 650);
+  webPendingSeek.value = next;
+  webCurrentTime.value = next;
+  showWebControls();
+  if (webSeekTimer) clearTimeout(webSeekTimer);
+  webSeekTimer = setTimeout(() => restartWebAt(next), 650);
 }
 
-function seekAndroidBy(seconds) {
-  const basePosition = androidPendingSeek.value >= 0 ? androidPendingSeek.value : androidCurrentTime.value;
-  seekAndroidTo(basePosition + seconds);
+function seekWebBy(seconds) {
+  const basePosition = webPendingSeek.value >= 0 ? webPendingSeek.value : webCurrentTime.value;
+  seekWebTo(basePosition + seconds);
 }
 
-async function restartAndroidAt(target) {
-  androidSeekTimer = null;
-  if (!androidNowPlaying.value) return;
-  androidPendingSeek.value = -1;
-  const directSource = androidPlayerSrc.value;
-  if (directSource && !isHlsPlaybackUrl(directSource) && androidVideo.value) {
-    androidPlaybackOffset.value = 0;
-    androidCurrentTime.value = target;
-    androidPlayerError.value = "";
-    androidBuffering.value = true;
-    showAndroidControls();
+async function restartWebAt(target) {
+  webSeekTimer = null;
+  if (!webNowPlaying.value) return;
+  webPendingSeek.value = -1;
+  const directSource = webPlayerSrc.value;
+  if (directSource && !isHlsPlaybackUrl(directSource) && webVideo.value) {
+    webPlaybackOffset.value = 0;
+    webCurrentTime.value = target;
+    webPlayerError.value = "";
+    webBuffering.value = true;
+    showWebControls();
     try {
-      androidVideo.value.currentTime = target;
-      await androidVideo.value.play();
-    } catch { handleAndroidVideoError(); }
+      webVideo.value.currentTime = target;
+      await webVideo.value.play();
+    } catch { handleWebVideoError(); }
     return;
   }
-  androidPlaybackOffset.value = target;
-  androidCurrentTime.value = target;
-  androidPlayerError.value = "";
-  androidBuffering.value = true;
-  androidMediaReady.value = false;
-  showAndroidControls();
+  webPlaybackOffset.value = target;
+  webCurrentTime.value = target;
+  webPlayerError.value = "";
+  webBuffering.value = true;
+  webMediaReady.value = false;
+  showWebControls();
   await configureMoviePlayback(target);
 }
 
-function toggleAndroidMute() {
-  if (!androidVideo.value) return;
-  androidVideo.value.muted = !androidVideo.value.muted;
-  androidMuted.value = androidVideo.value.muted;
+function toggleWebMute() {
+  if (!webVideo.value) return;
+  webVideo.value.muted = !webVideo.value.muted;
+  webMuted.value = webVideo.value.muted;
 }
 
-async function fullscreenAndroidMovie(event) {
+async function fullscreenWebMovie(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  const video = androidVideo.value;
+  const video = webVideo.value;
   if (!video) return;
 
-  if (!androidApp.value) {
-    const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
-    if (fullscreenElement || androidFullscreen.value) {
-      try {
-        if (document.exitFullscreen) await document.exitFullscreen();
-        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-      } catch { /* CSS fullscreen can still be closed below. */ }
-      androidFullscreen.value = false;
-      return;
-    }
-
-    androidFullscreen.value = true;
-    const frame = video.closest(".android-video-frame") || video;
+  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fullscreenElement || webFullscreen.value) {
     try {
-      // Safari requires this call synchronously from the click gesture. Do not
-      // await orientation or Capacitor plugins before requesting fullscreen.
-      if (frame.requestFullscreen) await frame.requestFullscreen();
-      else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
-      else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-    } catch {
-      // Keep the CSS fullscreen layout as a usable fallback.
-    }
-    showAndroidControls();
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    } catch { /* CSS fullscreen can still be closed below. */ }
+    webFullscreen.value = false;
     return;
   }
-
+  webFullscreen.value = true;
+  const frame = video.closest(".web-video-frame") || video;
   try {
-    androidFullscreen.value = true;
-    if (Immersive) await Immersive.enter();
-    await lockAndroidLandscape();
-    if (Immersive) await Immersive.enter();
-  } catch { /* Android keeps the CSS fullscreen layout as fallback. */ }
+    if (frame.requestFullscreen) await frame.requestFullscreen();
+    else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
+    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+  } catch { /* Keep the CSS fullscreen layout as a usable fallback. */ }
+  showWebControls();
 }
 
 onBeforeUnmount(() => {
-  if (androidHls) androidHls.destroy();
+  if (webHls) webHls.destroy();
   stopLiveTvPreview({ clearSelection: true });
   stopPlaylistPreview({ clearSelection: true });
-  clearAndroidRecoveryTimer();
+  clearWebRecoveryTimer();
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  document.removeEventListener("pointermove", handleAndroidPlayerPointerMove);
-  unlockAndroidOrientation();
+  document.removeEventListener("pointermove", handleWebPlayerPointerMove);
 });
 
 function handleFullscreenChange() {
-  if (document.fullscreenElement || !androidFullscreen.value) return;
-  androidFullscreen.value = false;
-  restoreAndroidWindow();
+  if (document.fullscreenElement || !webFullscreen.value) return;
+  webFullscreen.value = false;
 }
 
 document.addEventListener("fullscreenchange", handleFullscreenChange);
-document.addEventListener("pointermove", handleAndroidPlayerPointerMove, { passive: true });
+document.addEventListener("pointermove", handleWebPlayerPointerMove, { passive: true });
 
 function typeLabel(value) { return value === "series" ? "Series" : value === "movie" ? "Movies" : "Channels"; }
 function typeIcon(value) { return value === "series" ? "▦" : value === "movie" ? "▶" : "◉"; }
@@ -1227,7 +1149,7 @@ async function loadSources(preferred = sourceId.value) {
   else { items.value = []; savedItems.value = []; archivedItems.value = []; }
   // Playlist only needs the provider catalog. The managed-library payload is
   // required by Series/Movies/Live TV pages and can be loaded lazily there.
-  if (androidApp.value || safariPage.value !== "playlist") await loadManagedLibrary();
+  if (safariPage.value !== "playlist") await loadManagedLibrary();
 }
 
 async function loadLinkedDevices() {
@@ -1309,13 +1231,12 @@ async function loadCatalog(reset = true) {
   const requestedSourceId = sourceId.value;
   const requestedKind = kind.value;
   const normalizedQuery = normalizeSearchText(query.value);
-  const androidAllCategories = androidApp.value;
   const requestedPage = reset ? 1 : page.value + 1;
   if (reset) loading.value = true;
   else loadingMore.value = true;
   message.value = "";
   try {
-    const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: androidAllCategories ? "all" : category.value, titleLanguage: titleLanguage.value, q: normalizedQuery, page: String(requestedPage), limit: String(androidAllCategories && normalizedQuery ? 100 : playlistRequestSize) });
+  const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: normalizedQuery, page: String(requestedPage), limit: String(playlistRequestSize) });
     const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     const nextItems = data.items || [];
@@ -1464,7 +1385,6 @@ async function restoreArchived(item) {
 
 let searchTimer;
 let deviceStatusTimer;
-watch(androidPage, value => window.localStorage.setItem("rh-android-page", value));
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
@@ -1482,16 +1402,7 @@ onMounted(async () => {
   window.visualViewport?.addEventListener("scroll", updateLoginKeyboardLift);
   document.addEventListener("focusin", updateLoginKeyboardLift);
   document.addEventListener("focusout", resetLoginKeyboardLift);
-  window.addEventListener("rh-keyboard-height", handleNativeKeyboardHeight);
-  if (pairing.value) {
-    await setAndroidLoginWindow(true);
-    // Capacitor can restore its WebView window flags just after mount.
-    // Reapply login edge-to-edge once the native view has settled.
-    if (androidApp.value) window.setTimeout(() => setAndroidLoginWindow(true), 350);
-  } else if (androidApp.value) {
-    await setAndroidLoginWindow(true);
-    window.setTimeout(() => setAndroidLoginWindow(true), 350);
-  }
+  if (pairing.value) updateLoginKeyboardLift();
   try {
     if (pairCode) {
       await loadPairingInfo();
@@ -1510,7 +1421,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell" :class="{ 'android-app-mode': androidApp, 'safari-app-mode': browserApp && !androidApp, 'login-shell': pairing }">
+  <main class="shell" :class="{ 'safari-app-mode': browserApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
         <div class="login-art">
@@ -1583,11 +1494,11 @@ onMounted(async () => {
         <div class="safari-library-stats"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span>Series</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span>Movies</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span>Live Channels</span></button></div>
       </article>
 
-      <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page android-playlist-page">
+      <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
-        <form v-if="!sources.length" class="android-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
+        <form v-if="!sources.length" class="web-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
         <template v-else>
-          <div class="android-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
+          <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
             <section class="browser-playlist-preview" aria-label="Playlist preview">
@@ -1599,17 +1510,17 @@ onMounted(async () => {
               </div>
               <footer><span class="live-tv-on-air">{{ kind === 'channel' ? 'LIVE' : 'VOD' }}</span><div><strong>{{ playlistPreviewSelected?.title || 'Playlist preview' }}</strong><small>{{ playlistPreviewSelected ? (playlistPreviewSelected.categoryId || 'Uncategorized') : 'Choose an item from the table' }}</small></div></footer>
             </section>
-            <div class="android-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll">
+            <div class="web-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll">
               <div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div>
               <div v-for="item in visibleItems" :key="item.key" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),previewing:playlistPreviewSelected?.key === item.key}" tabindex="0" role="button" @click="selectPlaylistPreview(item)" @keydown.enter="selectPlaylistPreview(item)">
-                <span class="browser-playlist-item"><span class="android-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else-if="kind === 'channel'" class="channel-name-fallback">{{ item.title }}</span><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
+                <span class="browser-playlist-item"><span class="web-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else-if="kind === 'channel'" class="channel-name-fallback">{{ item.title }}</span><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
                 <code>{{ item.id }}</code>
                 <button type="button" class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'" :disabled="busy || savedKeys.has(item.key)" @click.stop="addPlaylistItem(item)">{{ savedKeys.has(item.key) ? 'Added' : 'Add' }}</button>
               </div>
               <div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div>
             </div>
           </div>
-          <p v-else class="android-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
+          <p v-else class="web-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
       </article>
 
@@ -1656,12 +1567,12 @@ onMounted(async () => {
             </div>
           </section>
         </div>
-        <p v-else class="android-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
+        <p v-else class="web-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
-        <div class="android-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
+        <div class="web-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
         <section class="weather-settings">
           <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
           <div class="weather-location-grid">
@@ -1692,12 +1603,12 @@ onMounted(async () => {
           </form>
           <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
           <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
-          <p v-else class="android-empty">No playlists added yet.</p>
+          <p v-else class="web-empty">No playlists added yet.</p>
         </section>
-        <section class="android-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="android-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="android-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="android-empty">No linked Roku devices.</p><button type="button" class="source-action android-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
-        <button type="button" class="source-action android-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
-        <form v-if="changePasswordOpen" class="android-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['android-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
-        <button type="button" class="logout-button android-logout" @click="logout">Log out</button>
+        <section class="web-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="web-empty">No linked Roku devices.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
+        <button type="button" class="source-action web-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
+        <form v-if="changePasswordOpen" class="web-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
+        <button type="button" class="logout-button web-logout" @click="logout">Log out</button>
       </article>
 
       <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
@@ -1779,10 +1690,10 @@ onMounted(async () => {
       <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
     </section>
     </template>
-      <section v-if="androidNowPlaying" class="android-player web-player" :class="{'is-fullscreen': androidFullscreen}" role="dialog" aria-label="Movie player">
-      <header class="android-player-header"><button type="button" class="android-player-back" aria-label="Close player" @click="closeAndroidPlayer">‹</button><div class="android-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ androidNowPlaying.title }}</h2><p>{{ androidNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(androidNowPlaying.kind) }} · {{ androidQuality }}</p></div><button type="button" class="android-player-close" aria-label="More options">⋮</button></header>
-      <div class="android-video-frame" @click="toggleAndroidControls"><video ref="androidVideo" :src="androidPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleAndroidMetadata" @timeupdate="androidCurrentTime = androidPlaybackOffset + $event.target.currentTime" @play="onAndroidPlay" @pause="onAndroidPause" @playing="onAndroidReady" @waiting="onAndroidWaiting" @stalled="onAndroidWaiting" @canplay="onAndroidReady" @ended="androidPlaying = false; showAndroidControls()" @error="handleAndroidVideoError"></video><div v-if="!androidMediaReady && !androidPlayerError" class="android-video-placeholder"></div><div class="android-player-overlay" :class="{visible: androidControlsVisible || androidBuffering || androidPlayerError}"><button type="button" class="android-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenAndroidMovie"><MaximizeIcon /></button><div class="android-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekAndroidBy(-10)"><RotateCcw10Icon /></button><button type="button" class="android-center-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback"><span v-if="androidBuffering && !androidPlayerError" class="android-center-spinner"></span><PauseIcon v-else-if="androidPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekAndroidBy(10)"><RotateCw10Icon /></button></div><div class="android-timeline"><button type="button" class="android-timeline-play" aria-label="Play or pause" @click.stop="toggleAndroidPlayback"><PauseIcon v-if="androidPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(androidCurrentTime) }}</span><input type="range" min="0" :max="androidDuration || 0" :value="androidCurrentTime" :style="androidTimelineStyle" aria-label="Movie progress" @pointerdown="showAndroidControls" @input="seekAndroidMovie"><span>-{{ formatTime(androidRemainingTime) }}</span></div></div><div v-if="androidPlayerError" class="android-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(androidNowPlaying)">Retry</button></div></div>
-      <article v-if="androidUpNext" class="android-up-next"><div class="android-up-next-icon"><img v-if="androidUpNext.logo" :src="imageUrl(androidUpNext.logo)" :alt="androidUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ androidUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(androidUpNext)">▶</button></article>
+      <section v-if="webNowPlaying" class="web-player web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Movie player">
+      <header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div><button type="button" class="web-player-close" aria-label="More options">⋮</button></header>
+      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="webCurrentTime = webPlaybackOffset + $event.target.currentTime" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @stalled="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
+      <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
     </template>
   </main>
