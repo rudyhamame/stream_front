@@ -1742,7 +1742,7 @@ onMounted(async () => {
       </article>
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span><button type="button" class="source-action" @click="categoryManagerOpen = !categoryManagerOpen">{{ categoryManagerOpen ? 'Close categories' : 'Manage categories' }}</button></div></div>
+        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span></div></div>
         <section v-if="categoryManagerOpen" class="library-category-manager">
           <header><div><p class="eyebrow">ROKU RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control both this Library and Roku.</span></header>
           <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
