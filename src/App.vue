@@ -56,6 +56,19 @@ function openSafariPage(page) {
 function openBrowserLibrary(tab) {
   openSafariPage({ series: "series", movie: "movies", channel: "channels" }[tab] || "series");
 }
+function openAddPageForItem(item) {
+  const targetKind = ["series", "movie", "channel"].includes(item?.kind) ? item.kind : safariLibraryTab.value;
+  if (item?.sourceId) sourceId.value = item.sourceId;
+  kind.value = targetKind;
+  category.value = "all";
+  titleLanguage.value = "all";
+  query.value = "";
+  openSafariPage("playlist");
+  loadCatalog().catch(error => {
+    messageType.value = "error";
+    message.value = error.message;
+  });
+}
 function focusMainMenu() {
   const menu = document.querySelector(".browser-sidebar nav");
   const active = menu?.querySelector("button.active") || menu?.querySelector("button");
@@ -137,6 +150,7 @@ const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
 const loginDevices = ref([]);
 const selectedLoginDevice = ref("");
+const authBusy = ref(false);
 const profiles = ref([]);
 const profileChooser = ref(false);
 const profileBusy = ref(false);
@@ -200,6 +214,7 @@ async function loadPairingInfo() {
 }
 
 async function claimPairing() {
+  authBusy.value = true;
   try {
     if (!pairCode) return;
     if (isPairingSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
@@ -211,6 +226,7 @@ async function claimPairing() {
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { authBusy.value = false; }
 }
 
 async function chooseProfile(profile) {
@@ -235,6 +251,7 @@ async function chooseProfile(profile) {
 }
 
 async function signIn() {
+  authBusy.value = true;
   try {
     if (loginDevices.value.length > 1 && !selectedLoginDevice.value) throw new Error("Select a linked Roku device");
     const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, deviceId: selectedLoginDevice.value }) });
@@ -252,9 +269,11 @@ async function signIn() {
     window.history.replaceState({}, "", window.location.pathname);
     profileChooser.value = true;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { authBusy.value = false; }
 }
 
 async function signUp() {
+  authBusy.value = true;
   try {
     if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
     await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
@@ -264,6 +283,7 @@ async function signUp() {
     messageType.value = "success";
     message.value = "Account created. Sign in, then scan a Roku QR code to link your device.";
   } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { authBusy.value = false; }
 }
 
 function logout() {
@@ -1460,7 +1480,7 @@ onMounted(async () => {
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="Your password"></label>
             <label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
-            <button type="submit" class="primary-action login-submit">{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</button>
+            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</span></button>
             <button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button>
           </form>
         </template>
@@ -1470,7 +1490,7 @@ onMounted(async () => {
               <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
               <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
               <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
-              <button type="submit" class="primary-action login-submit">Sign in</button>
+              <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
             </form>
             <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
             <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
@@ -1484,7 +1504,7 @@ onMounted(async () => {
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
             <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
-            <button type="submit" class="primary-action login-submit">Create account</button>
+            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Create account</span></button>
             <button type="button" class="source-action" @click="pairingMode = 'login'">I already have an account</button>
           </form>
         </template>
@@ -1597,7 +1617,7 @@ onMounted(async () => {
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" :class="{'is-playable': true}" @click="playWebMovie(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item" @click="openAddPageForItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Add</em></button>
             </div>
           </section>
         </div>
