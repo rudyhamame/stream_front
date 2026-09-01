@@ -390,19 +390,20 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .profile-chooser-inner h1 { margin:0; color:#f5f2ea; font:600 clamp(36px,6vw,62px)/.98 'Space Grotesk'; letter-spacing:-.06em; }
  .profile-chooser-copy { margin:15px auto 30px; color:#aeb7a0; font-size:15px; }
  .profile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); justify-content:center; gap:22px; }
- .profile-option { display:grid; justify-items:center; gap:9px; min-height:192px; padding:18px 12px; border:1px solid rgba(212,240,106,.16); border-radius:18px; background:rgba(8,12,8,.68); color:#f5f2ea; cursor:pointer; font:inherit; transition:transform .18s ease,border-color .18s ease,background .18s ease,box-shadow .18s ease; }
- .profile-option:hover,.profile-option:focus-visible { border-color:#d4f06a; background:rgba(25,39,20,.82); box-shadow:0 0 26px rgba(184,255,57,.13); outline:none; transform:translateY(-3px); }
+ .profile-option { display:grid; justify-items:center; gap:9px; min-height:150px; padding:8px 12px; border:0; border-radius:0; background:transparent; color:#f5f2ea; cursor:pointer; font:inherit; transition:transform .18s ease,opacity .18s ease; }
+ .profile-option:hover,.profile-option:focus-visible { outline:none; transform:translateY(-3px); }
  .profile-option:disabled { cursor:wait; opacity:.65; }
- .profile-avatar { display:grid; width:112px; height:112px; place-items:center; border:3px solid rgba(255,255,255,.18); border-radius:50%; color:#111510; font:700 42px 'Space Grotesk'; box-shadow:0 10px 26px rgba(0,0,0,.3); }
+ .profile-avatar { display:grid; width:112px; height:112px; place-items:center; border:3px solid rgba(255,255,255,.42); border-radius:50%; color:#10150f; font:700 42px 'Space Grotesk'; text-shadow:0 1px 1px rgba(255,255,255,.28); box-shadow:0 10px 26px rgba(0,0,0,.3); }
  .profile-avatar-lime { background:linear-gradient(145deg,#efff91,#9bd52d); }
- .profile-avatar-blue { background:linear-gradient(145deg,#9ddfff,#4386c9); }
- .profile-avatar-pink { background:linear-gradient(145deg,#ffb7d0,#cf537d); }
- .profile-avatar-orange { background:linear-gradient(145deg,#ffd18a,#dc7e28); }
- .profile-avatar-purple { background:linear-gradient(145deg,#d7b6ff,#8153bf); }
+ .profile-avatar-teal { background:linear-gradient(145deg,#b8fff0,#2dbb9f); color:#06241d; }
+ .profile-avatar-amber { background:linear-gradient(145deg,#ffe8a3,#e39b21); color:#2b1b05; }
+ .profile-avatar-violet { background:linear-gradient(145deg,#e2ccff,#8f5bd1); color:#160b2a; }
+ .profile-avatar-rose { background:linear-gradient(145deg,#ffd0df,#d95b86); color:#2e0716; }
+ .profile-avatar-blue { background:linear-gradient(145deg,#c5e7ff,#538fd0); color:#071b31; }
  .profile-option strong { font:600 16px 'Space Grotesk'; }
  .profile-option small { color:#899383; font-size:11px; }
  .profile-error { margin:22px 0 0; color:#ef9d91; font-size:13px; }
- @media(max-width:600px){ .profile-chooser-page { min-height:calc(100dvh - 132px); padding:30px 16px 92px; } .profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .profile-option { min-height:158px; padding:12px 8px; } .profile-avatar { width:82px; height:82px; font-size:30px; } }
+ @media(max-width:600px){ .profile-chooser-page { min-height:calc(100dvh - 132px); padding:30px 16px 92px; } .profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .profile-option { min-height:130px; padding:8px; } .profile-avatar { width:82px; height:82px; font-size:30px; } }
  @media(max-width:700px){
    .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-main{height:calc(100% - 58px);margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;min-width:0;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{width:100%;font-size:13px;line-height:1.15;overflow-wrap:anywhere}.safari-playlist-page{padding-bottom:84px}.safari-playlist-page .web-playlist-source{gap:8px}.safari-playlist-page .web-playlist-source select{width:auto;min-width:180px}.safari-playlist-page .web-playlist-source .web-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .web-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}.live-tv-browser{grid-template-columns:1fr;overflow:auto;padding-bottom:90px}.live-tv-preview{align-self:stretch}.live-tv-channel-list{min-height:420px}
   }
