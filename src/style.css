@@ -425,7 +425,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .web-player-title > p:last-child { margin:6px 0 0; color:#aeb7a0; font-size:14px; }
  .web-player-format-badge { flex:0 0 auto; margin-left:auto; border:1px solid rgba(212,240,106,.55); border-radius:999px; padding:6px 10px; background:rgba(35,47,26,.92); color:#d4f06a; font:700 10px 'DM Sans'; letter-spacing:.08em; text-transform:uppercase; }
  .web-player-back { flex:0 0 auto; width:36px; height:36px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#d4f06a; cursor:pointer; font:27px/1 'DM Sans'; }
-.safari-episodes-page { display:flex; flex-direction:column; padding-bottom:0; }
+.safari-episodes-page { display:flex; flex-direction:column; }
 .safari-episodes-heading { display:flex; flex:0 0 auto; align-items:flex-start; gap:14px; margin-bottom:28px; }
 .safari-episodes-heading .eyebrow { margin:2px 0 5px; }
 .safari-episodes-heading h1 { margin:0; color:#f3f4ef; font:600 clamp(25px,4vw,38px)/1.1 'Space Grotesk'; }
