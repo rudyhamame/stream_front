@@ -153,6 +153,7 @@ const loginDevices = ref([]);
 const selectedLoginDevice = ref("");
 const authBusy = ref(false);
 const profiles = ref([]);
+const activeProfileId = ref(window.localStorage.getItem("rh-profile-id") || "");
 const profileChooser = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
@@ -238,6 +239,8 @@ async function chooseProfile(profile) {
     const data = await request(`/api/account/profiles/${encodeURIComponent(profile.id)}/select`, { method: "POST" });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
+    activeProfileId.value = profile.id;
+    window.localStorage.setItem("rh-profile-id", profile.id);
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
@@ -249,6 +252,19 @@ async function chooseProfile(profile) {
   } finally {
     profileBusy.value = false;
   }
+}
+
+const activeProfile = computed(() => profiles.value.find(profile => profile.id === activeProfileId.value) || profiles.value.find(profile => profile.isDefault) || null);
+const activeProfileFirstName = computed(() => String(activeProfile.value?.name || "Profile").trim().split(/\s+/)[0]);
+async function setProfileAvatar(avatar) {
+  if (!activeProfile.value?.id || profileBusy.value) return;
+  profileBusy.value = true;
+  profileError.value = "";
+  try {
+    const data = await request(`/api/account/profiles/${encodeURIComponent(activeProfile.value.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatar }) });
+    profiles.value = profiles.value.map(profile => profile.id === data.profile.id ? data.profile : profile);
+  } catch (error) { profileError.value = error.message || "Could not update the profile picture."; }
+  finally { profileBusy.value = false; }
 }
 
 async function signIn() {
