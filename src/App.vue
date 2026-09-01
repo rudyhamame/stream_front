@@ -1671,6 +1671,9 @@ let searchTimer;
 let deviceStatusTimer;
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value === "episodes" ? "series" : value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
+watch(deviceToken, value => {
+  if (value && safariPage.value === "settings") void loadPlaylistHealth();
+});
 watch(safariPage, value => {
   if (!deviceToken.value) return;
   const pageRequest = value === "playlist"
