@@ -4,6 +4,7 @@ import { Html5Qrcode } from "html5-qrcode";
 import Hls from "hls.js";
 import HomeIcon from "./components/icons/HomeIcon.vue";
 import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
+import MovieIcon from "./components/icons/MovieIcon.vue";
 import GlobeAlt2Icon from "./components/icons/GlobeAlt2Icon.vue";
 import CogIcon from "./components/icons/CogIcon.vue";
 import MaximizeIcon from "./components/icons/MaximizeIcon.vue";
@@ -36,7 +37,6 @@ const storedPage = window.localStorage.getItem(pageStorageKey);
 const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
-const moviesNavIcon = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAMCAYAAABWdVznAAAAkklEQVR4AZSQgQ2CQBAE0SrUBoyNqV2oZWgTdgVlwAxhCYTwAbLLX+529y9/rHZ+U8MdbwtruIoYFH0H1ZlTowGUc8Sg6MAo/FAboDE0tIqB+QKaEuBpaNGwSLBRusG5vPF7wx5bDH+UJ/iAm1a6InzCHywaXgh8oYZzRFay6TBU7Aq+zmVUU8Rg0+GU/QpoZugAAAD//7AHqg0AAAAGSURBVAMAR5UWGTOKbOYAAAAASUVORK5CYII=";
 const safariRailMotion = ref({});
 const safariRailPositions = new Map();
 const safariRailMotionTimers = new Map();
@@ -44,7 +44,7 @@ const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
   { id: "series", label: "Series", icon: FilmRollAltIcon },
-  { id: "movies", label: "Movies", icon: moviesNavIcon },
+  { id: "movies", label: "Movies", icon: MovieIcon },
   { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
