@@ -110,6 +110,7 @@ const webCurrentTime = ref(0);
 const webDuration = ref(0);
 const webPlaybackOffset = ref(0);
 const webPendingSeek = ref(-1);
+const webBufferRecoveryPosition = ref(-1);
 const webMediaReady = ref(false);
 const webPlaybackRetryCount = ref(0);
 const webBuffering = ref(false);
@@ -708,6 +709,7 @@ function onWebPause() {
 }
 
 function onWebWaiting() {
+  if (webNowPlaying.value?.kind !== "channel") webBufferRecoveryPosition.value = Math.max(webBufferRecoveryPosition.value, webCurrentTime.value);
   clearTimeout(webBufferingTimer);
   webBufferingTimer = setTimeout(() => {
     const video = webVideo.value;
@@ -720,7 +722,17 @@ function onWebWaiting() {
 
 function onWebTimeUpdate(event) {
   clearTimeout(webBufferingTimer);
-  webCurrentTime.value = webPlaybackOffset.value + event.target.currentTime;
+  const absolutePosition = webPlaybackOffset.value + event.target.currentTime;
+  if (webBufferRecoveryPosition.value >= 5 && absolutePosition + 3 < webBufferRecoveryPosition.value) {
+    const recoveryPosition = webBufferRecoveryPosition.value;
+    webBufferRecoveryPosition.value = -1;
+    webPlaybackOffset.value = recoveryPosition;
+    webCurrentTime.value = recoveryPosition;
+    configureMoviePlayback(recoveryPosition);
+    return;
+  }
+  webCurrentTime.value = absolutePosition;
+  if (webBufferRecoveryPosition.value >= 0 && absolutePosition + 3 >= webBufferRecoveryPosition.value) webBufferRecoveryPosition.value = -1;
   if (!event.target.paused && event.target.readyState >= 3) webBuffering.value = false;
 }
 
@@ -864,6 +876,7 @@ async function playWebMovie(item) {
   webDuration.value = 0;
   webPlaybackOffset.value = 0;
   webPendingSeek.value = -1;
+  webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
   webControlsVisible.value = true;
@@ -1500,6 +1513,8 @@ async function loadSaved() {
 
 async function saveSource() {
   busy.value = true;
+  messageType.value = "info";
+  message.value = editing.value ? "Saving playlist changes…" : "Saving playlist…";
   try {
     const isEditing = Boolean(editing.value);
     const data = await request(isEditing ? `/api/xtream/sources/${editing.value}` : "/api/xtream/sources", {
@@ -1508,9 +1523,10 @@ async function saveSource() {
       body: JSON.stringify({ name: name.value, type: sourceType.value, url: url.value, username: sourceUsername.value, password: sourcePassword.value }),
     });
     name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; editing.value = null;
-    await loadSources(data.id);
+    await loadSources(data.id, { loadPlaylist: false });
+    items.value = []; categories.value = []; languages.value = []; page.value = 1; pages.value = 1; total.value = 0;
     messageType.value = "success";
-    message.value = "Source saved.";
+    message.value = data.warning || "Source saved.";
   } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { busy.value = false; }
 }
@@ -1782,8 +1798,9 @@ onMounted(async () => {
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
-        <form v-if="!sources.length" class="web-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">Add playlist</button></form>
-        <template v-else>
+        <form class="web-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (sources.length ? 'Add another playlist' : 'Add playlist') }}</button></form>
+        <p v-if="message" role="status" aria-live="polite" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
+        <template v-if="sources.length">
           <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
@@ -1823,7 +1840,7 @@ onMounted(async () => {
               <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
               <div class="series-episode-list">
                 <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
-                  <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
+                  <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span v-if="episode.extension || episode.streamFormat" class="series-episode-format">{{ streamFormatLabel(episode) }}</span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
                 </button>
               </div>
             </section>
@@ -1862,7 +1879,7 @@ onMounted(async () => {
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab === 'movie' && streamFormatLabel(item)" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
             </div>
           </section>
         </div>
@@ -1905,7 +1922,7 @@ onMounted(async () => {
               <label>Username<input v-model="sourceUsername" :required="!editing" autocomplete="username" :placeholder="editing ? 'Leave blank to keep current' : 'Username'"></label>
               <label>Password<input v-model="sourcePassword" type="password" :required="!editing" autocomplete="new-password" :placeholder="editing ? 'Leave blank to keep current' : 'Password'"></label>
             </template>
-            <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ editing ? 'Save changes' : 'Add playlist' }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
+            <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (editing ? 'Save changes' : 'Add playlist') }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
           </form>
           <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
           <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
