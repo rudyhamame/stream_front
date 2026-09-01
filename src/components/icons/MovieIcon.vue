@@ -1,11 +1,10 @@
 <template>
-  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="3" y="5" width="18" height="14" rx="2" />
-    <path d="m3 9 4-4m2 4 4-4m2 4 4-4M3 15l4 4m2-4 4 4m2-4 4 4" />
-    <path fill="currentColor" stroke="none" d="m10 10 5 2-5 2z" />
+  <svg xmlns="http://www.w3.org/2000/svg" :width="24" :height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+    <!-- Boxicons v3.0.8 https://boxicons.com | License https://docs.boxicons.com/free -->
+    <path d="M21 6h-8V5c0-.55-.45-1-1-1h-2V3c0-.55-.45-1-1-1H6c-.55 0-1 .45-1 1v1H3c-.55 0-1 .45-1 1v16c0 .55.45 1 1 1h9c.55 0 1-.45 1-1v-1h4c.55 0 1-.45 1-1v-3c0-.55.45-1 1-1h2c.55 0 1-.45 1-1V7c0-.55-.45-1-1-1M11 20H4V6h7zm9-7h-1c-1.65 0-3 1.35-3 3v2h-3V8h7z" />
   </svg>
 </template>
 
 <script setup>
-defineOptions({ name: "MovieIcon" });
+defineOptions({ name: "FilmRollIcon" });
 </script>
