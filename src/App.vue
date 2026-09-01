@@ -447,10 +447,7 @@ const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
-const homeRecent = ref({ series: [], movie: [], channel: [] });
-const homeTotalCounts = ref({ series: 0, movie: 0, channel: 0 });
 const homeLoading = ref(false);
-const homeRecommendationsLoading = ref(false);
 const homeError = ref("");
 let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
@@ -510,6 +507,12 @@ const rokuLibraryItems = computed(() => {
   }
   return [...unique.values()];
 });
+const homeRecent = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value,
+  rokuLibraryItems.value
+    .filter(item => item?.kind === value)
+    .sort((a, b) => Number(b.added || 0) - Number(a.added || 0) || compareCatalogTitles(a, b))
+    .slice(0, 10),
+])));
 const rokuTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, rokuLibraryItems.value.filter(item => item?.kind === value).length])));
 function rokuItemsForTab(value) { return rokuLibraryItems.value.filter(item => item?.kind === value); }
 const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry?.kind === safariLibraryTab.value));
@@ -1174,24 +1177,6 @@ async function loadHomeData() {
   const requestId = ++homeRequestId;
   homeLoading.value = true;
   homeError.value = "";
-  let catalogLoaded = false;
-  try {
-    const catalog = await request(`/api/xtream/catalog-counts?refresh=${Date.now()}`, { cache: "no-store" });
-    if (requestId !== homeRequestId) return;
-    homeTotalCounts.value = catalog.counts || { series: 0, movie: 0, channel: 0 };
-    homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind)).filter(Boolean)]));
-    catalogLoaded = true;
-  } catch (error) {
-    if (requestId === homeRequestId) homeError.value = error.message || "Could not load the Home page.";
-  } finally {
-    if (requestId === homeRequestId) homeLoading.value = false;
-  }
-  if (catalogLoaded) loadHomeRecommendations(requestId).catch(() => {});
-}
-
-async function loadHomeRecommendations(requestId) {
-  if (homeRecommendationsLoading.value) return;
-  homeRecommendationsLoading.value = true;
   try {
     const language = document.documentElement.lang === "ar" ? "arabic" : "both";
     const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
@@ -1200,7 +1185,7 @@ async function loadHomeRecommendations(requestId) {
     if (requestId === homeRequestId) homeRecommendations.value = [];
     if (requestId === homeRequestId && error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
   } finally {
-    homeRecommendationsLoading.value = false;
+    if (requestId === homeRequestId) homeLoading.value = false;
   }
 }
 
@@ -1696,8 +1681,8 @@ onMounted(async () => {
           </div>
         </header>
 
-        <section class="safari-library-stats" aria-label="Library totals"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }} <small>/ {{ homeTotalCounts.series || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }} <small>/ {{ homeTotalCounts.movie || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }} <small>/ {{ homeTotalCounts.channel || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> LIVE CHANNELS</span></div></section>
-        <div v-if="homeLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Refreshing your library…</span></div>
+        <section class="safari-library-stats" aria-label="Saved library items"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span><b>SAVED</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span><b>SAVED</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span><b>SAVED</b> LIVE CHANNELS</span></div></section>
+        <div v-if="homeLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Refreshing recommendations…</span></div>
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
         <section v-if="homeRecommendations.length" class="home-rail home-ai-rail">
@@ -1705,10 +1690,10 @@ onMounted(async () => {
           <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small><em class="home-add-action">Add to library</em></button></div>
         </section>
 
-        <template v-for="rail in [{kind:'series', title:'New series'}, {kind:'movie', title:'New movies'}, {kind:'channel', title:'Live channels'}]" :key="rail.kind">
+        <template v-for="rail in [{kind:'series', title:'Saved series'}, {kind:'movie', title:'Saved movies'}, {kind:'channel', title:'Saved live channels'}]" :key="rail.kind">
           <section v-if="homeRecent[rail.kind]?.length" class="home-rail">
-            <header><div><p class="eyebrow">NEW RELEASES</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
-            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Newly added' }}</small><em class="home-add-action">Add to library</em></button></div>
+            <header><div><p class="eyebrow">RECENTLY SAVED</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
+            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="playLibraryItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Saved in your library' }}</small><em class="home-add-action">Play</em></button></div>
           </section>
         </template>
       </article>
