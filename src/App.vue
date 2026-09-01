@@ -144,6 +144,7 @@ const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
 // requested, while leaving the short-lived pair code in the URL intact.
 if (pairCode) window.localStorage.removeItem("rh-device-token");
 const deviceToken = ref(pairCode ? "" : storedToken());
+const appReady = ref(!deviceToken.value);
 const pairingDeviceId = ref("");
 const pairing = ref(Boolean(pairCode) || !deviceToken.value);
 const pairingReady = ref(false);
@@ -205,20 +206,26 @@ async function loadPairingInfo() {
   if (data.canAutoLogin) {
     const claimed = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
     deviceToken.value = claimed.token;
+    appReady.value = false;
     window.localStorage.setItem("rh-device-token", claimed.token);
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
+    await loadHomeData();
+    appReady.value = true;
     return;
   }
   if (data.authenticated) {
+    appReady.value = false;
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
+    await loadHomeData();
+    appReady.value = true;
   }
 }
 
@@ -230,16 +237,20 @@ async function claimPairing() {
     const path = isPairingSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
     const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
     deviceToken.value = data.token;
+    appReady.value = false;
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
     await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
+    await loadHomeData();
+    appReady.value = true;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { authBusy.value = false; }
 }
 
 async function chooseProfile(profile) {
   if (!profile?.id || profileBusy.value) return;
+  appReady.value = false;
   profileBusy.value = true;
   profileError.value = "";
   try {
@@ -251,11 +262,12 @@ async function chooseProfile(profile) {
     await request("/api/health");
     online.value = true;
     await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    loadHomeData().catch(() => {});
     await loadManagedLibrary();
+    await loadHomeData();
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
+    appReady.value = true;
   } catch (error) {
     profileError.value = error.message || "Could not open this profile.";
   } finally {
@@ -314,6 +326,7 @@ async function signUp() {
 
 function logout() {
   deviceToken.value = "";
+  appReady.value = true;
   window.localStorage.removeItem("rh-device-token");
   window.sessionStorage.removeItem(profileSelectionKey);
   pairing.value = true;
@@ -1562,6 +1575,7 @@ onMounted(async () => {
       profileError.value = "";
       pairing.value = false;
       profileChooser.value = true;
+      appReady.value = false;
       return;
     }
     const healthRequest = request("/api/health");
@@ -1571,7 +1585,8 @@ onMounted(async () => {
     online.value = true;
     // Totals and recommendations enrich an already usable page and must not
     // delay startup when an IPTV provider is slow or unavailable.
-    loadHomeData().catch(() => {});
+    await loadHomeData();
+    appReady.value = true;
     if (safariPage.value === "playlist") loadSources().catch(error => {
       messageType.value = "error";
       message.value = error.message;
@@ -1580,7 +1595,7 @@ onMounted(async () => {
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
     }, 10_000);
-  } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; }
+  } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
 </script>
 
@@ -1662,7 +1677,8 @@ onMounted(async () => {
       <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
       <div class="topbar-actions"><span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
-    <section v-if="browserApp" class="browser-app-shell">
+    <section v-if="browserApp" class="browser-app-shell" :class="{ 'is-loading': !appReady }">
+      <div v-if="!appReady" class="safari-app-loading" role="status" aria-live="polite" aria-label="Loading library"><span class="safari-app-loading-spinner" aria-hidden="true"></span></div>
       <aside class="browser-sidebar">
         <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"></div>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
