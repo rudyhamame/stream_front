@@ -1617,7 +1617,7 @@ onMounted(async () => {
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item" @click="openAddPageForItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Add</em></button>
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" @click="openAddPageForItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Add</em></button>
             </div>
           </section>
         </div>
