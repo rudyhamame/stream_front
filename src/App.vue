@@ -1,7 +1,5 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { Html5Qrcode } from "html5-qrcode";
-import Hls from "hls.js";
 import HomeIcon from "./components/icons/HomeIcon.vue";
 import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
 import MovieIcon from "./components/icons/MovieIcon.vue";
@@ -128,10 +126,15 @@ let liveTvHls = null;
 let liveTvRequestId = 0;
 let playlistPreviewHls = null;
 let playlistPreviewRequestId = 0;
+let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webBufferingTimer = null;
 let webSeekTimer = null;
 let webControlsTimer = null;
+async function loadHlsConstructor() {
+  if (!hlsConstructorPromise) hlsConstructorPromise = import("hls.js").then(module => module.default);
+  return hlsConstructorPromise;
+}
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const profileSelectionKey = "rh-profile-selection-pending";
 const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
@@ -205,7 +208,7 @@ async function loadPairingInfo() {
     window.localStorage.setItem("rh-device-token", claimed.token);
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     return;
@@ -213,7 +216,7 @@ async function loadPairingInfo() {
   if (data.authenticated) {
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
   }
@@ -230,7 +233,7 @@ async function claimPairing() {
     window.localStorage.setItem("rh-device-token", data.token);
     pairing.value = false;
     window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
   } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { authBusy.value = false; }
 }
@@ -247,8 +250,8 @@ async function chooseProfile(profile) {
     window.localStorage.setItem("rh-profile-id", profile.id);
     await request("/api/health");
     online.value = true;
-    await Promise.all([loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
-    await loadHomeData();
+    await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
+    loadHomeData().catch(() => {});
     await loadManagedLibrary();
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
@@ -396,6 +399,7 @@ async function startQrScanner() {
   scannerOpen.value = true;
   await new Promise(resolve => setTimeout(resolve, 50));
   try {
+    const { Html5Qrcode } = await import("html5-qrcode");
     qrScanner = new Html5Qrcode("qr-reader");
     await qrScanner.start(
       { facingMode: "environment" },
@@ -446,6 +450,7 @@ const homeRecommendations = ref([]);
 const homeRecent = ref({ series: [], movie: [], channel: [] });
 const homeTotalCounts = ref({ series: 0, movie: 0, channel: 0 });
 const homeLoading = ref(false);
+const homeRecommendationsLoading = ref(false);
 const homeError = ref("");
 let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
@@ -777,34 +782,37 @@ async function configureMoviePlayback(startSeconds = 0) {
       video.src = source;
       await video.play();
       webPlaying.value = true;
-    } else if (Hls.isSupported()) {
-      webHls = new Hls({ enableWorker: true, lowLatencyMode: false });
-      webHls.on(Hls.Events.ERROR, (_event, data) => {
-        if (!data.fatal) return;
-        if (webPlaybackRetryCount.value < 3) {
-          webPlaybackRetryCount.value += 1;
-          webBuffering.value = true;
-          showWebControls();
-          if (data.type === Hls.ErrorTypes.MEDIA_ERROR) webHls.recoverMediaError();
-          else {
-            clearWebRecoveryTimer();
-            webRecoveryTimer = setTimeout(() => webHls?.startLoad(), 900 * webPlaybackRetryCount.value);
+    } else {
+      const Hls = await loadHlsConstructor();
+      if (Hls.isSupported()) {
+        webHls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        webHls.on(Hls.Events.ERROR, (_event, data) => {
+          if (!data.fatal) return;
+          if (webPlaybackRetryCount.value < 3) {
+            webPlaybackRetryCount.value += 1;
+            webBuffering.value = true;
+            showWebControls();
+            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) webHls.recoverMediaError();
+            else {
+              clearWebRecoveryTimer();
+              webRecoveryTimer = setTimeout(() => webHls?.startLoad(), 900 * webPlaybackRetryCount.value);
+            }
+          } else {
+            webPlayerError.value = "This movie could not be played right now.";
+            webBuffering.value = false;
           }
-        } else {
-          webPlayerError.value = "This movie could not be played right now.";
-          webBuffering.value = false;
-        }
-      });
-      webHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
-        try { await video.play(); webPlaying.value = true; } catch { /* The user can press Play. */ }
-      });
-      webHls.loadSource(source);
-      webHls.attachMedia(video);
-    } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
-      video.src = source;
-      await video.play();
-      webPlaying.value = true;
-    } else webPlayerError.value = "HLS playback is not supported on this device.";
+        });
+        webHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
+          try { await video.play(); webPlaying.value = true; } catch { /* The user can press Play. */ }
+        });
+        webHls.loadSource(source);
+        webHls.attachMedia(video);
+      } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+        video.src = source;
+        await video.play();
+        webPlaying.value = true;
+      } else webPlayerError.value = "HLS playback is not supported on this device.";
+    }
   } catch { webPlayerError.value = "This movie could not be played right now."; }
 }
 
@@ -896,6 +904,7 @@ async function selectPlaylistPreview(item) {
       playlistPreviewLoading.value = false;
       try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
     };
+    const Hls = await loadHlsConstructor();
     if (Hls.isSupported()) {
       playlistPreviewHls = new Hls({ enableWorker: true, lowLatencyMode: playable.kind === "channel", liveSyncDurationCount: 3 });
       playlistPreviewHls.on(Hls.Events.MEDIA_ATTACHED, () => playlistPreviewHls?.loadSource(target.toString()));
@@ -945,6 +954,7 @@ async function selectLiveTvChannel(item) {
     const startPlayback = async () => {
       try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
     };
+    const Hls = await loadHlsConstructor();
     if (Hls.isSupported()) {
       liveTvHls = new Hls({ enableWorker: true, lowLatencyMode: true, liveSyncDurationCount: 3 });
       liveTvHls.on(Hls.Events.MEDIA_ATTACHED, () => liveTvHls?.loadSource(target.toString()));
@@ -1153,23 +1163,33 @@ async function loadHomeData() {
   const requestId = ++homeRequestId;
   homeLoading.value = true;
   homeError.value = "";
+  let catalogLoaded = false;
   try {
     const catalog = await request(`/api/xtream/catalog-counts?refresh=${Date.now()}`, { cache: "no-store" });
     if (requestId !== homeRequestId) return;
     homeTotalCounts.value = catalog.counts || { series: 0, movie: 0, channel: 0 };
     homeRecent.value = Object.fromEntries(["series", "movie", "channel"].map(kind => [kind, (catalog.recent?.[kind] || []).map(item => homeItem(item, kind)).filter(Boolean)]));
-    try {
-      const language = document.documentElement.lang === "ar" ? "arabic" : "both";
-      const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
-      if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item?.kind || item?.type)).filter(Boolean);
-    } catch (error) {
-      if (requestId === homeRequestId) homeRecommendations.value = [];
-      if (error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
-    }
+    catalogLoaded = true;
   } catch (error) {
     if (requestId === homeRequestId) homeError.value = error.message || "Could not load the Home page.";
   } finally {
     if (requestId === homeRequestId) homeLoading.value = false;
+  }
+  if (catalogLoaded) loadHomeRecommendations(requestId).catch(() => {});
+}
+
+async function loadHomeRecommendations(requestId) {
+  if (homeRecommendationsLoading.value) return;
+  homeRecommendationsLoading.value = true;
+  try {
+    const language = document.documentElement.lang === "ar" ? "arabic" : "both";
+    const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
+    if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item?.kind || item?.type)).filter(Boolean);
+  } catch (error) {
+    if (requestId === homeRequestId) homeRecommendations.value = [];
+    if (requestId === homeRequestId && error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
+  } finally {
+    homeRecommendationsLoading.value = false;
   }
 }
 
@@ -1260,7 +1280,7 @@ async function deleteManagedCategory(category) {
   finally { categoryBusy.value = false; }
 }
 
-async function loadSources(preferred = sourceId.value) {
+async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPage.value === "playlist" } = {}) {
   const data = await request("/api/xtream/sources");
   sources.value = data.items || [];
   sourceId.value = sources.value.some(item => item.id === preferred) ? preferred : (sources.value[0]?.id || "");
@@ -1269,8 +1289,12 @@ async function loadSources(preferred = sourceId.value) {
   savedItems.value = [...(source?.enabledItems || [])];
   archivedItems.value = [...(source?.archivedItems || [])];
   rememberItems([...savedItems.value, ...archivedItems.value]);
-  if (source) await Promise.all([loadCatalog(), loadSaved()]);
-  else { items.value = []; savedItems.value = []; archivedItems.value = []; }
+  // Provider catalogs can contain tens of thousands of rows and may take up
+  // to a minute to arrive. Only request one while the Playlist page is open;
+  // the Welcome and Library pages use the persisted account library instead.
+  if (source) {
+    if (loadPlaylist) await loadCatalog();
+  } else { items.value = []; savedItems.value = []; archivedItems.value = []; }
   // Playlist only needs the provider catalog. The managed-library payload is
   // required by Series/Movies/Live TV pages and can be loaded lazily there.
   if (safariPage.value !== "playlist") await loadManagedLibrary();
@@ -1512,7 +1536,9 @@ let deviceStatusTimer;
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
-  if (value !== "playlist" && deviceToken.value) loadManagedLibrary().catch(error => {
+  if (!deviceToken.value) return;
+  const pageRequest = value === "playlist" ? loadSources() : loadManagedLibrary();
+  pageRequest.catch(error => {
     messageType.value = "error";
     message.value = error.message;
   });
@@ -1543,11 +1569,17 @@ onMounted(async () => {
       return;
     }
     const healthRequest = request("/api/health");
-    await Promise.all([healthRequest, loadSources(), loadLinkedDevices(), loadWeatherSettings()]);
+    await Promise.all([healthRequest, loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
     profiles.value = (await request("/api/account/profiles")).items || [];
     if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     online.value = true;
-    await loadHomeData();
+    // Totals and recommendations enrich an already usable page and must not
+    // delay startup when an IPTV provider is slow or unavailable.
+    loadHomeData().catch(() => {});
+    if (safariPage.value === "playlist") loadSources().catch(error => {
+      messageType.value = "error";
+      message.value = error.message;
+    });
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
