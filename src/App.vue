@@ -881,6 +881,7 @@ async function playLibraryItem(item) {
 }
 
 async function openSeriesEpisodes(item) {
+  const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
   selectedSeries.value = item;
   seriesEpisodes.value = [];
   seriesEpisodesError.value = "";
@@ -889,7 +890,7 @@ async function openSeriesEpisodes(item) {
   try {
     if (!item?.sourceId || !item?.id) throw new Error("This series does not have episode information.");
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
-    if (selectedSeries.value !== item) return;
+    if (`${selectedSeries.value?.sourceId || ""}:${selectedSeries.value?.id || ""}` !== requestSeriesKey) return;
     seriesEpisodes.value = (Array.isArray(details?.episodes) ? details.episodes : []).map(episode => ({
       ...episode,
       sourceId: item.sourceId,
@@ -902,9 +903,9 @@ async function openSeriesEpisodes(item) {
       key: `${item.sourceId}:series:${item.id}:episode:${episode.id}`,
     }));
   } catch (error) {
-    if (selectedSeries.value === item) seriesEpisodesError.value = error?.message || "The episodes could not be loaded.";
+    if (`${selectedSeries.value?.sourceId || ""}:${selectedSeries.value?.id || ""}` === requestSeriesKey) seriesEpisodesError.value = error?.message || "The episodes could not be loaded.";
   } finally {
-    if (selectedSeries.value === item) seriesEpisodesLoading.value = false;
+    if (`${selectedSeries.value?.sourceId || ""}:${selectedSeries.value?.id || ""}` === requestSeriesKey) seriesEpisodesLoading.value = false;
   }
 }
 
@@ -1590,7 +1591,7 @@ async function restoreArchived(item) {
 
 let searchTimer;
 let deviceStatusTimer;
-watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value));
+watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value === "episodes" ? "series" : value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
   if (!deviceToken.value) return;
@@ -1787,6 +1788,24 @@ onMounted(async () => {
           </div>
           <p v-else class="web-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
+      </article>
+
+      <article v-if="safariPage === 'episodes'" class="safari-page safari-episodes-page">
+        <div class="safari-episodes-heading"><button type="button" class="web-player-back" aria-label="Back to Series" @click="openSafariPage('series')">‹</button><div><p class="eyebrow">EPISODES</p><h1>{{ selectedSeries?.title || 'Series' }}</h1><span v-if="seriesEpisodes.length">{{ seriesEpisodes.length }} episode{{ seriesEpisodes.length === 1 ? '' : 's' }}</span></div></div>
+        <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
+        <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }}</p>
+        <div v-else-if="seriesEpisodeSeasons.length" class="series-seasons">
+          <section v-for="season in seriesEpisodeSeasons" :key="season.number" class="series-season">
+            <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
+            <div class="series-episode-list">
+              <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
+                <span class="series-episode-art"><img v-if="episode.logo && !failedLogoUrls.has(episode.logo)" :src="imageUrl(episode.logo)" :alt="episode.title" @error="markLogoFailed(episode.logo)"><b v-else>▶</b></span>
+                <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play">▶</span>
+              </button>
+            </div>
+          </section>
+        </div>
+        <p v-else class="web-empty">No episodes are available for this series.</p>
       </article>
 
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
