@@ -574,6 +574,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .home-content-card > strong { display:block; overflow:hidden; color:#f2f2ea; font:600 14px/1.25 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
 .home-content-card > small { display:block; overflow:hidden; margin-top:4px; color:#899486; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .home-content-card > em { display:block; margin-top:8px; color:#d4f06a; font-size:11px; font-style:normal; font-weight:700; }
+.home-content-card > .home-add-action { width:max-content; max-width:100%; padding:5px 8px; border:1px solid rgba(212,240,106,.55); border-radius:999px; background:rgba(35,52,28,.9); color:#d4f06a; font-size:10px; line-height:1; white-space:nowrap; }
 @media(max-width:700px){
   .safari-welcome-page { padding-bottom:90px !important; }
   .home-hero { grid-template-columns:1fr; gap:8px; min-height:0; padding-top:8px; }
