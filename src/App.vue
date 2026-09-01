@@ -487,37 +487,39 @@ const visibleItems = computed(() => {
     return compareCatalogTitles(a, b);
   });
 });
-const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
-const savedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item.kind === value).length])));
-const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item.kind === value).length])));
-const savedItemsForTab = computed(() => savedItems.value.filter(item => item.kind === kind.value));
+const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item?.kind === value).length])));
+const savedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item?.kind === value).length])));
+const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item?.kind === value).length])));
+const savedItemsForTab = computed(() => savedItems.value.filter(item => item?.kind === kind.value));
 const hasMoreCatalog = computed(() => page.value < pages.value);
 // Managed category assignments are the single Library shown by Roku, Web,
 // and Browser. Source enabledItems remain an import pool for Playlist only.
 const rokuLibraryItems = computed(() => {
   const unique = new Map();
   for (const category of managedLibraryCategories.value) {
-    for (const item of category.items || []) {
+    for (const item of category?.items || []) {
+      if (!item) continue;
       const key = item.libraryKey || `${item.sourceId || "source"}:${item.kind}:${item.id || item.key}`;
       if (!unique.has(key)) unique.set(key, item);
     }
   }
   return [...unique.values()];
 });
-const rokuTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, rokuLibraryItems.value.filter(item => item.kind === value).length])));
-function rokuItemsForTab(value) { return rokuLibraryItems.value.filter(item => item.kind === value); }
-const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry.kind === safariLibraryTab.value));
-const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item.kind === safariLibraryTab.value));
+const rokuTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, rokuLibraryItems.value.filter(item => item?.kind === value).length])));
+function rokuItemsForTab(value) { return rokuLibraryItems.value.filter(item => item?.kind === value); }
+const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry?.kind === safariLibraryTab.value));
+const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item?.kind === safariLibraryTab.value));
 const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value,
-  managedLibraryCategories.value.filter(category => category.kind === value).reduce((count, category) => count + category.items.length, 0),
+  managedLibraryCategories.value.filter(category => category?.kind === value).reduce((count, category) => count + (category.items || []).filter(Boolean).length, 0),
 ])));
 const libraryRails = computed(() => {
   return managedCategoriesForTab.value.filter(category => category.items.length).map(category => ({ id: category.id, name: category.name, items: category.items }));
 });
 const liveTvChannels = computed(() => {
   const channels = new Map();
-  for (const category of managedLibraryCategories.value.filter(entry => entry.kind === "channel")) {
-    for (const item of category.items || []) {
+  for (const category of managedLibraryCategories.value.filter(entry => entry?.kind === "channel")) {
+    for (const item of category?.items || []) {
+      if (!item) continue;
       const key = item.libraryKey || `${item.sourceId || "source"}:${item.id}`;
       if (!channels.has(key)) channels.set(key, { ...item, categoryName: category.name });
     }
@@ -1121,8 +1123,8 @@ function rememberItems(entries = []) {
 }
 
 function applyManagedLibrary(data) {
-  managedLibraryCategories.value = data.categories || [];
-  managedLibraryItems.value = data.items || [];
+  managedLibraryCategories.value = (Array.isArray(data?.categories) ? data.categories : []).filter(Boolean).map(category => ({ ...category, items: Array.isArray(category.items) ? category.items.filter(Boolean) : [] }));
+  managedLibraryItems.value = (Array.isArray(data?.items) ? data.items : []).filter(Boolean);
   categoryNameDrafts.value = Object.fromEntries(managedLibraryCategories.value.map(category => [category.id, category.name]));
   if (categoryEditorId.value && !managedLibraryCategories.value.some(category => category.id === categoryEditorId.value)) {
     categoryEditorId.value = "";
