@@ -1643,18 +1643,17 @@ onMounted(async () => {
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <header class="home-hero">
           <div class="home-hero-copy">
-            <button v-if="activeProfile" type="button" class="welcome-profile-button" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span><strong>{{ activeProfileFirstName }}</strong></button>
+            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span></button>
             <p class="eyebrow">WELCOME BACK</p>
             <h1>Your library,<br><em>ready to watch.</em></h1>
             <p>Pick up where you left off or discover something new from your connected library.</p>
           </div>
           <div class="home-status-panel">
-            <div class="safari-backend-status" :class="{online}" role="status"><span class="backend-status-dot"></span><div><small>BACKEND STATUS</small><strong>{{ online ? 'Backend online' : 'Backend offline' }}</strong><em>RH Library service</em></div></div>
-            <section v-if="linkedDevices.length" class="home-devices" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section>
+            <section v-if="linkedDevices.length" class="home-devices home-device-panel" aria-label="Connected Roku devices"><p class="eyebrow">CONNECTED DEVICES</p><article v-for="device in linkedDevices" :key="device.id" class="home-device" :class="{running:device.running}"><span class="device-status-dot"></span><div><strong>{{ device.label }}</strong><small>{{ device.running ? 'In use' : 'Not in use' }}<template v-if="device.streaming"> · Streaming</template></small></div></article></section>
           </div>
         </header>
 
-        <section class="safari-library-stats" aria-label="Library totals"><button type="button" @click="openBrowserLibrary('series')"><strong>{{ rokuTypeCounts.series || 0 }} / {{ homeTotalCounts.series || 0 }}</strong><span>SAVED / TOTAL · SERIES</span></button><button type="button" @click="openBrowserLibrary('movie')"><strong>{{ rokuTypeCounts.movie || 0 }} / {{ homeTotalCounts.movie || 0 }}</strong><span>SAVED / TOTAL · MOVIES</span></button><button type="button" @click="openBrowserLibrary('channel')"><strong>{{ rokuTypeCounts.channel || 0 }} / {{ homeTotalCounts.channel || 0 }}</strong><span>SAVED / TOTAL · LIVE CHANNELS</span></button></section>
+        <section class="safari-library-stats" aria-label="Library totals"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }} <small>/ {{ homeTotalCounts.series || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }} <small>/ {{ homeTotalCounts.movie || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }} <small>/ {{ homeTotalCounts.channel || 0 }}</small></strong><span><b>SAVED</b><b>TOTAL</b> LIVE CHANNELS</span></div></section>
         <div v-if="homeLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Refreshing your library…</span></div>
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 

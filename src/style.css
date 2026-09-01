@@ -550,12 +550,18 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .safari-welcome-page { display:block; width:100%; max-width:none; padding-bottom:40px !important; overflow-y:auto; overflow-x:hidden; scrollbar-width:thin; scrollbar-color:#536047 transparent; }
 .home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; gap:30px; min-height:250px; padding:18px 0 28px; }
 .home-hero-copy { max-width:650px; }
+.home-hero-copy .welcome-profile-button { position:static; margin:0 0 30px 18px; padding:0; border:0; background:transparent; }
+.home-hero-copy .welcome-profile-button:hover,.home-hero-copy .welcome-profile-button:focus-visible { background:transparent; transform:none; }
 .home-hero-copy > p:not(.eyebrow) { max-width:520px; margin:20px 0 0; color:#aeb7a0; font-size:clamp(15px,2vw,18px); line-height:1.6; }
-.home-hero-copy .welcome-profile-button { margin-bottom:30px; }
-.home-status-panel { align-self:stretch; display:flex; flex-direction:column; justify-content:flex-end; gap:22px; padding:18px 0; }
-.home-status-panel .safari-backend-status { position:static; }
-.home-status-panel .home-devices { margin:0; }
+.home-status-panel { align-self:end; display:flex; flex-direction:column; justify-content:flex-end; gap:22px; padding:18px 18px 18px 0; }
+.home-device-panel { width:min(100%,300px); margin:0; padding:13px; border:1px solid rgba(184,255,57,.16); border-radius:12px; background:rgba(8,12,8,.48); }
+.home-device-panel > .eyebrow { margin:0 0 7px; }
 .safari-library-stats { grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin-bottom:38px; }
+.home-stat-card { display:flex; min-width:0; flex-direction:column; gap:8px; padding:15px 17px; border:1px solid rgba(165,255,65,.22); border-radius:12px; background:rgba(15,23,15,.78); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+.home-stat-card strong { color:#d4f06a; font:600 clamp(27px,4vw,38px)/1 'Space Grotesk'; letter-spacing:-.04em; }
+.home-stat-card strong small { color:#87927f; font:500 .58em 'Space Grotesk'; }
+.home-stat-card span { display:flex; align-items:center; gap:7px; color:#d8e2cf; font:600 12px/1.15 'Space Grotesk'; letter-spacing:.02em; }
+.home-stat-card span b { color:#899486; font-size:9px; letter-spacing:.1em; }
 .home-loading { display:flex; align-items:center; gap:10px; margin:22px 0; color:#aeb7a0; font-size:13px; }
 .home-loading .loading-ring { width:18px; height:18px; }
 .home-error { margin:14px 0 24px; color:#ffb1a9; font-size:13px; }
@@ -578,9 +584,9 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 @media(max-width:700px){
   .safari-welcome-page { padding-bottom:90px !important; }
   .home-hero { grid-template-columns:1fr; gap:8px; min-height:0; padding-top:8px; }
-  .home-hero-copy .welcome-profile-button { margin-bottom:24px; }
-  .home-status-panel { align-self:auto; padding:10px 0 22px; }
-  .home-status-panel .safari-backend-status { align-self:flex-end; }
+  .home-hero-copy .welcome-profile-button { margin:0 0 24px 14px; }
+  .home-status-panel { align-self:stretch; padding:10px 14px 22px; }
+  .home-device-panel { width:100%; }
   .safari-library-stats { margin-bottom:30px; }
   .home-content-card { flex-basis:140px; }
   .home-card-art { height:198px; }
