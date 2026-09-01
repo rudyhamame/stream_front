@@ -837,6 +837,17 @@ async function playWebMovie(item) {
   await configureMoviePlayback(0);
 }
 
+async function playLibraryItem(item) {
+  stopLiveTvPreview({ clearSelection: true });
+  try {
+    await playWebMovie(item);
+  } catch (error) {
+    webBuffering.value = false;
+    webPlayerError.value = error?.message || "This item could not be played right now.";
+    showWebControls();
+  }
+}
+
 function stopLiveTvPreview({ clearSelection = false } = {}) {
   liveTvRequestId += 1;
   if (liveTvHls) {
@@ -1747,22 +1758,13 @@ onMounted(async () => {
             </article>
           </div>
         </section>
-        <div v-if="safariLibraryTab === 'channel' && liveTvChannels.length" class="live-tv-browser">
-          <section class="live-tv-preview" aria-label="Live TV preview">
-            <div class="live-tv-screen">
-              <video ref="liveTvVideo" playsinline @loadstart="liveTvLoading = true" @playing="liveTvLoading = false" @waiting="liveTvLoading = true" @stalled="liveTvLoading = true" @error="liveTvLoading = false; liveTvError = 'This channel is unavailable right now.'"></video>
-              <div v-if="!liveTvSelected" class="live-tv-placeholder"><span>LIVE TV</span><strong>Select a channel to preview it</strong></div>
-              <div v-else-if="liveTvLoading" class="live-tv-loader" aria-label="Loading channel"></div>
-              <p v-if="liveTvError" class="live-tv-error">{{ liveTvError }}</p>
-            </div>
-            <footer><span class="live-tv-on-air">LIVE</span><div><strong>{{ liveTvSelected?.title || 'TV preview' }}</strong><small>{{ liveTvSelected ? liveTvSelected.categoryName : 'Choose a channel from the table' }}</small></div></footer>
-          </section>
+        <div v-if="safariLibraryTab === 'channel' && liveTvChannels.length" class="live-tv-browser live-tv-player-browser">
           <section class="live-tv-channel-list" aria-label="Live TV channels">
             <div class="live-tv-table-body" @scroll="handleLiveTvScroll">
               <header class="live-tv-table-row live-tv-table-header"><span>Channel</span><span>Key</span><span>ID</span><span>Category ID</span><span>Category</span><span>Format</span><span>Duration</span><span>Rating</span><span>Added</span><span>Status</span></header>
-              <button v-for="channel in visibleLiveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :class="{selected:(liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`)}" @click="selectLiveTvChannel(channel)">
+              <button v-for="channel in visibleLiveTvChannels" :key="channel.libraryKey || `${channel.sourceId}:${channel.id}`" type="button" class="live-tv-table-row" :aria-label="`Play ${channel.title}`" @click="playLibraryItem(channel)">
                 <span class="live-tv-channel"><span class="live-tv-channel-logo"><img v-if="channel.logo && !failedLogoUrls.has(channel.logo)" :src="imageUrl(channel.logo)" :alt="channel.title" @error="markLogoFailed(channel.logo)"><span v-else class="channel-name-fallback">{{ channel.title }}</span></span><strong>{{ channel.title }}</strong></span>
-                <code>{{ channel.key || channel.libraryKey || '—' }}</code><code>{{ channel.id || '—' }}</code><code>{{ channel.categoryId || '—' }}</code><span>{{ channel.categoryName || channel.category || '—' }}</span><span>{{ streamFormatLabel(channel) }}</span><span>{{ channel.duration || '—' }}</span><span>{{ channel.rating || '—' }}</span><span>{{ channel.added || '—' }}</span><span>{{ (liveTvSelected?.libraryKey || `${liveTvSelected?.sourceId}:${liveTvSelected?.id}`) === (channel.libraryKey || `${channel.sourceId}:${channel.id}`) ? 'Playing' : 'Preview' }}</span>
+                <code>{{ channel.key || channel.libraryKey || '—' }}</code><code>{{ channel.id || '—' }}</code><code>{{ channel.categoryId || '—' }}</code><span>{{ channel.categoryName || channel.category || '—' }}</span><span>{{ streamFormatLabel(channel) }}</span><span>{{ channel.duration || '—' }}</span><span>{{ channel.rating || '—' }}</span><span>{{ channel.added || '—' }}</span><span>Play</span>
               </button>
             </div>
           </section>
@@ -1771,7 +1773,7 @@ onMounted(async () => {
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
             <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" @click="openAddPageForItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Add</em></button>
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab !== 'channel'" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
             </div>
           </section>
         </div>
@@ -1905,7 +1907,7 @@ onMounted(async () => {
       <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
     </section>
     </template>
-      <section v-if="webNowPlaying" class="web-player web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Movie player">
+      <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Media player">
       <header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div><button type="button" class="web-player-close" aria-label="More options">⋮</button></header>
       <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
       <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
