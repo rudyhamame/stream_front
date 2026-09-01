@@ -140,7 +140,7 @@
  .browser-main .safari-bottom-menu { display:none; }
  .safari-app-mode > .topbar { display:none; }
  .safari-app-mode > .topbar .status,.safari-app-mode > .topbar .logout-button { display:none; }
- .safari-page-shell { height:calc(100dvh - 64px); padding:clamp(16px,3vw,30px) clamp(16px,4vw,46px) calc(86px + env(safe-area-inset-bottom)); overflow:hidden; }
+ .safari-page-shell { height:calc(100dvh - 64px); overflow:hidden; }
  .safari-page { width:min(100%,1080px); height:100%; margin:0 auto; overflow:hidden; }
  .safari-page h1 { margin:5px 0 14px; color:#f5f2ea; font:600 clamp(31px,5vw,58px)/1 'Space Grotesk'; letter-spacing:-.05em; }
  .safari-page h1 em { color:#d4f06a; font-style:normal; }
