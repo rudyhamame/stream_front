@@ -458,7 +458,7 @@ const kind = ref("channel"), items = ref([]), categories = ref([]), languages = 
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
-const selectedSeries = ref(null), seriesEpisodes = ref([]), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
+const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber = ref("all"), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
 const homeLoading = ref(false);
@@ -560,6 +560,9 @@ const seriesEpisodeSeasons = computed(() => {
     .sort((a, b) => a.number - b.number)
     .map(season => ({ ...season, episodes: season.episodes.sort((a, b) => (Number(a.episodeNumber) || 0) - (Number(b.episodeNumber) || 0)) }));
 });
+const displayedSeriesEpisodeSeasons = computed(() => selectedSeasonNumber.value === "all"
+  ? seriesEpisodeSeasons.value
+  : seriesEpisodeSeasons.value.filter(season => season.number === selectedSeasonNumber.value));
 
 const webPlayerSrc = computed(() => {
   const item = webNowPlaying.value;
@@ -884,6 +887,7 @@ async function openSeriesEpisodes(item) {
   const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
   selectedSeries.value = item;
   seriesEpisodes.value = [];
+  selectedSeasonNumber.value = "all";
   seriesEpisodesError.value = "";
   seriesEpisodesLoading.value = true;
   safariPage.value = "episodes";
@@ -1794,15 +1798,21 @@ onMounted(async () => {
         <div class="safari-episodes-heading"><button type="button" class="web-player-back" aria-label="Back to Series" @click="openSafariPage('series')">‹</button><div><p class="eyebrow">EPISODES</p><h1>{{ selectedSeries?.title || 'Series' }}</h1><span v-if="seriesEpisodes.length">{{ seriesEpisodes.length }} episode{{ seriesEpisodes.length === 1 ? '' : 's' }}</span></div></div>
         <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }}</p>
-        <div v-else-if="seriesEpisodeSeasons.length" class="series-seasons">
-          <section v-for="season in seriesEpisodeSeasons" :key="season.number" class="series-season">
-            <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
-            <div class="series-episode-list">
-              <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
-                <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
-              </button>
-            </div>
-          </section>
+        <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
+          <nav class="series-season-selector" aria-label="Select season">
+            <button type="button" :class="{active:selectedSeasonNumber === 'all'}" @click="selectedSeasonNumber = 'all'">All seasons</button>
+            <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" @click="selectedSeasonNumber = season.number">{{ season.title }}</button>
+          </nav>
+          <div class="series-seasons">
+            <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season">
+              <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
+              <div class="series-episode-list">
+                <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
+                  <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
+                </button>
+              </div>
+            </section>
+          </div>
         </div>
         <p v-else class="web-empty">No episodes are available for this series.</p>
       </article>
