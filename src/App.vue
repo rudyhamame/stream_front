@@ -1299,6 +1299,42 @@ function homeItem(item, kind) {
   return { ...normalized, key: homeItemKey(normalized) };
 }
 
+function welcomeItemEnabled(item) {
+  const source = sources.value.find(candidate => candidate.id === item?.sourceId);
+  return (source?.enabledItems || []).some(candidate => candidate?.key === item?.key
+    || (candidate?.id === item?.id && candidate?.kind === item?.kind));
+}
+
+async function toggleWelcomeItem(item) {
+  if (!item?.sourceId || !item?.id || !["series", "movie", "channel"].includes(item.kind) || busy.value) return;
+  busy.value = true;
+  try {
+    let source = sources.value.find(candidate => candidate.id === item.sourceId);
+    if (!source || !Array.isArray(source.enabledItems)) {
+      source = (await request(`/api/xtream/sources/${encodeURIComponent(item.sourceId)}/enabled`, { cache: "no-store" })).source;
+    }
+    if (!source) throw new Error("This playlist source is unavailable.");
+    const existing = Array.isArray(source.enabledItems) ? source.enabledItems : [];
+    const matches = candidate => candidate?.key === item.key || (candidate?.id === item.id && candidate?.kind === item.kind);
+    const isEnabled = existing.some(matches);
+    const nextItems = isEnabled ? existing.filter(candidate => !matches(candidate)) : [...existing, item];
+    const updated = await request(`/api/xtream/sources/${encodeURIComponent(item.sourceId)}/selection`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabledKeys: nextItems.map(candidate => candidate.key || homeItemKey(candidate)), enabledItems: nextItems }),
+    });
+    applySource(updated);
+    await loadManagedLibrary();
+    messageType.value = "success";
+    message.value = isEnabled ? `${item.title} removed from ${typeLabel(item.kind)}.` : `${item.title} added to ${typeLabel(item.kind)}.`;
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error.message || "Could not update this item.";
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function loadHomeData(force = false) {
   if (!deviceToken.value) return;
   if (!force && savedItems.value.length) {
