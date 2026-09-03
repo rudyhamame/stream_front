@@ -1722,6 +1722,7 @@ onMounted(async () => {
               <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
               <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
             </form>
+            <button type="button" class="source-action login-signup-action" @click="pairingMode = 'signup'">Sign up</button>
             <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
             <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
           </template>

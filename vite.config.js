@@ -12,6 +12,7 @@ const networkHosts = Object.values(os.networkInterfaces())
   .filter((address) => address.family === 'IPv4' && !address.internal)
   .map((address) => address.address);
 const allowedHosts = [
+  'rh.tailb5a10d.ts.net',
   'rudy-hp-pavilion-x360-convertible-14-ba0xx.tailb5a10d.ts.net',
   ...networkHosts,
 ];
