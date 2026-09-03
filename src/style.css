@@ -395,6 +395,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .profile-chooser-inner .eyebrow { margin-bottom:12px; color:#d4f06a; }
  .profile-chooser-inner h1 { margin:0; color:#f5f2ea; font:600 clamp(36px,6vw,62px)/.98 'Space Grotesk'; letter-spacing:-.06em; }
  .profile-chooser-copy { margin:15px auto 30px; color:#aeb7a0; font-size:15px; }
+ .profile-chooser-logout { margin-top:30px; min-width:110px; }
  .profile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); justify-content:center; gap:22px; }
  .profile-option { display:grid; justify-items:center; gap:9px; min-height:150px; padding:8px 12px; border:0; border-radius:0; background:transparent; color:#f5f2ea; cursor:pointer; font:inherit; transition:transform .18s ease,opacity .18s ease; }
  .profile-option:hover,.profile-option:focus-visible { outline:none; transform:translateY(-3px); }
@@ -412,7 +413,47 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .welcome-profile-button { position:absolute; top:0; right:0; display:flex; align-items:center; gap:10px; padding:6px 12px 6px 6px; border:1px solid rgba(184,255,57,.22); border-radius:999px; background:rgba(15,22,14,.78); color:#f5f2ea; cursor:pointer; font:600 13px/1 'Space Grotesk'; transition:border-color .18s ease,background .18s ease,transform .18s ease; }
  .welcome-profile-button:hover,.welcome-profile-button:focus-visible { border-color:#b8ff39; background:rgba(31,45,26,.9); outline:none; transform:translateY(-1px); }
  .welcome-profile-button .profile-avatar { width:34px; height:34px; border-width:2px; font-size:15px; box-shadow:none; }
- .settings-profile-card { padding:22px; border:1px solid rgba(184,255,57,.12); border-radius:18px; background:rgba(18,25,17,.78); }
+.settings-profile-card { padding:22px; border:1px solid rgba(184,255,57,.12); border-radius:18px; background:rgba(18,25,17,.78); }
+.safari-settings-page { max-width:760px; padding-bottom:36px; }
+.safari-settings-page > .safari-compact-heading { margin-bottom:18px; }
+.safari-settings-page .web-settings-card,.safari-settings-page .settings-profile-card,.safari-settings-page .weather-settings,.safari-settings-page .settings-playlists,.safari-settings-page .web-linked-settings { max-width:none; }
+.safari-settings-page .web-settings-card { min-height:58px; margin-bottom:14px; background:rgba(25,31,23,.88); }
+.safari-settings-page .web-linked-settings { margin:18px 0 0; padding:24px; border:1px solid rgba(184,255,57,.2); border-radius:18px; background:rgba(18,25,17,.78); box-shadow:0 14px 40px rgba(0,0,0,.14); }
+.safari-settings-page .web-linked-settings .settings-section-heading { margin-bottom:18px; }
+.safari-settings-page .web-linked-settings .settings-section-heading h2 { font-size:22px; }
+.safari-settings-page .web-linked-settings-list { gap:10px; }
+.safari-settings-page .web-linked-settings-list article { display:grid; grid-template-columns:46px minmax(0,1fr) auto; align-items:center; gap:13px; min-height:76px; padding:13px; border:1px solid #394a35; border-radius:13px; background:rgba(10,16,10,.72); }
+.linked-roku-icon { display:grid; place-items:center; width:46px; height:46px; border:1px solid rgba(184,255,57,.3); border-radius:13px; background:#26371f; color:#b8ff39; font-size:22px; }
+.linked-roku-copy { display:grid; min-width:0; gap:4px; }
+.linked-roku-copy strong { overflow:hidden; color:#f3f4f1; font:600 15px 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
+.linked-roku-copy small { overflow:hidden; color:#899383; font:10px monospace; text-overflow:ellipsis; white-space:nowrap; }
+.linked-roku-copy span { display:flex; align-items:center; gap:6px; color:#b8ff39; font-size:10px; }
+.linked-roku-copy span i { width:7px; height:7px; border-radius:50%; background:#b8ff39; box-shadow:0 0 9px rgba(184,255,57,.7); }
+.linked-roku-actions { display:flex; align-items:center; justify-content:space-between; gap:14px; margin-top:14px; }
+.linked-roku-actions .web-empty { margin:0; }
+.safari-settings-page .web-scan-roku { margin:0; }
+@media(max-width:600px){ .safari-settings-page .web-linked-settings { padding:18px; } .safari-settings-page .web-linked-settings-list article { grid-template-columns:40px minmax(0,1fr); } .linked-roku-icon { width:40px; height:40px; } .safari-settings-page .web-unlink-button { grid-column:2; justify-self:start; } .linked-roku-actions { align-items:stretch; flex-direction:column; } }
+.settings-profile-card,.weather-settings,.settings-playlists { margin:14px 0; padding:24px; border-color:rgba(184,255,57,.2); box-shadow:0 14px 40px rgba(0,0,0,.14); }
+.profile-picture-editor { display:flex; align-items:center; gap:20px; }
+.profile-picture-preview { display:grid; width:104px; height:104px; flex:0 0 104px; place-items:center; overflow:hidden; padding:0; border:2px solid #b8ff39; border-radius:50%; background:#1f2a1d; color:#d4f06a; cursor:pointer; font:700 34px 'Space Grotesk'; box-shadow:0 0 0 5px rgba(184,255,57,.1),0 14px 28px rgba(0,0,0,.25); }
+.profile-picture-preview img { width:100%; height:100%; object-fit:cover; }
+.profile-picture-help { margin:0 0 12px; color:#aeb7a0; font-size:13px; line-height:1.5; }
+.profile-password-divider { height:1px; margin:24px 0 20px; background:rgba(184,255,57,.14); }
+.profile-password-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.profile-password-heading .eyebrow { margin-bottom:5px; }
+.profile-password-heading h3 { margin:0; color:#f3f4f1; font:600 18px 'Space Grotesk'; }
+.profile-password-form { max-width:none; margin-top:16px; }
+.visually-hidden { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+.profile-avatar img { width:100%; height:100%; object-fit:cover; border-radius:inherit; }
+.profile-crop-backdrop { position:fixed; z-index:50; inset:0; display:grid; place-items:center; padding:20px; background:rgba(3,6,3,.82); backdrop-filter:blur(12px); }
+.profile-crop-modal { width:min(520px,100%); padding:24px; border:1px solid rgba(184,255,57,.3); border-radius:22px; background:#172016; box-shadow:0 24px 80px rgba(0,0,0,.55); }
+.profile-crop-window { width:min(320px,80vw); aspect-ratio:1; margin:6px auto 22px; overflow:hidden; border:2px solid #b8ff39; border-radius:50%; background:#0b100b; box-shadow:0 0 0 8px rgba(184,255,57,.08); }
+.profile-crop-window img { width:100%; height:100%; object-fit:cover; transform-origin:center; }
+.crop-control { display:grid; gap:7px; margin-top:12px; color:#aeb7a0; font-size:12px; }
+.crop-control input { accent-color:#b8ff39; }
+.profile-crop-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.profile-crop-actions button { min-width:120px; }
+@media(max-width:600px){ .profile-picture-editor { align-items:flex-start; flex-direction:column; } .profile-picture-preview { width:92px; height:92px; flex-basis:92px; } .settings-profile-card,.weather-settings,.settings-playlists { padding:18px; } .profile-crop-modal { padding:18px; } }
  .settings-profile-card .settings-section-heading { margin:0 0 18px; }
  .profile-picture-options { display:flex; flex-wrap:wrap; gap:14px; }
  .profile-picture-option { display:grid; width:64px; height:64px; place-items:center; border:3px solid transparent; border-radius:50%; color:#10150f; cursor:pointer; font:700 21px 'Space Grotesk'; box-shadow:0 7px 16px rgba(0,0,0,.26); transition:transform .16s ease,border-color .16s ease; }
@@ -579,7 +620,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 
 /* Home dashboard: the same content-first rhythm as the Roku welcome screen. */
  .safari-welcome-page { display:block; width:100%; max-width:none; padding-bottom:40px !important; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
-.home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; gap:30px; min-height:250px; padding:18px 0 28px; }
+.home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; justify-content:space-between; gap:30px; min-height:250px; padding:18px 0 28px; }
 .home-hero-copy { max-width:650px; }
 .home-hero-copy .welcome-profile-button { position:static; margin:0 0 30px 18px; padding:0; border:0; background:transparent; }
 .home-hero-copy .welcome-profile-button:hover,.home-hero-copy .welcome-profile-button:focus-visible { background:transparent; transform:none; }
@@ -612,8 +653,9 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .home-card-art b { position:absolute; right:7px; bottom:7px; padding:4px 6px; border-radius:5px; background:rgba(5,8,5,.82); color:#d4f06a; font:700 9px/1 'Space Grotesk'; letter-spacing:.08em; }
 .home-content-card > strong { display:block; overflow:hidden; color:#f2f2ea; font:600 14px/1.25 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
 .home-content-card > small { display:block; overflow:hidden; margin-top:4px; color:#899486; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
-.home-content-card > em { display:block; margin-top:8px; color:#d4f06a; font-size:11px; font-style:normal; font-weight:700; }
-.home-content-card > .home-add-action { width:max-content; max-width:100%; padding:5px 8px; border:1px solid rgba(212,240,106,.55); border-radius:999px; background:rgba(35,52,28,.9); color:#d4f06a; font-size:10px; line-height:1; white-space:nowrap; }
+.home-card-art .home-add-action { position:absolute; top:50%; left:50%; display:grid; width:48px; height:48px; place-items:center; border:1px solid rgba(212,240,106,.62); border-radius:50%; background:rgba(5,8,5,.28); color:#d4f06a; opacity:.92; transform:translate(-50%,-50%); transition:background .18s ease,transform .18s ease,opacity .18s ease; }
+.home-card-art .home-add-action svg { width:28px; height:28px; filter:drop-shadow(0 2px 8px rgba(0,0,0,.75)); }
+.home-content-card:hover .home-card-art .home-add-action,.home-content-card:focus-visible .home-card-art .home-add-action { background:rgba(5,8,5,.52); opacity:1; transform:translate(-50%,-50%) scale(1.08); }
 @media(max-width:700px){
   .safari-welcome-page { padding-bottom:90px !important; }
   .home-hero { grid-template-columns:1fr; gap:8px; min-height:0; padding-top:8px; }

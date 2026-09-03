@@ -160,6 +160,13 @@ const activeProfileId = ref(window.localStorage.getItem("rh-profile-id") || "");
 const profileChooser = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
+const profileImageInput = ref(null);
+const profileCropOpen = ref(false);
+const profileCropSource = ref("");
+const profileCropZoom = ref(1);
+const profileCropX = ref(50);
+const profileCropY = ref(50);
+const profileCropImage = ref(null);
 const changePasswordOpen = ref(false);
 const currentPassword = ref("");
 const newPassword = ref("");
@@ -281,6 +288,34 @@ async function setProfileAvatar(avatar) {
   profileError.value = "";
   try {
     const data = await request(`/api/account/profiles/${encodeURIComponent(activeProfile.value.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatar }) });
+    profiles.value = profiles.value.map(profile => profile.id === data.profile.id ? data.profile : profile);
+  } catch (error) { profileError.value = error.message || "Could not update the profile picture."; }
+  finally { profileBusy.value = false; }
+}
+
+function openProfileImagePicker() { profileImageInput.value?.click(); }
+function loadProfileImage(event) {
+  const file = event.target.files?.[0]; event.target.value = "";
+  if (!file || !file.type.startsWith("image/")) { profileError.value = "Choose an image file."; return; }
+  if (file.size > 12 * 1024 * 1024) { profileError.value = "Profile pictures must be 12 MB or smaller."; return; }
+  const reader = new FileReader();
+  reader.onload = () => { profileCropSource.value = String(reader.result || ""); profileCropZoom.value = 1; profileCropX.value = 50; profileCropY.value = 50; profileCropOpen.value = true; profileError.value = ""; };
+  reader.readAsDataURL(file);
+}
+function cropImageLoaded(event) { profileCropImage.value = event.target; }
+async function saveProfileImage() {
+  const image = profileCropImage.value;
+  if (!image || !activeProfile.value?.id || profileBusy.value) return;
+  const size = 720, canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size;
+  const context = canvas.getContext("2d");
+  const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight) * profileCropZoom.value;
+  const width = image.naturalWidth * scale, height = image.naturalHeight * scale;
+  const maxX = Math.max(0, width - size), maxY = Math.max(0, height - size);
+  context.drawImage(image, -(maxX * profileCropX.value / 100), -(maxY * profileCropY.value / 100), width, height);
+  const avatarImage = canvas.toDataURL("image/jpeg", .86);
+  profileCropOpen.value = false; profileBusy.value = true; profileError.value = "";
+  try {
+    const data = await request(`/api/account/profiles/${encodeURIComponent(activeProfile.value.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ avatarImage }) });
     profiles.value = profiles.value.map(profile => profile.id === data.profile.id ? data.profile : profile);
   } catch (error) { profileError.value = error.message || "Could not update the profile picture."; }
   finally { profileBusy.value = false; }
@@ -497,8 +532,8 @@ function compareCatalogTitles(a, b) {
 }
 const visibleItems = computed(() => {
   const filtered = items.value.filter(item => selectionFilter.value === "all"
-    || (selectionFilter.value === "selected" && selectedKeys.value.includes(item.key))
-    || (selectionFilter.value === "available" && !selectedKeys.value.includes(item.key) && !savedKeys.value.has(item.key)));
+    || (selectionFilter.value === "selected" && savedKeys.value.has(item.key))
+    || (selectionFilter.value === "available" && !savedKeys.value.has(item.key)));
   return [...filtered].sort((a, b) => {
     if (sortBy.value === "recent") return String(b.added || "").localeCompare(String(a.added || ""));
     if (sortBy.value === "category") return String(a.categoryId || "").localeCompare(String(b.categoryId || "")) || a.title.localeCompare(b.title);
@@ -1550,136 +1585,21 @@ async function loadSaved() {
   savedItems.value = data.items || [];
 }
 
-async function saveSource() {
-  busy.value = true;
-  messageType.value = "info";
-  message.value = editing.value ? "Saving playlist changes…" : "Saving playlist…";
-  try {
-    const isEditing = Boolean(editing.value);
-    const data = await request(isEditing ? `/api/xtream/sources/${editing.value}` : "/api/xtream/sources", {
-      method: isEditing ? "PUT" : "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ name: name.value, type: sourceType.value, url: url.value, username: sourceUsername.value, password: sourcePassword.value }),
-    });
-    name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; editing.value = null;
-    await loadSources(data.id, { loadPlaylist: false });
-    if (safariPage.value === "settings") await loadPlaylistHealth();
-    items.value = []; categories.value = []; languages.value = []; page.value = 1; pages.value = 1; total.value = 0;
-    messageType.value = "success";
-    message.value = data.warning || "Source saved.";
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
-
-function editSource(source) { editing.value = source.id; name.value = source.name; sourceType.value = source.type || "xtream"; url.value = source.endpoint || ""; sourceUsername.value = ""; sourcePassword.value = ""; }
-function cancelEdit() { editing.value = null; name.value = ""; url.value = ""; sourceType.value = "xtream"; sourceUsername.value = ""; sourcePassword.value = ""; }
-async function deleteSource(source) {
-  if (!confirm(`Delete “${source.name}”?`)) return;
-  try {
-    await request(`/api/xtream/sources/${source.id}`, { method: "DELETE" });
-    await loadSources();
-    if (safariPage.value === "settings") await loadPlaylistHealth();
-    messageType.value = "success";
-    message.value = `Deleted “${source.name}”.`;
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-}
 async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; await loadSources(id); }
 async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
 function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
-async function addPlaylistItem(item) {
-  if (busy.value || savedKeys.value.has(item.key)) return;
-  busy.value = true;
-  try {
-    rememberItems([item]);
-    const enabledItems = [...new Map([...savedItems.value, item].map(entry => [entry.key, entry])).values()];
-    const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
-      method: "PUT",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ enabledKeys: enabledItems.map(entry => entry.key), enabledItems }),
-    });
-    applySource(data);
-    await loadManagedLibrary();
-    selectedKeys.value = selectedKeys.value.filter(key => key !== item.key);
-    messageType.value = "success";
-    message.value = `Added “${item.title}” to the library.`;
-  } catch (error) {
-    messageType.value = "error";
-    message.value = error.message;
-  } finally {
-    busy.value = false;
-  }
-}
-function selectPage() { const available = items.value.filter(item => !savedKeys.value.has(item.key)); rememberItems(available); selectedKeys.value = [...new Set([...selectedKeys.value, ...available.map(item => item.key)])]; }
-function clearType() { const prefix = `${kind.value}:`; selectedKeys.value = selectedKeys.value.filter(key => !key.startsWith(prefix)); }
 async function movePage(delta) { page.value += delta; await loadCatalog(false); }
-async function saveSelection() {
-  if (!selectedKeys.value.length) return;
-  busy.value = true;
-  try {
-    const pendingItems = selectedKeys.value.map(key => knownItems.value[key]).filter(Boolean);
-    const missing = selectedKeys.value.length - pendingItems.length;
-    if (missing) throw new Error(`${missing} selected item(s) are no longer available. Reload their catalog page and save again.`);
-    const enabledItems = [...new Map([...savedItems.value, ...pendingItems].map(item => [item.key, item])).values()];
-    const addedCount = pendingItems.filter(item => !savedKeys.value.has(item.key)).length;
-    const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(item => item.key), enabledItems }),
-    });
-    applySource(data);
-    await loadManagedLibrary();
-    selectedKeys.value = [];
-    messageType.value = "success";
-    message.value = `Saved successfully. ${addedCount} item(s) added; ${data.selectedCount} total enabled on Roku.`;
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
-async function removeSaved(item) {
-  busy.value = true;
-  try {
-    const enabledItems = savedItems.value.filter(entry => entry.key !== item.key);
-    const data = await request(`/api/xtream/sources/${sourceId.value}/selection`, {
-      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabledKeys: enabledItems.map(entry => entry.key), enabledItems }),
-    });
-    applySource(data);
-    await loadManagedLibrary();
-    messageType.value = "success";
-    message.value = `Removed “${item.title}” from Roku.`;
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
-async function archiveSaved(item) {
-  busy.value = true;
-  try {
-    applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}`, { method: "POST" }));
-    await loadManagedLibrary();
-    messageType.value = "success";
-    message.value = "Item archived and removed from Roku.";
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
-async function restoreArchived(item) {
-  busy.value = true;
-  try {
-    applySource(await request(`/api/xtream/sources/${sourceId.value}/archive/${encodeURIComponent(item.key)}/restore`, { method: "POST" }));
-    await loadManagedLibrary();
-    messageType.value = "success";
-    message.value = "Item restored to the Roku library.";
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
 
 let searchTimer;
 let deviceStatusTimer;
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value === "episodes" ? "series" : value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
-watch(deviceToken, value => {
-  if (value && safariPage.value === "settings") void loadPlaylistHealth();
-});
 watch(safariPage, value => {
   if (!deviceToken.value) return;
   const pageRequest = value === "playlist"
     ? loadSources()
     : value === "settings"
-      ? Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadPlaylistHealth()])
+      ? loadSources(sourceId.value, { loadPlaylist: false })
       : loadManagedLibrary();
   pageRequest.catch(error => {
     messageType.value = "error";
@@ -1725,7 +1645,6 @@ onMounted(async () => {
       messageType.value = "error";
       message.value = error.message;
     });
-    if (safariPage.value === "settings") void loadPlaylistHealth();
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
@@ -1793,12 +1712,13 @@ onMounted(async () => {
         <p class="profile-chooser-copy">Choose a profile to open your personalized library.</p>
         <div class="profile-grid">
           <button v-for="profile in profiles" :key="profile.id" type="button" class="profile-option" :disabled="profileBusy" @click="chooseProfile(profile)">
-            <span class="profile-avatar" :class="`profile-avatar-${profile.avatar || 'lime'}`">{{ profile.name.slice(0, 1).toUpperCase() }}</span>
+            <span class="profile-avatar" :class="`profile-avatar-${profile.avatar || 'lime'}`"><img v-if="profile.avatarImage" :src="profile.avatarImage" alt=""><template v-else>{{ profile.name.slice(0, 1).toUpperCase() }}</template></span>
             <strong>{{ profile.name }}</strong>
             <small>{{ profile.isDefault ? 'Main profile' : 'Library profile' }}</small>
           </button>
         </div>
         <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+        <button type="button" class="logout-button profile-chooser-logout" @click="logout">Log out</button>
       </div>
     </section>
     <template v-else>
@@ -1822,7 +1742,7 @@ onMounted(async () => {
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <header class="home-hero">
           <div class="home-hero-copy">
-            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span></button>
+            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
             <p class="eyebrow">WELCOME BACK</p>
             <h1>Your library,<br><em>ready to watch.</em></h1>
             <p>Pick up where you left off or discover something new from your connected library.</p>
@@ -1834,21 +1754,19 @@ onMounted(async () => {
 
         <section class="home-rail home-ai-rail">
           <header><div><p class="eyebrow">AI RECOMMENDATIONS</p><h2>{{ homeRecommendationsFromSaved ? 'Saved results' : 'Recommended for you' }}</h2><div class="home-recommendation-languages" role="group" aria-label="Recommendation language"><button type="button" :class="{active:homeRecommendationLanguage === 'arabic'}" @click="homeRecommendationLanguage = 'arabic'; loadHomeData(true)">Arabic</button><button type="button" :class="{active:homeRecommendationLanguage === 'english'}" @click="homeRecommendationLanguage = 'english'; loadHomeData(true)">English</button><button type="button" :class="{active:homeRecommendationLanguage === 'both'}" @click="homeRecommendationLanguage = 'both'; loadHomeData(true)">Both</button><button type="button" class="home-recommendation-refresh" :disabled="homeLoading" @click="loadHomeData(true)">Refresh</button></div></div><span>{{ homeRecommendations.length }} picks</span></header>
-          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="homeRecommendationsFromSaved ? playLibraryItem(item) : openAddPageForItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small><em class="home-add-action">{{ homeRecommendationsFromSaved ? 'Play' : 'Add to library' }}</em></button><span v-if="!homeRecommendations.length" class="home-rail-empty">No recommendations available yet</span></div>
+          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action"  :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small></button><span v-if="!homeRecommendations.length" class="home-rail-empty">No recommendations available yet</span></div>
         </section>
 
         <template v-for="rail in [{kind:'series', title:'Recently added series'}, {kind:'movie', title:'Recently added movies'}, {kind:'channel', title:'Recently added channels'}]" :key="rail.kind">
           <section class="home-rail">
             <header><div><p class="eyebrow">10 RECENTLY ADDED</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
-            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="playLibraryItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Recently added' }}</small><em class="home-add-action">Play</em></button><span v-if="!homeRecent[rail.kind]?.length" class="home-rail-empty">No recently added {{ rail.kind === 'channel' ? 'channels' : rail.kind === 'movie' ? 'movies' : 'series' }} yet</span></div>
+            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action"  :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Recently added' }}</small></button><span v-if="!homeRecent[rail.kind]?.length" class="home-rail-empty">No recently added {{ rail.kind === 'channel' ? 'channels' : rail.kind === 'movie' ? 'movies' : 'series' }} yet</span></div>
           </section>
         </template>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
-        <form class="web-playlist-source-form" @submit.prevent="saveSource"><input v-model="name" required placeholder="Playlist name"><input v-model="url" required placeholder="Xtream playlist URL" spellcheck="false"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (sources.length ? 'Add another playlist' : 'Add playlist') }}</button></form>
-        <p v-if="message" role="status" aria-live="polite" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
         <template v-if="sources.length">
           <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
@@ -1867,7 +1785,7 @@ onMounted(async () => {
               <div v-for="item in visibleItems" :key="item.key" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),previewing:playlistPreviewSelected?.key === item.key}" tabindex="0" role="button" @click="selectPlaylistPreview(item)" @keydown.enter="selectPlaylistPreview(item)">
                 <span class="browser-playlist-item"><span class="web-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else-if="kind === 'channel'" class="channel-name-fallback">{{ item.title }}</span><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
                 <code>{{ item.id }}</code>
-                <button type="button" class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'" :disabled="busy || savedKeys.has(item.key)" @click.stop="addPlaylistItem(item)">{{ savedKeys.has(item.key) ? 'Added' : 'Add' }}</button>
+                <span class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'">{{ savedKeys.has(item.key) ? 'Enabled' : 'Available' }}</span>
               </div>
               <div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div>
             </div>
@@ -1937,51 +1855,17 @@ onMounted(async () => {
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
-        <div class="web-settings-card"><span>Account</span><strong>{{ linkedDevices.length }} linked Roku device{{ linkedDevices.length === 1 ? '' : 's' }}</strong></div>
         <section v-if="activeProfile" class="settings-profile-card">
           <div class="settings-section-heading"><div><p class="eyebrow">PROFILE</p><h2>Profile picture</h2></div><span>{{ activeProfile.name }}</span></div>
-          <div class="profile-picture-options" role="radiogroup" aria-label="Choose profile picture">
-            <button v-for="avatar in ['lime','teal','amber','violet','rose','blue']" :key="avatar" type="button" class="profile-picture-option" :class="[`profile-avatar-${avatar}`, {selected: activeProfile.avatar === avatar}]" :aria-checked="activeProfile.avatar === avatar" role="radio" :disabled="profileBusy" @click="setProfileAvatar(avatar)">{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</button>
-          </div>
+          <div class="profile-picture-editor"><button type="button" class="profile-picture-preview" :disabled="profileBusy" @click="openProfileImagePicker"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt="Current profile picture"><span v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span></button><div><p class="profile-picture-help">Set a real profile picture for your account.</p><button type="button" class="source-action" :disabled="profileBusy" @click="openProfileImagePicker">{{ activeProfile.avatarImage ? 'Change picture' : 'Upload picture' }}</button><input ref="profileImageInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="loadProfileImage"></div></div>
           <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+          <div class="profile-password-divider"></div>
+          <div class="profile-password-heading"><div><p class="eyebrow">SECURITY</p><h3>Change password</h3></div><button type="button" class="source-action" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel' : 'Update password' }}</button></div>
+          <form v-if="changePasswordOpen" class="web-password-form profile-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
         </section>
-        <section class="weather-settings">
-          <div class="settings-section-heading"><div><p class="eyebrow">WELCOME WEATHER</p><h2>Weather locations</h2></div><span>Shown on Roku</span></div>
-          <div class="weather-location-grid">
-            <label>
-              <span>Location 1</span>
-              <input v-model="weatherQueries[0]" type="search" autocomplete="off" placeholder="Search city or postal code" @input="searchWeatherLocations(1)">
-              <small v-if="weatherSearching[0]">Searching…</small>
-              <select v-if="weatherResults[0].length" value="" @change="selectWeatherLocation(1, $event.target.value)">
-                <option value="" disabled>Select a location</option>
-                <option v-for="(location, resultIndex) in weatherResults[0]" :key="`${location.id}-${resultIndex}`" :value="resultIndex">{{ location.label }}</option>
-              </select>
-              <small v-else-if="weatherLocations[0]">Saved: {{ weatherLocations[0].label }}</small>
-            </label>
-          </div>
-          <p v-if="weatherMessage" :class="['weather-settings-message', `is-${weatherMessageType}`]">{{ weatherMessage }}</p>
-        </section>
-        <section class="settings-playlists">
-          <div class="settings-section-heading"><div><p class="eyebrow">PLAYLISTS</p><h2>Manage playlists</h2></div><span>{{ sources.length }} total</span></div>
-          <form class="settings-playlist-form" @submit.prevent="saveSource">
-            <label>Playlist type<select v-model="sourceType"><option value="m3u">M3U</option><option value="xtream">Xtream</option></select></label>
-            <label>Playlist name<input v-model="name" required placeholder="My playlist"></label>
-            <label class="settings-playlist-link">Playlist link<input v-model="url" type="url" required :placeholder="sourceType === 'm3u' ? 'https://provider.com/playlist.m3u' : 'https://provider.com'" spellcheck="false"></label>
-            <template v-if="sourceType === 'xtream'">
-              <label>Username<input v-model="sourceUsername" :required="!editing" autocomplete="username" :placeholder="editing ? 'Leave blank to keep current' : 'Username'"></label>
-              <label>Password<input v-model="sourcePassword" type="password" :required="!editing" autocomplete="new-password" :placeholder="editing ? 'Leave blank to keep current' : 'Password'"></label>
-            </template>
-            <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (editing ? 'Save changes' : 'Add playlist') }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
-          </form>
-          <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
-          <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
-          <p v-else class="web-empty">No playlists added yet.</p>
-        </section>
-        <section class="web-linked-settings"><p class="eyebrow">LINKED ROKUS</p><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><p v-else class="web-empty">No linked Roku devices.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
-        <button type="button" class="source-action web-change-password-toggle" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel password change' : 'Change password' }}</button>
-        <form v-if="changePasswordOpen" class="web-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
-        <button type="button" class="logout-button web-logout" @click="logout">Log out</button>
+        <section class="web-linked-settings"><div class="settings-section-heading"><div><p class="eyebrow">YOUR DEVICES</p><h2>Linked Rokus</h2></div><span>{{ linkedDevices.length }} connected</span></div><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div class="linked-roku-icon">▣</div><div class="linked-roku-copy"><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small><span><i></i>Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</span></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><div class="linked-roku-actions"><p v-if="!linkedDevices.length" class="web-empty">No Roku devices are linked yet.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button></div><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
       </article>
+      <div v-if="profileCropOpen" class="profile-crop-backdrop" role="dialog" aria-modal="true" aria-label="Crop profile picture"><section class="profile-crop-modal"><div class="settings-section-heading"><div><p class="eyebrow">PROFILE PHOTO</p><h2>Frame your picture</h2></div><button type="button" class="close" @click="profileCropOpen=false">×</button></div><div class="profile-crop-window"><img :src="profileCropSource" alt="Crop preview" :style="{transform:`translate(${(50-profileCropX)/4}%, ${(50-profileCropY)/4}%) scale(${profileCropZoom})`}" @load="cropImageLoaded"></div><label class="crop-control">Zoom <input v-model.number="profileCropZoom" type="range" min="1" max="3" step="0.05"></label><label class="crop-control">Horizontal position <input v-model.number="profileCropX" type="range" min="0" max="100"></label><label class="crop-control">Vertical position <input v-model.number="profileCropY" type="range" min="0" max="100"></label><div class="profile-crop-actions"><button type="button" class="source-action" @click="profileCropOpen=false">Cancel</button><button type="button" class="primary-action" :disabled="profileBusy" @click="saveProfileImage">Save picture</button></div></section></div>
 
       <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
       </div></div>
@@ -2003,16 +1887,10 @@ onMounted(async () => {
 
     <section class="xtream-control-panel">
       <div class="section-heading"><div><p class="eyebrow">STEP 01 · CONNECTION</p><h2>Choose a catalog source</h2><p class="section-copy">Connect an Xtream source once, then manage exactly what Roku can see.</p></div><span class="section-count">{{ sources.length }} source{{ sources.length === 1 ? '' : 's' }}</span></div>
-      <form class="xtream-source-form" @submit.prevent="saveSource">
-        <label><span>Display name</span><input v-model="name" required placeholder="My provider"></label>
-        <label class="source-url"><span>Xtream playlist URL</span><input v-model="url" :required="!editing" placeholder="http://provider/get.php?..." spellcheck="false"></label>
-        <button class="primary-action" :disabled="busy">{{ editing ? "Save source" : "Add source" }}</button>
-        <button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button>
-      </form>
+      <p class="section-copy">Read-only playlist catalog. Sources and Roku selections cannot be changed here.</p>
       <div class="xtream-source-list">
         <article v-for="source in sources" :key="source.id" :class="{active:source.id===sourceId}">
           <button type="button" class="xtream-source-choice" @click="chooseSource(source.id)"><strong>{{source.name}}</strong><small>{{source.endpoint}}</small></button>
-          <button class="source-action" @click="editSource(source)">Edit</button><button class="source-delete" @click="deleteSource(source)">Delete</button>
         </article>
       </div>
 
@@ -2033,29 +1911,28 @@ onMounted(async () => {
             <select v-model="titleLanguage" aria-label="Filter by title language"><option value="all">Title language: All</option><option v-for="item in languages" :key="item" :value="item">Title language: {{item}}</option></select>
             <select v-model="sortBy"><option value="name">Sort: A–Z</option><option value="recent">Sort: Recently added</option><option value="category">Sort: Category</option></select>
             <select v-model="selectionFilter"><option value="all">Show: All items</option><option value="available">Show: Not selected</option><option value="selected">Show: Selected only</option></select>
-            <div class="toolbar-actions"><button type="button" class="source-action" @click="selectPage">Select visible</button><button type="button" class="source-delete" @click="clearType">Clear {{ typeLabel(kind) }}</button></div>
-            <button type="button" class="xtream-save" :disabled="busy || !selectedCount" @click="saveSelection">Save {{ selectedCount }} selected to Roku</button>
+            <div class="toolbar-actions"><span class="section-copy">Read-only catalog</span></div>
           </div>
           <div v-if="loading" class="loading"><span class="loading-ring"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="!visibleItems.length" class="loading empty-catalog"><span class="empty-icon">⌕</span><span>No matching {{ typeLabel(kind).toLowerCase() }} found.</span></div>
           <div v-else class="xtream-item-list">
             <label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key), pending:selectedKeys.includes(item.key)}">
-              <input type="checkbox" :checked="selectedKeys.includes(item.key)" :disabled="savedKeys.has(item.key)" @change="toggle(item)"><span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
+              <span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
               <span class="item-copy"><strong>{{item.title}}</strong><small>{{item.categoryId || 'Uncategorized'}}</small></span><em>{{savedKeys.has(item.key)?"On Roku":selectedKeys.includes(item.key)?"Selected":"Not selected"}}</em>
             </label>
           </div>
           <div class="xtream-pagination"><button type="button" :disabled="page<=1" @click="movePage(-1)">‹ Previous</button><span>Page {{page}} / {{pages}} <b>·</b> {{total}} {{ typeLabel(kind).toLowerCase() }}</span><button type="button" :disabled="page>=pages" @click="movePage(1)">Next ›</button></div>
           <section class="xtream-enabled-section">
             <div class="section-heading compact"><div><p class="eyebrow">SAVED ON ROKU</p><h2>{{ typeLabel(kind) }}</h2></div><span class="section-count accent-count">{{ typeCounts[kind] || 0 }}</span></div>
-            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row" :class="{'web-playable-row': true}" @click="playWebMovie(item)"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-play-button" @click.stop="playWebMovie(item)">Play</button><button type="button" class="source-action" :disabled="busy" @click.stop="archiveSaved(item)">Archive</button><button type="button" class="source-delete" :disabled="busy" @click.stop="removeSaved(item)">Remove</button></div></div></div>
-            <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(kind).toLowerCase() }} items enabled.</strong><span>Select items above, then press “Save to Roku”.</span></div>
+            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row" :class="{'web-playable-row': true}" @click="playWebMovie(item)"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-play-button" @click.stop="playWebMovie(item)">Play</button></div></div></div>
+            <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(kind).toLowerCase() }} items enabled.</strong><span>No enabled items were returned by the server.</span></div>
           </section>
         </template>
 
         <section v-else class="xtream-enabled-section archive-section">
-          <div class="section-heading"><div><p class="eyebrow">STORED SAFELY · NOT ON ROKU</p><h2>Archive</h2><p class="section-copy">Keep items out of the Roku feed without deleting them. Restore them whenever you need.</p></div><span class="section-count accent-count">{{ archivedItems.length }}</span></div>
+          <div class="section-heading"><div><p class="eyebrow">STORED SAFELY · NOT ON ROKU</p><h2>Archive</h2><p class="section-copy">Archived items returned by the server.</p></div><span class="section-count accent-count">{{ archivedItems.length }}</span></div>
           <div v-if="archivedItems.length" class="archive-summary"><span v-for="value in ['series','movie','channel']" :key="value"><b>{{archiveCounts[value] || 0}}</b> {{typeLabel(value)}}</span></div>
-          <div v-if="archivedItems.length" class="xtream-enabled-table"><div v-for="item in archivedItems" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-save" :disabled="busy" @click="restoreArchived(item)">Restore to Roku</button></div></div></div>
+          <div v-if="archivedItems.length" class="xtream-enabled-table"><div v-for="item in archivedItems" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code></div></div>
           <div v-else class="empty xtream-enabled-empty"><strong>Your archive is empty.</strong><span>Archive an enabled item to keep it available without showing it on Roku.</span></div>
         </section>
       </template>
