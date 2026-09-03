@@ -500,6 +500,11 @@ const homeRecommendationLanguage = ref("both");
 const homeRecommendationsFromSaved = ref(false);
 const homeLoading = ref(false);
 const homeError = ref("");
+const welcomeProviderItems = ref({ series: [], movie: [], channel: [] });
+const welcomeProviderCounts = ref({ series: 0, movie: 0, channel: 0 });
+const welcomeProviderLoading = ref(false);
+const welcomeProviderError = ref("");
+let welcomeProviderRequestId = 0;
 let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
 const selectedCount = computed(() => selectedKeys.value.length);
@@ -1299,6 +1304,49 @@ function homeItem(item, kind) {
   return { ...normalized, key: homeItemKey(normalized) };
 }
 
+function welcomeProviderItem(item, source) {
+  if (!item || !source?.id || !item.id) return null;
+  const resolvedKind = item.kind || item.type;
+  if (!["series", "movie", "channel"].includes(resolvedKind)) return null;
+  // The selection API keys items as `kind:id`; keep the catalog's own key
+  // rather than the 3-part home key so saves validate server-side.
+  return { ...item, kind: resolvedKind, sourceId: source.id, key: item.key || `${resolvedKind}:${item.id}` };
+}
+
+async function loadWelcomeProvider(provider = sources.value.find(source => source.id === sourceId.value)) {
+  if (!provider?.id || safariPage.value !== "welcome") return;
+  const requestId = ++welcomeProviderRequestId;
+  welcomeProviderLoading.value = true;
+  welcomeProviderError.value = "";
+  try {
+    const encodedSource = encodeURIComponent(provider.id);
+    const [series, movie, channel, rails] = await Promise.all([
+      ...["series", "movie", "channel"].map(value =>
+        request(`/api/xtream/catalog?sourceId=${encodedSource}&kind=${value}&category=all&page=1&limit=20`, { cache: "no-store" })
+      ),
+      request(`/api/xtream/sources/${encodedSource}/rails?limit=1`, { cache: "no-store" }).catch(() => null),
+    ]);
+    if (requestId !== welcomeProviderRequestId) return;
+    const byKind = [["series", series], ["movie", movie], ["channel", channel]];
+    welcomeProviderItems.value = Object.fromEntries(byKind.map(([kind, data]) => [
+      kind, (data.items || []).map(item => welcomeProviderItem(item, provider)).filter(Boolean),
+    ]));
+    // Prefer the persisted provider-catalog table counts; fall back to the
+    // live catalog page total when the source has not been synced yet.
+    welcomeProviderCounts.value = Object.fromEntries(byKind.map(([kind, data]) => [
+      kind, Number(rails?.counts?.[kind]) || Number(data?.pagination?.total) || 0,
+    ]));
+  } catch (error) {
+    if (requestId === welcomeProviderRequestId) {
+      welcomeProviderItems.value = { series: [], movie: [], channel: [] };
+      welcomeProviderCounts.value = { series: 0, movie: 0, channel: 0 };
+      welcomeProviderError.value = error.message || "Could not load this playlist.";
+    }
+  } finally {
+    if (requestId === welcomeProviderRequestId) welcomeProviderLoading.value = false;
+  }
+}
+
 function welcomeItemEnabled(item) {
   const source = sources.value.find(candidate => candidate.id === item?.sourceId);
   return (source?.enabledItems || []).some(candidate => candidate?.key === item?.key
@@ -1352,7 +1400,14 @@ async function loadHomeData(force = false) {
   try {
     const language = homeRecommendationLanguage.value;
     const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
-    if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || []).map(item => homeItem(item, item?.kind || item?.type)).filter(Boolean);
+    if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || [])
+      .map(item => {
+        const home = homeItem(item, item?.kind || item?.type);
+        // The selection API only accepts `kind:id` keys; the 3-part home key
+        // is rejected, so items added from this rail must carry the short key.
+        return home ? { ...home, key: `${home.kind}:${home.id}` } : null;
+      })
+      .filter(Boolean);
   } catch (error) {
     if (requestId === homeRequestId) homeRecommendations.value = [];
     if (requestId === homeRequestId && error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
@@ -1466,6 +1521,7 @@ async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPa
   // Playlist only needs the provider catalog. The managed-library payload is
   // required by Series/Movies/Live TV pages and can be loaded lazily there.
   if (safariPage.value !== "playlist") await loadManagedLibrary();
+  if (safariPage.value === "welcome") await loadWelcomeProvider(source);
 }
 
 function playlistConnectionStatus(source) {
@@ -1622,6 +1678,24 @@ async function loadSaved() {
 }
 
 async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; await loadSources(id); }
+async function deleteCurrentSource() {
+  const current = sources.value.find(item => item.id === sourceId.value);
+  if (!current) return;
+  if (!window.confirm(`Delete source “${current.name}”? This removes its catalog and Roku selections.`)) return;
+  busy.value = true;
+  try {
+    await request(`/api/xtream/sources/${encodeURIComponent(current.id)}`, { method: "DELETE" });
+    stopPlaylistPreview({ clearSelection: true });
+    await loadSources(sources.value.find(item => item.id !== current.id)?.id || "");
+    messageType.value = "info";
+    message.value = `Deleted ${current.name}.`;
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error?.message || "The source could not be deleted.";
+  } finally {
+    busy.value = false;
+  }
+}
 async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
 function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
 async function movePage(delta) { page.value += delta; await loadCatalog(false); }
@@ -1668,14 +1742,17 @@ onMounted(async () => {
       appReady.value = false;
       return;
     }
-    const healthRequest = request("/api/health");
-    await Promise.all([healthRequest, loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    profiles.value = (await request("/api/account/profiles")).items || [];
-    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
+    // Only the health check and the provider catalog gate the boot loader.
+    // Everything else enriches an already usable page and loads in the
+    // background so a slow response cannot keep the spinner on screen.
+    await Promise.all([request("/api/health"), loadSources(sourceId.value, { loadPlaylist: false })]);
     online.value = true;
     appReady.value = true;
-    // Recommendations enrich an already usable page and load in the
-    // background so a slow AI/provider response cannot delay startup.
+    void Promise.all([loadLinkedDevices(), loadWeatherSettings()]).catch(() => {});
+    void request("/api/account/profiles").then(data => {
+      profiles.value = data.items || [];
+      if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
+    }).catch(() => {});
     void loadHomeData();
     if (safariPage.value === "playlist") loadSources().catch(error => {
       messageType.value = "error";
@@ -1767,45 +1844,60 @@ onMounted(async () => {
     </template>
     <nav class="topbar">
       <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
-      <div class="topbar-actions"><span class="status"><i :class="{offline:!online}"></i>{{ online ? "Backend online" : "Backend offline" }}</span><button type="button" class="logout-button" @click="logout">Log out</button></div>
+      <div class="topbar-actions"><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
-    <section v-if="browserApp" class="browser-app-shell" :class="{ 'is-loading': !appReady }">
-      <div v-if="!appReady" class="safari-app-loading" role="status" aria-live="polite" aria-label="Loading library"><span class="safari-app-loading-spinner" aria-hidden="true"></span></div>
+    <section v-if="browserApp" class="browser-app-shell">
       <aside class="browser-sidebar">
         <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"></div>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
-        <header class="home-hero">
-          <div class="home-hero-copy">
-            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
-            <p class="eyebrow">WELCOME BACK</p>
-            <h1>Your library,<br><em>ready to watch.</em></h1>
-            <p>Pick up where you left off or discover something new from your connected library.</p>
-          </div>
-          <section class="home-saved-stats" aria-label="Saved library items"><div class="home-stat-card"><strong>{{ rokuTypeCounts.series || 0 }}</strong><span><b>SAVED</b> SERIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.movie || 0 }}</strong><span><b>SAVED</b> MOVIES</span></div><div class="home-stat-card"><strong>{{ rokuTypeCounts.channel || 0 }}</strong><span><b>SAVED</b> LIVE CHANNELS</span></div></section>
+        <header class="welcome-page-heading">
+          <div><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1></div>
+          <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
         </header>
 
-        <p v-if="homeError" class="home-error" role="status">{{ homeError }}</p>
+        <section class="welcome-provider-box">
+          <div class="welcome-provider-head">
+            <div class="welcome-provider-head-text">
+              <h1>Choose your playlist</h1>
+              <p>Select a provider to load its library rails below.</p>
+            </div>
+            <select v-if="sources.length" class="welcome-provider-select" aria-label="Playlist provider" :value="sourceId" @change="sourceId = $event.target.value; loadWelcomeProvider(sources.find(source => source.id === $event.target.value))">
+              <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
+            </select>
+          </div>
+          <div v-if="!sources.length" class="welcome-provider-empty">No playlist providers are connected yet.</div>
+          <div v-else class="welcome-provider-stats" aria-label="Provider catalog totals">
+            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
+            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.movie.toLocaleString() }}</strong><span>MOVIES</span></div>
+            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.channel.toLocaleString() }}</strong><span>LIVE CHANNELS</span></div>
+          </div>
+        </section>
+        <p v-if="welcomeProviderError" class="home-error" role="status">{{ welcomeProviderError }}</p>
 
-        <section class="home-rail home-ai-rail">
-          <header><div><p class="eyebrow">AI RECOMMENDATIONS</p><h2>{{ homeRecommendationsFromSaved ? 'Saved results' : 'Recommended for you' }}</h2><div class="home-recommendation-languages" role="group" aria-label="Recommendation language"><button type="button" :class="{active:homeRecommendationLanguage === 'arabic'}" @click="homeRecommendationLanguage = 'arabic'; loadHomeData(true)">Arabic</button><button type="button" :class="{active:homeRecommendationLanguage === 'english'}" @click="homeRecommendationLanguage = 'english'; loadHomeData(true)">English</button><button type="button" :class="{active:homeRecommendationLanguage === 'both'}" @click="homeRecommendationLanguage = 'both'; loadHomeData(true)">Both</button><button type="button" class="home-recommendation-refresh" :disabled="homeLoading" @click="loadHomeData(true)">Refresh</button></div></div><span>{{ homeRecommendations.length }} picks</span></header>
-          <div class="home-rail-track" @scroll="handleSafariRailScroll($event, 'ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action"  :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.recommendationReason || item.category || typeLabel(item.kind) }}</small></button><span v-if="!homeRecommendations.length" class="home-rail-empty">No recommendations available yet</span></div>
+        <section v-if="homeLoading || homeError || homeRecommendations.length" class="home-rail welcome-ai-rail">
+          <header><div><p class="eyebrow">{{ homeRecommendationsFromSaved ? 'RECENTLY ADDED' : 'AI RECOMMENDATIONS' }}</p><h2>{{ homeRecommendationsFromSaved ? 'Jump back in' : 'Picked for you' }}</h2></div></header>
+          <div v-if="homeLoading" class="welcome-provider-loading" role="status"><span class="loading-ring" aria-hidden="true"></span><span>Finding recommendations…</span></div>
+          <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
+          <div v-else class="home-rail-track" @scroll="handleSafariRailScroll($event, 'welcome-ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || typeLabel(item.kind) }}</small></button></div>
         </section>
 
-        <template v-for="rail in [{kind:'series', title:'Recently added series'}, {kind:'movie', title:'Recently added movies'}, {kind:'channel', title:'Recently added channels'}]" :key="rail.kind">
-          <section class="home-rail">
-            <header><div><p class="eyebrow">10 RECENTLY ADDED</p><h2>{{ rail.title }}</h2></div><button type="button" class="home-see-all" @click="openBrowserLibrary(rail.kind)">See all <span>→</span></button></header>
-            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `recent-${rail.kind}`)"><button v-for="item in homeRecent[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action"  :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Recently added' }}</small></button><span v-if="!homeRecent[rail.kind]?.length" class="home-rail-empty">No recently added {{ rail.kind === 'channel' ? 'channels' : rail.kind === 'movie' ? 'movies' : 'series' }} yet</span></div>
+        <div v-if="welcomeProviderLoading" class="welcome-provider-loading" role="status"><span class="loading-ring" aria-hidden="true"></span><span>Loading this provider's rails…</span></div>
+        <template v-else v-for="rail in [{kind:'series', title:'Series'}, {kind:'movie', title:'Movies'}, {kind:'channel', title:'Live Channels'}]" :key="rail.kind">
+          <section v-if="welcomeProviderItems[rail.kind]?.length" class="home-rail">
+            <header><div><p class="eyebrow">{{ rail.title.toUpperCase() }}</p><h2>{{ rail.title }}</h2></div></header>
+            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `provider-${rail.kind}`)"><button v-for="item in welcomeProviderItems[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || rail.title }}</small></button></div>
           </section>
         </template>
+        <p v-if="!welcomeProviderLoading && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <template v-if="sources.length">
-          <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SOURCE</span><select :value="sourceId" @change="chooseSource($event.target.value)"><option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option></select></div><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label></div>
+          <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label><div v-if="sourceId" class="playlist-control"><span class="playlist-control-eyebrow">SOURCE</span><button type="button" class="playlist-delete-source" :disabled="busy" @click="deleteCurrentSource">Delete {{ sources.find(source => source.id === sourceId)?.name || 'source' }}</button></div></div>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="browser-playlist-browser">
             <section class="browser-playlist-preview" aria-label="Playlist preview">
