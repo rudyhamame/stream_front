@@ -33,9 +33,6 @@ const storedPage = window.localStorage.getItem(pageStorageKey);
 const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
-const safariRailMotion = ref({});
-const safariRailPositions = new Map();
-const safariRailMotionTimers = new Map();
 const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
@@ -77,22 +74,6 @@ function handleNavigationKeydown(event) {
   event.preventDefault();
   focusMainMenu();
 }
-function handleSafariRailScroll(event, railKey) {
-  const track = event.currentTarget;
-  const currentPosition = track.scrollLeft;
-  const previousPosition = safariRailPositions.get(railKey);
-  safariRailPositions.set(railKey, currentPosition);
-  if (previousPosition === undefined || currentPosition === previousPosition) return;
-  const direction = currentPosition < previousPosition ? "left" : "right";
-  const nextMotion = { ...safariRailMotion.value, [railKey]: "" };
-  safariRailMotion.value = nextMotion;
-  requestAnimationFrame(() => { safariRailMotion.value = { ...safariRailMotion.value, [railKey]: direction }; });
-  if (safariRailMotionTimers.has(railKey)) clearTimeout(safariRailMotionTimers.get(railKey));
-  safariRailMotionTimers.set(railKey, setTimeout(() => {
-    safariRailMotion.value = { ...safariRailMotion.value, [railKey]: "" };
-    safariRailMotionTimers.delete(railKey);
-  }, 180));
-}
 const webVideo = ref(null);
 const liveTvVideo = ref(null);
 const liveTvSelected = ref(null);
@@ -115,7 +96,17 @@ const webMediaReady = ref(false);
 const webPlaybackRetryCount = ref(0);
 const webBuffering = ref(false);
 const webControlsVisible = ref(true);
-const webQuality = ref("Auto");
+const webQualityKey = "rh-web-quality";
+const webQualityOptions = [
+  { value: "1080", label: "1080p" },
+  { value: "720", label: "720p" },
+  { value: "480", label: "480p" },
+  { value: "360", label: "360p" },
+];
+const storedWebQuality = window.localStorage.getItem(webQualityKey);
+const webQualityChoice = ref(webQualityOptions.some(option => option.value === storedWebQuality) ? storedWebQuality : "1080");
+const webQualityMenuOpen = ref(false);
+const webQualityLabel = computed(() => webQualityOptions.find(option => option.value === webQualityChoice.value)?.label || "1080p");
 const webPlayerError = ref("");
 const webStreamTicket = ref("");
 const webForceHls = ref(false);
@@ -176,6 +167,14 @@ const passwordMessageType = ref("info");
 const scannerOpen = ref(false);
 const scannerError = ref("");
 const failedLogoUrls = ref(new Set());
+const brandLogoReady = ref(false);
+{
+  const brandLogo = new Image();
+  brandLogo.src = "/login/rh-login-mark.png";
+  const reveal = () => { brandLogoReady.value = true; };
+  if (brandLogo.decode) brandLogo.decode().then(reveal).catch(reveal);
+  else brandLogo.onload = brandLogo.onerror = reveal;
+}
 let qrScanner = null;
 const imageUrl = value => {
   const url = String(value || '').trim();
@@ -235,10 +234,27 @@ async function loadPairingInfo() {
   }
 }
 
-async function claimPairing() {
+// Password managers and mobile autofill set the <input> value without always
+// firing an event v-model can hear, so the Vue refs stay empty and the login
+// request goes out with no email. Read the real DOM values on submit.
+function syncCredentialsFromForm(event) {
+  const form = event?.target?.closest?.("form") || event?.target;
+  if (!form || typeof form.querySelector !== "function") return;
+  const email = form.querySelector('input[type="email"]');
+  const password = form.querySelector('input[type="password"]');
+  const confirm = form.querySelectorAll('input[type="password"]')[1];
+  if (email && email.value.trim()) pairingEmail.value = email.value.trim();
+  if (password && password.value) pairingPassword.value = password.value;
+  if (confirm && confirm.value) pairingPasswordConfirmation.value = confirm.value;
+}
+
+async function claimPairing(event) {
+  syncCredentialsFromForm(event);
   authBusy.value = true;
   try {
     if (!pairCode) return;
+    if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
+    if (!pairingPassword.value) throw new Error("Enter your password");
     if (isPairingSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
     const path = isPairingSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
     const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
@@ -321,9 +337,12 @@ async function saveProfileImage() {
   finally { profileBusy.value = false; }
 }
 
-async function signIn() {
+async function signIn(event) {
+  syncCredentialsFromForm(event);
   authBusy.value = true;
   try {
+    if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
+    if (!pairingPassword.value) throw new Error("Enter your password");
     if (loginDevices.value.length > 1 && !selectedLoginDevice.value) throw new Error("Select a linked Roku device");
     const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, deviceId: selectedLoginDevice.value }) });
     if (!data.token) {
@@ -343,9 +362,12 @@ async function signIn() {
   finally { authBusy.value = false; }
 }
 
-async function signUp() {
+async function signUp(event) {
+  syncCredentialsFromForm(event);
   authBusy.value = true;
   try {
+    if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
+    if (!pairingPassword.value) throw new Error("Enter a password");
     if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
     await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
     pairingPassword.value = "";
@@ -396,6 +418,9 @@ async function unlinkDevice(device) {
   try {
     busy.value = true;
     await request(`/api/account/devices/${encodeURIComponent(device.deviceId)}`, { method: "DELETE" });
+    // Unlinking this same browser tab would otherwise reappear on the next
+    // heartbeat a few seconds later — forget the id so a fresh one is used.
+    if (device.kind === "browser" && device.deviceId === browserDeviceId()) window.localStorage.removeItem("rh-browser-device-id");
     await loadLinkedDevices();
     messageType.value = "success";
     message.value = `${device.label} was unlinked.`;
@@ -470,7 +495,6 @@ async function startQrScanner() {
 onBeforeUnmount(stopQrScanner);
 onBeforeUnmount(() => window.removeEventListener("popstate", enforceProfileSelection));
 onBeforeUnmount(() => window.removeEventListener("pageshow", blurRestoredLoginFocus));
-onBeforeUnmount(() => safariRailMotionTimers.forEach(timer => clearTimeout(timer)));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
 onBeforeUnmount(() => {
   if (deviceStatusTimer) clearInterval(deviceStatusTimer);
@@ -479,6 +503,46 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
+// A browser tab has no paired deviceId like a Roku does. Generate one once
+// and keep it in localStorage so Connected Devices can tell this browser
+// apart from others (and from itself across reloads) instead of treating
+// every browser session as invisible.
+function browserDeviceId() {
+  const key = "rh-browser-device-id";
+  let id = window.localStorage.getItem(key);
+  if (!id) { id = `browser-${crypto.randomUUID()}`; window.localStorage.setItem(key, id); }
+  return id;
+}
+function browserDeviceLabel() {
+  const ua = navigator.userAgent || "";
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Browser";
+  const os = /Windows/.test(ua) ? "Windows" : /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iOS" : /Mac OS X/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
+  return os ? `${browser} on ${os}` : browser;
+}
+async function sendBrowserHeartbeat() {
+  if (!deviceToken.value) return;
+  try { await request("/api/account/heartbeat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: browserDeviceId(), streaming: webPlaying.value, label: browserDeviceLabel() }) }); }
+  catch { /* Best effort — a missed heartbeat just leaves this tab looking briefly offline. */ }
+}
+function relativeTimeFromNow(iso) {
+  const ms = Date.now() - new Date(iso).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  if (ms < 60_000) return "just now";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
+  return `${Math.floor(ms / 86_400_000)}d ago`;
+}
+function deviceStatusClass(device) { return device.streaming ? "is-streaming" : device.running ? "is-online" : "is-offline"; }
+function deviceStatusLabel(device) {
+  if (device.streaming) return "Streaming now";
+  if (device.running) return "Online";
+  if (!device.lastSeenAt) return "Never connected";
+  return `Last seen ${relativeTimeFromNow(device.lastSeenAt)}`;
+}
+function deviceLocationLabel(device) {
+  if (!device.lastClientIp) return "";
+  return device.tailscaleHostname ? `${device.tailscaleHostname} (Tailscale) · ${device.lastClientIp}` : device.lastClientIp;
+}
 const playlistHealthBySource = ref({});
 let playlistHealthRequestId = 0;
 const weatherLocations = ref([null]);
@@ -497,10 +561,14 @@ const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
 const homeRecommendations = ref([]);
 const homeRecommendationLanguage = ref("both");
-const homeRecommendationsFromSaved = ref(false);
 const homeLoading = ref(false);
 const homeError = ref("");
 const welcomeProviderItems = ref({ series: [], movie: [], channel: [] });
+const homeFavorites = ref([]);
+const homeContinueWatching = ref([]);
+const homeFavoriteKeys = ref(new Set());
+const homeBackdropUrl = ref("");
+const homeBackdropPlayed = ref(false);
 const welcomeProviderCounts = ref({ series: 0, movie: 0, channel: 0 });
 const welcomeProviderLoading = ref(false);
 const welcomeProviderError = ref("");
@@ -625,7 +693,10 @@ const webPlayerSrc = computed(() => {
   const raw = webForceHls.value ? generated : (item.playbackUrl || item.url || generated);
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
-  if (target.pathname.includes('/api/xtream/hls/')) target.searchParams.set("client", "browser");
+  if (target.pathname.includes('/api/xtream/hls/')) {
+    target.searchParams.set("client", "browser");
+    if (playableKind !== 'channel') target.searchParams.set("quality", webQualityChoice.value);
+  }
   if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
   else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
   return target.toString();
@@ -717,7 +788,7 @@ function clearWebControlsTimer() {
 
 function scheduleWebControlsHide() {
   clearWebControlsTimer();
-  if (!webPlaying.value || webBuffering.value || webPlayerError.value) return;
+  if (!webPlaying.value || webBuffering.value || webPlayerError.value || webQualityMenuOpen.value) return;
   webControlsTimer = setTimeout(() => { webControlsVisible.value = false; }, 3600);
 }
 
@@ -736,6 +807,7 @@ function toggleWebControls(event) {
   // A tap on the video means playback is interactive again; clear any
   // transient buffering state so the spinner cannot remain stuck over it.
   webBuffering.value = false;
+  webQualityMenuOpen.value = false;
   webControlsVisible.value = !webControlsVisible.value;
   if (webControlsVisible.value) scheduleWebControlsHide(); else clearWebControlsTimer();
 }
@@ -743,6 +815,10 @@ function toggleWebControls(event) {
 function onWebPlay() {
   webPlaying.value = true;
   webBuffering.value = false;
+  // The media element is playing, so any earlier "Playback unavailable" was
+  // a transient stall that has since recovered. Clear it so the error card
+  // cannot sit on top of a working stream and pin the controls open.
+  webPlayerError.value = "";
   scheduleWebControlsHide();
 }
 
@@ -776,7 +852,15 @@ function onWebTimeUpdate(event) {
   }
   webCurrentTime.value = absolutePosition;
   if (webBufferRecoveryPosition.value >= 0 && absolutePosition + 3 >= webBufferRecoveryPosition.value) webBufferRecoveryPosition.value = -1;
-  if (!event.target.paused && event.target.readyState >= 3) webBuffering.value = false;
+  if (!event.target.paused && event.target.readyState >= 3) {
+    webBuffering.value = false;
+    // The timeline is advancing with buffered media: the stream is working.
+    // Retire any lingering error card and let the controls fade.
+    if (webPlayerError.value) {
+      webPlayerError.value = "";
+      scheduleWebControlsHide();
+    }
+  }
 }
 
 function clearWebRecoveryTimer() {
@@ -819,6 +903,9 @@ function onWebReady(event) {
   if (event?.type === "playing") webPlaying.value = true;
   webBuffering.value = false;
   webPlaybackRetryCount.value = 0;
+  // A "playing"/"canplay"/first-frame signal means the stream is viable again;
+  // drop any stale playback error so it does not block the auto-hide.
+  webPlayerError.value = "";
   if (event?.type === "playing" && !webMediaReady.value) {
     const video = event.target;
     const reveal = () => {
@@ -878,7 +965,16 @@ async function configureMoviePlayback(startSeconds = 0) {
     } else {
       const Hls = await loadHlsConstructor();
       if (Hls.isSupported()) {
-        webHls = new Hls({ enableWorker: true, lowLatencyMode: false });
+        webHls = new Hls({
+          enableWorker: true,
+          lowLatencyMode: false,
+          // Start playback at the movie's beginning, not the rolling manifest's
+          // live edge, and skip the ABR bandwidth probe on the single-rendition
+          // stream so the first fragment loads immediately.
+          startPosition: 0,
+          testBandwidth: false,
+          startFragPrefetch: true,
+        });
         webHls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
           if (webPlaybackRetryCount.value < 3) {
@@ -911,7 +1007,11 @@ async function configureMoviePlayback(startSeconds = 0) {
 
 async function playWebMovie(item) {
   webStreamTicket.value = "";
-  webForceHls.value = false;
+  // No Auto option: a quality rung is always in effect, and a rung is only
+  // honoured by the transcoding HLS pipeline, so every play routes through
+  // /api/xtream/hls instead of direct play.
+  webForceHls.value = true;
+  webQualityMenuOpen.value = false;
   webNowPlaying.value = item;
   webPlaying.value = false;
   webMuted.value = false;
@@ -923,11 +1023,12 @@ async function playWebMovie(item) {
   webMediaReady.value = false;
   webBuffering.value = true;
   webControlsVisible.value = true;
-  webQuality.value = item.quality || "Auto";
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
   await loadStreamTicket(item);
-  await loadMovieDuration(webNowPlaying.value);
+  // The catalog duration only sizes the scrubber; it must not sit on the
+  // playback critical path. Let it resolve in the background.
+  void loadMovieDuration(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
@@ -1156,6 +1257,7 @@ async function closeWebPlayer() {
   webPendingSeek.value = -1;
   webMediaReady.value = false;
   webBuffering.value = false;
+  webQualityMenuOpen.value = false;
 }
 
 async function toggleWebPlayback() {
@@ -1209,6 +1311,21 @@ async function restartWebAt(target) {
   webMediaReady.value = false;
   showWebControls();
   await configureMoviePlayback(target);
+}
+
+async function chooseWebQuality(value) {
+  webQualityMenuOpen.value = false;
+  if (value === webQualityChoice.value) return;
+  webQualityChoice.value = value;
+  try { window.localStorage.setItem(webQualityKey, value); } catch { /* Safari private mode */ }
+  if (!webNowPlaying.value || webNowPlaying.value.kind === "channel") return;
+  // Re-open the stream at the current spot with the new rung. The backend forks
+  // a fresh ffmpeg job per rung, the same way a seek restarts playback.
+  const resumeAt = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
+  webForceHls.value = true;
+  webPlaybackRetryCount.value = 0;
+  showWebControls();
+  await restartWebAt(resumeAt);
 }
 
 function toggleWebMute() {
@@ -1383,19 +1500,85 @@ async function toggleWelcomeItem(item) {
   }
 }
 
+function homeExtraItem(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = raw.id || raw.itemId;
+  const kind = raw.kind || raw.type;
+  if (!id || !raw.sourceId || !["series", "movie", "channel"].includes(kind)) return null;
+  return homeItem({
+    ...raw,
+    id: String(id),
+    kind,
+    logo: raw.logo || raw.poster || "",
+    category: raw.category || raw.categoryId || "",
+  }, kind);
+}
+
+function favoriteKeyOf(item) {
+  return `${item?.kind || "item"}:${item?.id || item?.itemId || ""}`;
+}
+
+async function loadHomeExtras() {
+  if (!deviceToken.value) { homeFavorites.value = []; homeContinueWatching.value = []; return; }
+  const [favResult, contResult] = await Promise.allSettled([
+    request("/api/favorites", { cache: "no-store" }),
+    request("/api/streaming-history/continue-watching?limit=20", { cache: "no-store" }),
+  ]);
+  const favItems = favResult.status === "fulfilled" ? favResult.value.items || [] : [];
+  homeFavoriteKeys.value = new Set(favItems.map(favoriteKeyOf));
+  homeFavorites.value = favItems.map(homeExtraItem).filter(Boolean);
+  const contItems = contResult.status === "fulfilled" ? contResult.value.items || [] : [];
+  homeContinueWatching.value = contItems.map(homeExtraItem).filter(Boolean);
+}
+
+function isHomeFavorite(item) {
+  return homeFavoriteKeys.value.has(favoriteKeyOf(item));
+}
+
+async function toggleHomeFavorite(item) {
+  if (!item?.id || !item?.kind) return;
+  const key = favoriteKeyOf(item);
+  const next = new Set(homeFavoriteKeys.value);
+  const wasFavorite = next.has(key);
+  if (wasFavorite) next.delete(key); else next.add(key);
+  homeFavoriteKeys.value = next;
+  if (wasFavorite) homeFavorites.value = homeFavorites.value.filter(entry => favoriteKeyOf(entry) !== key);
+  else if (!homeFavorites.value.some(entry => favoriteKeyOf(entry) === key)) homeFavorites.value = [item, ...homeFavorites.value];
+  try {
+    await request("/api/favorites/toggle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: item.id, title: item.title || "", kind: item.kind,
+        sourceId: item.sourceId || "", logo: item.logo || "",
+        category: item.category || item.categoryId || "", extension: item.extension || "",
+      }),
+    });
+  } catch (error) {
+    homeFavoriteKeys.value = wasFavorite ? new Set([...homeFavoriteKeys.value, key]) : (() => { const s = new Set(homeFavoriteKeys.value); s.delete(key); return s; })();
+    messageType.value = "error";
+    message.value = error.message || "Could not update favorites.";
+    void loadHomeExtras();
+  }
+}
+
+const homeRails = computed(() => {
+  const rails = [];
+  if (homeFavorites.value.length) rails.push({ id: "favorites", eyebrow: "FAVORITES", title: "Your favorites", items: homeFavorites.value });
+  if (homeContinueWatching.value.length) rails.push({ id: "continue", eyebrow: "CONTINUE WATCHING", title: "Jump back in", items: homeContinueWatching.value });
+  if (homeRecommendations.value.length) rails.push({ id: "ai", eyebrow: "AI RECOMMENDATIONS", title: "Picked for you", items: homeRecommendations.value });
+  for (const rail of [{ kind: "series", label: "New series" }, { kind: "movie", label: "New movies" }, { kind: "channel", label: "New live channels" }]) {
+    const items = welcomeProviderItems.value[rail.kind] || [];
+    if (items.length) rails.push({ id: `new-${rail.kind}`, eyebrow: rail.label.toUpperCase(), title: rail.label, items });
+  }
+  return rails;
+});
+
 async function loadHomeData(force = false) {
   if (!deviceToken.value) return;
-  if (!force && savedItems.value.length) {
-    homeRecommendationsFromSaved.value = true;
-    homeRecommendations.value = [...savedItems.value]
-      .sort((a, b) => Number(b.added || 0) - Number(a.added || 0) || compareCatalogTitles(a, b))
-      .slice(0, 10);
-    homeLoading.value = false;
-    return;
-  }
+  void loadHomeExtras();
   const requestId = ++homeRequestId;
   homeLoading.value = true;
-  homeRecommendationsFromSaved.value = false;
   homeError.value = "";
   try {
     const language = homeRecommendationLanguage.value;
@@ -1413,6 +1596,25 @@ async function loadHomeData(force = false) {
     if (requestId === homeRequestId && error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
   } finally {
     if (requestId === homeRequestId) homeLoading.value = false;
+  }
+  if (requestId === homeRequestId && homeRecommendations.value.length) pollHomeBackdrop(0);
+}
+
+let homeBackdropTimer = 0;
+async function pollHomeBackdrop(attempt = 0) {
+  window.clearTimeout(homeBackdropTimer);
+  if (!deviceToken.value || !browserApp.value || attempt > 20) return;
+  try {
+    const language = homeRecommendationLanguage.value;
+    const status = await request(`/api/recommendations/ai/backdrop?language=${encodeURIComponent(language)}`, { cache: "no-store" });
+    if (status?.ready && status.url) {
+      const separator = status.url.includes("?") ? "&" : "?";
+      homeBackdropUrl.value = api(`${status.url}${separator}deviceToken=${encodeURIComponent(deviceToken.value)}`);
+      return;
+    }
+    if (status?.building || attempt < 3) homeBackdropTimer = window.setTimeout(() => pollHomeBackdrop(attempt + 1), 8000);
+  } catch {
+    /* backdrop is best-effort; stop polling on error */
   }
 }
 
@@ -1634,6 +1836,7 @@ async function loadCatalog(reset = true) {
   }
   const requestId = ++catalogRequestId;
   catalogController = new AbortController();
+  if (reset && !categories.value.length) void loadPlaylistCategories();
   const requestedSourceId = sourceId.value;
   const requestedKind = kind.value;
   const normalizedQuery = normalizeSearchText(query.value);
@@ -1649,7 +1852,7 @@ async function loadCatalog(reset = true) {
     const mergedItems = reset ? nextItems : [...items.value, ...nextItems.filter(item => !items.value.some(existing => existing.key === item.key))];
     items.value = mergedItems.sort(compareCatalogTitles);
     rememberItems(nextItems);
-    categories.value = data.categories || [];
+    if (Array.isArray(data.categories) && data.categories.length) categories.value = data.categories;
     languages.value = data.languages || [];
     page.value = data.pagination?.page || requestedPage;
     pages.value = data.pagination?.pageCount || 1;
@@ -1671,13 +1874,28 @@ function handlePlaylistScroll(event) {
   if (distanceFromLastItem <= 32) loadCatalog(false);
 }
 
+async function loadPlaylistCategories() {
+  if (!sourceId.value) { categories.value = []; return; }
+  const requestedSource = sourceId.value;
+  const requestedKind = kind.value;
+  try {
+    const data = await request(`/api/xtream/categories?sourceId=${encodeURIComponent(requestedSource)}&kind=${requestedKind}`, { cache: "no-store" });
+    if (requestedSource === sourceId.value && requestedKind === kind.value) categories.value = data.categories || [];
+  } catch { categories.value = []; }
+}
+
+async function chooseCategory(id) {
+  category.value = id || "all";
+  await loadCatalog();
+}
+
 async function loadSaved() {
   const data = await request(`/api/xtream/sources/${sourceId.value}/enabled`);
   applySource(data.source);
   savedItems.value = data.items || [];
 }
 
-async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; await loadSources(id); }
+async function chooseSource(id) { sourceId.value = id; category.value = "all"; titleLanguage.value = "all"; loadPlaylistCategories(); await loadSources(id); }
 async function deleteCurrentSource() {
   const current = sources.value.find(item => item.id === sourceId.value);
   if (!current) return;
@@ -1696,7 +1914,7 @@ async function deleteCurrentSource() {
     busy.value = false;
   }
 }
-async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; await loadCatalog(); }
+async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; loadPlaylistCategories(); await loadCatalog(); }
 function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
 async function movePage(delta) { page.value += delta; await loadCatalog(false); }
 
@@ -1706,6 +1924,7 @@ watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value =
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
   if (!deviceToken.value) return;
+  if (value === "playlist") loadPlaylistCategories();
   const pageRequest = value === "playlist"
     ? loadSources()
     : value === "settings"
@@ -1748,19 +1967,22 @@ onMounted(async () => {
     await Promise.all([request("/api/health"), loadSources(sourceId.value, { loadPlaylist: false })]);
     online.value = true;
     appReady.value = true;
-    void Promise.all([loadLinkedDevices(), loadWeatherSettings()]).catch(() => {});
+    void Promise.all([loadLinkedDevices(), loadWeatherSettings(), sendBrowserHeartbeat()]).catch(() => {});
     void request("/api/account/profiles").then(data => {
       profiles.value = data.items || [];
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     }).catch(() => {});
     void loadHomeData();
+    // Warm the lazy HLS.js chunk (~185 KB gzip) while the catalog renders, so
+    // the first Play does not wait on that download over the slow tunnel.
+    void loadHlsConstructor().catch(() => {});
     if (safariPage.value === "playlist") loadSources().catch(error => {
       messageType.value = "error";
       message.value = error.message;
     });
     watchLibraryRevision();
     deviceStatusTimer = window.setInterval(() => {
-      if (!pairing.value && deviceToken.value) loadLinkedDevices().catch(() => {});
+      if (!pairing.value && deviceToken.value) { loadLinkedDevices().catch(() => {}); sendBrowserHeartbeat(); }
     }, 10_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
@@ -1770,10 +1992,7 @@ onMounted(async () => {
   <main class="shell" :class="{ 'safari-app-mode': browserApp, 'login-shell': pairing }">
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
-        <div class="login-art">
-          <img class="login-rh-art" src="/login/rh-login-art.png" alt="">
-        </div>
-        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV PLAYER</span></div>
+        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV PLAYER</span></div>
         <p v-if="pairCode" class="eyebrow">ROKU LIBRARY</p>
         <h1 v-if="pairCode && isPairingSignup">Create your account</h1>
         <h1 v-else-if="pairCode">Open your Roku library</h1>
@@ -1783,7 +2002,7 @@ onMounted(async () => {
         <template v-else-if="pairCode">
           <p>{{ isPairingSignup ? 'Create an account to activate this Roku and manage its library from your phone.' : 'Sign in to link this Roku and open its library. The TV will connect automatically.' }}</p>
           <p class="pairing-device-code">You are linking Roku device <code>{{ pairingDeviceId || pairCode }}</code>. This device identity is saved with your account; your email address and password are never stored in or shared through the QR code.</p>
-          <form @submit.prevent="claimPairing">
+          <form novalidate @submit.prevent="claimPairing">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="Your password"></label>
             <label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
@@ -1793,7 +2012,7 @@ onMounted(async () => {
         </template>
         <template v-else-if="!isPairingSignup">
           <template v-if="!scannerOpen">
-            <form @submit.prevent="signIn">
+            <form novalidate @submit.prevent="signIn">
               <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
               <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
               <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
@@ -1808,7 +2027,7 @@ onMounted(async () => {
         </template>
         <template v-else>
           <p>Create an account to manage your Roku library. You can link a Roku after signing up.</p>
-          <form @submit.prevent="signUp">
+          <form novalidate @submit.prevent="signUp">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
             <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
@@ -1838,17 +2057,18 @@ onMounted(async () => {
     <template v-else>
     <template v-if="browserApp">
       <div class="home-background" aria-hidden="true"></div>
+      <video v-if="homeBackdropUrl && safariPage === 'welcome'" class="home-backdrop-video" :class="{done:homeBackdropPlayed}" :src="homeBackdropUrl" autoplay muted loop playsinline preload="auto" aria-hidden="true" @playing="homeBackdropPlayed = true" @error="homeBackdropUrl = ''"></video>
       <div class="home-aurora home-aurora-one" aria-hidden="true"></div>
       <div class="home-aurora home-aurora-two" aria-hidden="true"></div>
       <div class="home-overlay" aria-hidden="true"></div>
     </template>
     <nav class="topbar">
-      <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"><span>IPTV Player</span></div>
+      <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV Player</span></div>
       <div class="topbar-actions"><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
     <section v-if="browserApp" class="browser-app-shell">
       <aside class="browser-sidebar">
-        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH"></div>
+        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"></div>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
@@ -1861,63 +2081,74 @@ onMounted(async () => {
         <section class="welcome-provider-box">
           <div class="welcome-provider-head">
             <div class="welcome-provider-head-text">
-              <h1>Choose your playlist</h1>
-              <p>Select a provider to load its library rails below.</p>
+              <h1>Your playlist</h1>
+              <p>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') + ' library' : 'No provider connected yet' }}</p>
             </div>
-            <select v-if="sources.length" class="welcome-provider-select" aria-label="Playlist provider" :value="sourceId" @change="sourceId = $event.target.value; loadWelcomeProvider(sources.find(source => source.id === $event.target.value))">
-              <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
-            </select>
+            <div v-if="sources.length" class="welcome-provider-stats" aria-label="Provider catalog totals">
+              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
+              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.movie.toLocaleString() }}</strong><span>MOVIES</span></div>
+              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.channel.toLocaleString() }}</strong><span>LIVE CHANNELS</span></div>
+            </div>
           </div>
           <div v-if="!sources.length" class="welcome-provider-empty">No playlist providers are connected yet.</div>
-          <div v-else class="welcome-provider-stats" aria-label="Provider catalog totals">
-            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
-            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.movie.toLocaleString() }}</strong><span>MOVIES</span></div>
-            <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.channel.toLocaleString() }}</strong><span>LIVE CHANNELS</span></div>
-          </div>
         </section>
         <p v-if="welcomeProviderError" class="home-error" role="status">{{ welcomeProviderError }}</p>
 
-        <section v-if="homeLoading || homeError || homeRecommendations.length" class="home-rail welcome-ai-rail">
-          <header><div><p class="eyebrow">{{ homeRecommendationsFromSaved ? 'RECENTLY ADDED' : 'AI RECOMMENDATIONS' }}</p><h2>{{ homeRecommendationsFromSaved ? 'Jump back in' : 'Picked for you' }}</h2></div></header>
-          <div v-if="homeLoading" class="welcome-provider-loading" role="status"><span class="loading-ring" aria-hidden="true"></span><span>Finding recommendations…</span></div>
-          <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
-          <div v-else class="home-rail-track" @scroll="handleSafariRailScroll($event, 'welcome-ai')"><button v-for="item in homeRecommendations" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || typeLabel(item.kind) }}</small></button></div>
-        </section>
+        <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
-        <div v-if="welcomeProviderLoading" class="welcome-provider-loading" role="status"><span class="loading-ring" aria-hidden="true"></span><span>Loading this provider's rails…</span></div>
-        <template v-else v-for="rail in [{kind:'series', title:'Series'}, {kind:'movie', title:'Movies'}, {kind:'channel', title:'Live Channels'}]" :key="rail.kind">
-          <section v-if="welcomeProviderItems[rail.kind]?.length" class="home-rail">
-            <header><div><p class="eyebrow">{{ rail.title.toUpperCase() }}</p><h2>{{ rail.title }}</h2></div></header>
-            <div class="home-rail-track" @scroll="handleSafariRailScroll($event, `provider-${rail.kind}`)"><button v-for="item in welcomeProviderItems[rail.kind]" :key="homeItemKey(item)" type="button" class="home-content-card" @click="toggleWelcomeItem(item)"><span class="home-card-art"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else>{{ typeIcon(item.kind) }}</span><b>{{ typeLabel(item.kind) }}</b><span class="home-add-action" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path :d="welcomeItemEnabled(item) ? 'M5 5h14v14H5zM8 8v8h8V8z' : 'M3 13h8v8h2v-8h8v-2h-8V3h-2v8H3z'"></path></svg></span></span><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || rail.title }}</small></button></div>
-          </section>
-        </template>
+        <section v-for="rail in homeRails" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
+          <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div></header>
+          <div class="home-rail-track">
+            <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" role="button" tabindex="0" @click="toggleWelcomeItem(item)" @keydown.enter.prevent="toggleWelcomeItem(item)">
+              <span class="home-card-art">
+                <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
+                <span v-else class="home-card-fallback"><b>RH</b><em>{{ item.title }}</em></span>
+                <button type="button" class="home-fav-action" :class="{on:isHomeFavorite(item)}" :aria-label="isHomeFavorite(item) ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleHomeFavorite(item)">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" :fill="isHomeFavorite(item) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="m12 17.3-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.8 1.6 7z"/></svg>
+                </button>
+              </span>
+              <strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || typeLabel(item.kind) }}</small>
+            </div>
+          </div>
+        </section>
         <p v-if="!welcomeProviderLoading && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <template v-if="sources.length">
-          <div class="web-playlist-source"><div class="playlist-control"><span>PLAYLIST SECTION</span><select :value="kind" @change="chooseKind($event.target.value)"><option value="series">Series</option><option value="movie">Movies</option><option value="channel">Live TV</option></select></div><label class="playlist-control playlist-search-control"><span class="playlist-control-eyebrow">SEARCH PLAYLIST</span><span class="playlist-search-input"><span aria-hidden="true">⌕</span><input v-model="query" placeholder="Search this playlist"></span></label><div v-if="sourceId" class="playlist-control"><span class="playlist-control-eyebrow">SOURCE</span><button type="button" class="playlist-delete-source" :disabled="busy" @click="deleteCurrentSource">Delete {{ sources.find(source => source.id === sourceId)?.name || 'source' }}</button></div></div>
-          <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
-          <div v-else-if="visibleItems.length" class="browser-playlist-browser">
-            <section class="browser-playlist-preview" aria-label="Playlist preview">
-              <div class="live-tv-screen">
-                <video ref="playlistPreviewVideo" playsinline @loadstart="playlistPreviewLoading = true" @playing="playlistPreviewLoading = false" @waiting="playlistPreviewLoading = true" @stalled="playlistPreviewLoading = true" @error="playlistPreviewLoading = false; playlistPreviewError = 'This item is unavailable right now.'"></video>
-                <div v-if="!playlistPreviewSelected" class="live-tv-placeholder"><span>PREVIEW</span><strong>Select an item from the table</strong></div>
-                <div v-else-if="playlistPreviewLoading" class="live-tv-loader" aria-label="Loading preview"></div>
-                <p v-if="playlistPreviewError" class="live-tv-error">{{ playlistPreviewError }}</p>
-              </div>
-              <footer><span class="live-tv-on-air">{{ kind === 'channel' ? 'LIVE' : 'VOD' }}</span><div><strong>{{ playlistPreviewSelected?.title || 'Playlist preview' }}</strong><small>{{ playlistPreviewSelected ? (playlistPreviewSelected.categoryId || 'Uncategorized') : 'Choose an item from the table' }}</small></div></footer>
-            </section>
-            <div class="web-playlist-items browser-playlist-table" @scroll="handlePlaylistScroll">
-              <div class="browser-playlist-header"><span>ITEM</span><span>ID</span><span>STATUS</span></div>
-              <div v-for="item in visibleItems" :key="item.key" class="browser-playlist-row" :class="{enabled:savedKeys.has(item.key),previewing:playlistPreviewSelected?.key === item.key}" tabindex="0" role="button" @click="selectPlaylistPreview(item)" @keydown.enter="selectPlaylistPreview(item)">
-                <span class="browser-playlist-item"><span class="web-playlist-icon browser-item-poster" :class="{'channel-logo':kind === 'channel'}"><img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" @error="markLogoFailed(item.logo)"><span v-else-if="kind === 'channel'" class="channel-name-fallback">{{ item.title }}</span><template v-else><img src="/home-background.png" alt=""><b>{{ typeIcon(kind) }}</b></template></span><span class="browser-playlist-copy"><strong>{{ item.title }}</strong><small>{{ item.categoryId || 'Uncategorized' }}</small></span></span>
-                <code>{{ item.id }}</code>
-                <span class="browser-playlist-status" :class="savedKeys.has(item.key) ? 'is-added' : 'is-available'">{{ savedKeys.has(item.key) ? 'Enabled' : 'Available' }}</span>
-              </div>
-              <div v-if="loadingMore" class="browser-playlist-loading-more">Loading more…</div>
+          <div class="playlist-toolbar">
+            <select v-if="sources.length > 1" class="playlist-provider-select" aria-label="Playlist provider" :value="sourceId" @change="chooseSource($event.target.value)">
+              <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
+            </select>
+            <div class="playlist-tabs" role="tablist">
+              <button v-for="option in [{v:'series',l:'Series'},{v:'movie',l:'Movies'},{v:'channel',l:'Live TV'}]" :key="option.v" type="button" role="tab" :aria-selected="kind === option.v" :class="{active:kind === option.v}" @click="chooseKind(option.v)">
+                <span>{{ option.l }}</span>
+                <em class="playlist-tab-count">{{ welcomeProviderLoading ? '·' : (welcomeProviderCounts[option.v] || 0).toLocaleString() }}</em>
+              </button>
             </div>
+            <select class="playlist-category-select" :value="category" aria-label="Playlist category" @change="chooseCategory($event.target.value)">
+              <option value="all">All categories</option>
+              <option v-for="entry in categories" :key="entry.id" :value="entry.id">{{ entry.name }}{{ entry.count ? ` · ${entry.count}` : '' }}</option>
+            </select>
+            <label class="playlist-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input v-model="query" placeholder="Search this playlist"></label>
+          </div>
+          <p v-if="!loading && total" class="playlist-result-count">
+            <strong>{{ total.toLocaleString() }}</strong> {{ (query || category !== 'all') ? 'matching ' : '' }}{{ typeLabel(kind).toLowerCase() }}{{ total === 1 ? '' : 's' }}
+          </p>
+          <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
+          <div v-else-if="visibleItems.length" class="playlist-grid" :class="{'is-channel-grid':kind === 'channel'}" @scroll="handlePlaylistScroll">
+            <div v-for="item in visibleItems" :key="item.key" class="playlist-card" :class="{enabled:savedKeys.has(item.key)}" tabindex="0" role="button" :aria-pressed="savedKeys.has(item.key)" @click="toggleWelcomeItem(item)" @keydown.enter.prevent="toggleWelcomeItem(item)" @keydown.space.prevent="toggleWelcomeItem(item)">
+              <span class="playlist-card-art">
+                <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
+                <span v-else class="playlist-card-fallback" :data-kind="kind"><span class="fallback-mark">RH</span><span class="fallback-name">{{ item.title }}</span><span class="fallback-kind">{{ typeLabel(kind) }}</span></span>
+                <span class="playlist-card-toggle" :class="{on:savedKeys.has(item.key)}" aria-hidden="true">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path :d="savedKeys.has(item.key) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"></path></svg>
+                </span>
+              </span>
+              <span class="playlist-card-copy"><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Uncategorized' }}</small></span>
+            </div>
+            <div v-if="loadingMore" class="playlist-grid-more">Loading more…</div>
           </div>
           <p v-else class="web-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
@@ -1974,8 +2205,8 @@ onMounted(async () => {
         <div v-else-if="safariLibraryTab !== 'channel' && libraryRails.length" class="safari-library-rails">
           <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
             <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
-            <div class="safari-library-rail-track" :class="{'is-scrolling-left': safariRailMotion[rail.name] === 'left', 'is-scrolling-right': safariRailMotion[rail.name] === 'right'}" @scroll="handleSafariRailScroll($event, rail.name)">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><img class="safari-library-fallback" src="/home-background.png" alt=""><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab === 'movie' && streamFormatLabel(item)" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
+            <div class="safari-library-rail-track">
+              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><span class="safari-library-fallback"></span><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab === 'movie' && streamFormatLabel(item)" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
             </div>
           </section>
         </div>
@@ -1992,7 +2223,7 @@ onMounted(async () => {
           <div class="profile-password-heading"><div><p class="eyebrow">SECURITY</p><h3>Change password</h3></div><button type="button" class="source-action" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel' : 'Update password' }}</button></div>
           <form v-if="changePasswordOpen" class="web-password-form profile-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
         </section>
-        <section class="web-linked-settings"><div class="settings-section-heading"><div><p class="eyebrow">YOUR DEVICES</p><h2>Linked Rokus</h2></div><span>{{ linkedDevices.length }} connected</span></div><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div class="linked-roku-icon">▣</div><div class="linked-roku-copy"><strong>{{ device.label }}</strong><small>{{ device.deviceId }}</small><span><i></i>Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</span></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><div class="linked-roku-actions"><p v-if="!linkedDevices.length" class="web-empty">No Roku devices are linked yet.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button></div><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
+        <section class="web-linked-settings"><div class="settings-section-heading"><div><p class="eyebrow">YOUR DEVICES</p><h2>Connected Devices</h2></div><span>{{ linkedDevices.length }} connected</span></div><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div class="linked-roku-icon">{{ device.kind === 'browser' ? '◱' : '▣' }}</div><div class="linked-roku-copy"><strong>{{ device.label }}</strong><small>{{ device.kind === 'browser' ? 'Browser' : 'Roku' }} · Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</small><span class="device-status" :class="deviceStatusClass(device)"><i></i>{{ deviceStatusLabel(device) }}</span><small v-if="deviceLocationLabel(device)">{{ deviceLocationLabel(device) }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><div class="linked-roku-actions"><p v-if="!linkedDevices.length" class="web-empty">No devices are connected yet.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button></div><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
       </article>
       <div v-if="profileCropOpen" class="profile-crop-backdrop" role="dialog" aria-modal="true" aria-label="Crop profile picture"><section class="profile-crop-modal"><div class="settings-section-heading"><div><p class="eyebrow">PROFILE PHOTO</p><h2>Frame your picture</h2></div><button type="button" class="close" @click="profileCropOpen=false">×</button></div><div class="profile-crop-window"><img :src="profileCropSource" alt="Crop preview" :style="{transform:`translate(${(50-profileCropX)/4}%, ${(50-profileCropY)/4}%) scale(${profileCropZoom})`}" @load="cropImageLoaded"></div><label class="crop-control">Zoom <input v-model.number="profileCropZoom" type="range" min="1" max="3" step="0.05"></label><label class="crop-control">Horizontal position <input v-model.number="profileCropX" type="range" min="0" max="100"></label><label class="crop-control">Vertical position <input v-model.number="profileCropY" type="range" min="0" max="100"></label><div class="profile-crop-actions"><button type="button" class="source-action" @click="profileCropOpen=false">Cancel</button><button type="button" class="primary-action" :disabled="profileBusy" @click="saveProfileImage">Save picture</button></div></section></div>
 
@@ -2069,7 +2300,7 @@ onMounted(async () => {
     </section>
     </template>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click.stop="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }} · {{ webQuality }}</p></div><span v-if="webStreamFormatLabel" class="web-player-format-badge">{{ webStreamFormatLabel }}</span></header><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
+      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click.stop="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }}</p></div><span v-if="webStreamFormatLabel" class="web-player-format-badge">{{ webStreamFormatLabel }}</span><div v-if="webNowPlaying.kind !== 'channel'" class="web-quality-control"><button type="button" class="web-quality-toggle" :class="{active: webQualityMenuOpen}" aria-haspopup="true" :aria-expanded="webQualityMenuOpen ? 'true' : 'false'" @click.stop="webQualityMenuOpen = !webQualityMenuOpen">{{ webQualityLabel }}</button><ul v-if="webQualityMenuOpen" class="web-quality-menu"><li v-for="option in webQualityOptions" :key="option.value"><button type="button" :class="{selected: option.value === webQualityChoice}" @click.stop="chooseWebQuality(option.value)">{{ option.label }}</button></li></ul></div></header><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
       <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
     </template>
