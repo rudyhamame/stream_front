@@ -468,6 +468,16 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
  .web-player-back { flex:0 0 auto; width:36px; height:36px; border:1px solid #394236; border-radius:10px; background:#191d17; color:#d4f06a; cursor:pointer; font:27px/1 'DM Sans'; }
  .web-quality-control { position:relative; flex:0 0 auto; margin-left:auto; }
  .web-player-format-badge + .web-quality-control { margin-left:8px; }
+ .web-partner-control { position:relative; flex:0 0 auto; margin-left:auto; }
+ .web-quality-control + .web-partner-control, .web-player-format-badge + .web-partner-control { margin-left:8px; }
+ .web-partner-menu { width:220px; padding:12px; }
+ .web-partner-menu p { margin:0 0 10px; color:#c9d3bd; font:400 13px/1.4 'DM Sans'; }
+ .web-partner-menu .primary-action { width:100%; }
+ .partner-invite-banner { position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px 18px; background:#1c2a14; border-bottom:1px solid #d4f06a55; color:#f3f4f1; }
+ .partner-invite-banner p { margin:0; font:400 13px/1.4 'DM Sans'; }
+ .partner-invite-banner div { display:flex; gap:8px; flex:0 0 auto; }
+ .partner-invite-banner button { border:1px solid #394236; border-radius:8px; padding:7px 14px; background:#12140f; color:#e7ece0; cursor:pointer; font:600 12px 'DM Sans'; }
+ .partner-invite-banner button.primary-action { border-color:#d4f06a; background:#d4f06a; color:#111210; }
  .web-quality-toggle { display:flex; align-items:center; gap:6px; min-width:52px; justify-content:center; border:1px solid #d7f35e99; border-radius:999px; padding:6px 12px; background:#11121080; color:#f3f4f1; cursor:pointer; font:700 11px 'DM Sans'; letter-spacing:.06em; text-transform:uppercase; touch-action:manipulation; }
  .web-quality-toggle.active { border-color:#d4f06a; background:rgba(35,47,26,.95); color:#d4f06a; }
  .web-quality-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:8; margin:0; padding:6px; list-style:none; min-width:132px; border:1px solid #394236; border-radius:12px; background:#12140f; box-shadow:0 14px 34px #000a; }

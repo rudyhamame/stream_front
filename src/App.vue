@@ -110,6 +110,9 @@ const webQualityLabel = computed(() => webQualityOptions.find(option => option.v
 const webPlayerError = ref("");
 const webStreamTicket = ref("");
 const webForceHls = ref(false);
+const webWwpSessionId = ref("");
+const webPartnerMenuOpen = ref(false);
+const pendingPartnerInvite = ref(null);
 const webFullscreen = ref(false);
 let webHls = null;
 let liveTvHls = null;
@@ -164,6 +167,11 @@ const newPassword = ref("");
 const newPasswordConfirmation = ref("");
 const passwordMessage = ref("");
 const passwordMessageType = ref("info");
+const partnerEmailOpen = ref(false);
+const partnerEmail = ref("");
+const partnerEmailInput = ref("");
+const partnerMessage = ref("");
+const partnerMessageType = ref("info");
 const scannerOpen = ref(false);
 const scannerError = ref("");
 const failedLogoUrls = ref(new Set());
@@ -413,6 +421,29 @@ async function changePassword() {
   }
 }
 
+async function loadPartnerSettings() {
+  if (!deviceToken.value) return;
+  try {
+    const data = await request("/api/account/partner");
+    partnerEmail.value = data.partnerEmail || "";
+    partnerEmailInput.value = partnerEmail.value;
+  } catch { /* Settings page just shows the field empty on a transient failure. */ }
+}
+async function savePartnerEmail() {
+  partnerMessage.value = "";
+  try {
+    const data = await request("/api/account/partner", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ partnerEmail: partnerEmailInput.value.trim() }) });
+    partnerEmail.value = data.partnerEmail || "";
+    partnerEmailInput.value = partnerEmail.value;
+    partnerEmailOpen.value = false;
+    partnerMessageType.value = "success";
+    partnerMessage.value = partnerEmail.value ? `Partner set to ${partnerEmail.value}.` : "Partner cleared.";
+  } catch (error) {
+    partnerMessageType.value = "error";
+    partnerMessage.value = error.message;
+  }
+}
+
 async function unlinkDevice(device) {
   if (!window.confirm(`Unlink ${device.label}?`)) return;
   try {
@@ -575,6 +606,8 @@ const welcomeProviderError = ref("");
 let welcomeProviderRequestId = 0;
 let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
+let partnerInviteRevision = 0, partnerInviteController = null, partnerInviteRetryTimer = null;
+let wwpSyncRevision = 0, wwpSyncController = null, wwpSyncRetryTimer = null;
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
@@ -699,6 +732,7 @@ const webPlayerSrc = computed(() => {
   }
   if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
   else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
+  if (webWwpSessionId.value) target.searchParams.set("wwpSessionId", webWwpSessionId.value);
   return target.toString();
 });
 const webStreamFormatLabel = computed(() => {
@@ -1233,6 +1267,7 @@ watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
 watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 
 async function closeWebPlayer() {
+  stopWwpSync();
   clearWebControlsTimer();
   clearWebRecoveryTimer();
   clearTimeout(webBufferingTimer);
@@ -1326,6 +1361,55 @@ async function chooseWebQuality(value) {
   webPlaybackRetryCount.value = 0;
   showWebControls();
   await restartWebAt(resumeAt);
+}
+
+// Watch with Partner: invite the account set in Settings to watch the exact
+// same HLS output - one provider connection shared by both accounts, not two.
+async function sendPartnerInvite() {
+  webPartnerMenuOpen.value = false;
+  if (!webNowPlaying.value) return;
+  try {
+    const item = webNowPlaying.value;
+    const start = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
+    const data = await request("/api/partner/invite", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, extension: item.extension || "", title: item.title || "", start, quality: webQualityChoice.value }),
+    });
+    webWwpSessionId.value = data.wwpSessionId;
+    messageType.value = "success";
+    message.value = `Invite sent to ${data.partnerEmail}.`;
+    // Reload our own stream at the same spot, now tagged with the session id,
+    // so the server has something to reconcile the partner's join against.
+    await restartWebAt(start);
+    watchWwpSync();
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error.message;
+  }
+}
+
+async function joinPartnerInvite(invite) {
+  pendingPartnerInvite.value = null;
+  webStreamTicket.value = invite.streamTicket || "";
+  webWwpSessionId.value = invite.wwpSessionId;
+  webForceHls.value = true;
+  webQualityMenuOpen.value = false;
+  webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, extension: invite.extension || "", title: invite.title || "Watch with partner" };
+  webPlaying.value = false;
+  webMuted.value = false;
+  webCurrentTime.value = 0;
+  webDuration.value = 0;
+  webPlaybackOffset.value = 0;
+  webPendingSeek.value = -1;
+  webBufferRecoveryPosition.value = -1;
+  webMediaReady.value = false;
+  webBuffering.value = true;
+  webControlsVisible.value = true;
+  webPlayerError.value = "";
+  webPlaybackRetryCount.value = 0;
+  if (invite.quality && webQualityOptions.some(option => option.value === invite.quality)) webQualityChoice.value = invite.quality;
+  await configureMoviePlayback(Math.max(0, Number(invite.start) || 0));
+  watchWwpSync();
 }
 
 function toggleWebMute() {
@@ -1640,6 +1724,76 @@ async function watchLibraryRevision() {
     if (libraryRevisionController === controller) libraryRevisionController = null;
     if (error.name !== "AbortError") libraryRevisionRetryTimer = window.setTimeout(watchLibraryRevision, 1500);
   }
+}
+
+// Watch with Partner: always-on long-poll for an invite arriving from the
+// partner set in Settings, mirroring watchLibraryRevision exactly.
+async function watchPartnerInvite() {
+  if (!deviceToken.value || partnerInviteController) return;
+  partnerInviteController = new AbortController();
+  const controller = partnerInviteController;
+  try {
+    const data = await request(`/api/partner/invite?since=${partnerInviteRevision}`, { cache: "no-store", signal: controller.signal });
+    if (controller.signal.aborted) return;
+    const nextRevision = Number(data.revision) || 1;
+    const changed = partnerInviteRevision > 0 && nextRevision !== partnerInviteRevision;
+    partnerInviteRevision = nextRevision;
+    partnerInviteController = null;
+    if (changed && data.invite) pendingPartnerInvite.value = data.invite;
+    watchPartnerInvite();
+  } catch (error) {
+    if (partnerInviteController === controller) partnerInviteController = null;
+    if (error.name !== "AbortError") partnerInviteRetryTimer = window.setTimeout(watchPartnerInvite, 1500);
+  }
+}
+
+// Watch with Partner: while a session is active, long-poll roku_backend
+// directly (not library_backend) for the other participant's seek/quality
+// change, and follow it - whoever acts moves both, always exactly one shared
+// job. Skipped as a no-op "stale echo" when the incoming state already
+// matches what we're doing (our own action just caused this same bump).
+async function watchWwpSync() {
+  if (!webWwpSessionId.value || wwpSyncController) return;
+  const sessionId = webWwpSessionId.value;
+  wwpSyncController = new AbortController();
+  const controller = wwpSyncController;
+  try {
+    const url = new URL(`${browserStreamer}/api/xtream/wwp-sync/${encodeURIComponent(sessionId)}`);
+    url.searchParams.set("since", String(wwpSyncRevision));
+    if (webStreamTicket.value) url.searchParams.set("streamTicket", webStreamTicket.value);
+    else if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (controller.signal.aborted || webWwpSessionId.value !== sessionId) return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Watch with Partner sync failed");
+    wwpSyncController = null;
+    const nextRevision = Number(data.revision) || 0;
+    const changed = wwpSyncRevision > 0 && nextRevision !== wwpSyncRevision;
+    wwpSyncRevision = nextRevision;
+    if (changed && webNowPlaying.value) {
+      const incomingStart = Math.max(0, Number(data.start) || 0);
+      const currentPosition = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
+      const staleEcho = Math.abs(incomingStart - currentPosition) < 2 && (!data.quality || data.quality === webQualityChoice.value);
+      if (!staleEcho) {
+        if (data.quality && webQualityOptions.some(option => option.value === data.quality) && data.quality !== webQualityChoice.value) {
+          webQualityChoice.value = data.quality;
+          try { window.localStorage.setItem(webQualityKey, data.quality); } catch { /* Safari private mode */ }
+        }
+        await restartWebAt(incomingStart);
+      }
+    }
+    watchWwpSync();
+  } catch (error) {
+    if (wwpSyncController === controller) wwpSyncController = null;
+    if (error.name !== "AbortError" && webWwpSessionId.value === sessionId) wwpSyncRetryTimer = window.setTimeout(watchWwpSync, 1500);
+  }
+}
+
+function stopWwpSync() {
+  webWwpSessionId.value = "";
+  wwpSyncRevision = 0;
+  if (wwpSyncController) { wwpSyncController.abort(); wwpSyncController = null; }
+  if (wwpSyncRetryTimer) { clearTimeout(wwpSyncRetryTimer); wwpSyncRetryTimer = null; }
 }
 
 function openCategoryItems(category) {
@@ -1967,7 +2121,7 @@ onMounted(async () => {
     await Promise.all([request("/api/health"), loadSources(sourceId.value, { loadPlaylist: false })]);
     online.value = true;
     appReady.value = true;
-    void Promise.all([loadLinkedDevices(), loadWeatherSettings(), sendBrowserHeartbeat()]).catch(() => {});
+    void Promise.all([loadLinkedDevices(), loadWeatherSettings(), sendBrowserHeartbeat(), loadPartnerSettings()]).catch(() => {});
     void request("/api/account/profiles").then(data => {
       profiles.value = data.items || [];
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
@@ -1981,6 +2135,7 @@ onMounted(async () => {
       message.value = error.message;
     });
     watchLibraryRevision();
+    watchPartnerInvite();
     deviceStatusTimer = window.setInterval(() => {
       if (!pairing.value && deviceToken.value) { loadLinkedDevices().catch(() => {}); sendBrowserHeartbeat(); }
     }, 10_000);
@@ -1990,6 +2145,7 @@ onMounted(async () => {
 
 <template>
   <main class="shell" :class="{ 'safari-app-mode': browserApp, 'login-shell': pairing }">
+    <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
     <section v-if="pairing" class="pairing-gate login-gate">
       <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
         <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV PLAYER</span></div>
@@ -2222,6 +2378,9 @@ onMounted(async () => {
           <div class="profile-password-divider"></div>
           <div class="profile-password-heading"><div><p class="eyebrow">SECURITY</p><h3>Change password</h3></div><button type="button" class="source-action" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel' : 'Update password' }}</button></div>
           <form v-if="changePasswordOpen" class="web-password-form profile-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
+          <div class="profile-password-divider"></div>
+          <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? partnerEmail : 'No partner set' }}</h3></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
+          <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
         </section>
         <section class="web-linked-settings"><div class="settings-section-heading"><div><p class="eyebrow">YOUR DEVICES</p><h2>Connected Devices</h2></div><span>{{ linkedDevices.length }} connected</span></div><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div class="linked-roku-icon">{{ device.kind === 'browser' ? '◱' : '▣' }}</div><div class="linked-roku-copy"><strong>{{ device.label }}</strong><small>{{ device.kind === 'browser' ? 'Browser' : 'Roku' }} · Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</small><span class="device-status" :class="deviceStatusClass(device)"><i></i>{{ deviceStatusLabel(device) }}</span><small v-if="deviceLocationLabel(device)">{{ deviceLocationLabel(device) }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><div class="linked-roku-actions"><p v-if="!linkedDevices.length" class="web-empty">No devices are connected yet.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button></div><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
       </article>
@@ -2300,7 +2459,7 @@ onMounted(async () => {
     </section>
     </template>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click.stop="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }}</p></div><span v-if="webStreamFormatLabel" class="web-player-format-badge">{{ webStreamFormatLabel }}</span><div v-if="webNowPlaying.kind !== 'channel'" class="web-quality-control"><button type="button" class="web-quality-toggle" :class="{active: webQualityMenuOpen}" aria-haspopup="true" :aria-expanded="webQualityMenuOpen ? 'true' : 'false'" @click.stop="webQualityMenuOpen = !webQualityMenuOpen">{{ webQualityLabel }}</button><ul v-if="webQualityMenuOpen" class="web-quality-menu"><li v-for="option in webQualityOptions" :key="option.value"><button type="button" :class="{selected: option.value === webQualityChoice}" @click.stop="chooseWebQuality(option.value)">{{ option.label }}</button></li></ul></div></header><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
+      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click.stop="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }}</p></div><span v-if="webStreamFormatLabel" class="web-player-format-badge">{{ webStreamFormatLabel }}</span><div v-if="webNowPlaying.kind !== 'channel'" class="web-quality-control"><button type="button" class="web-quality-toggle" :class="{active: webQualityMenuOpen}" aria-haspopup="true" :aria-expanded="webQualityMenuOpen ? 'true' : 'false'" @click.stop="webQualityMenuOpen = !webQualityMenuOpen">{{ webQualityLabel }}</button><ul v-if="webQualityMenuOpen" class="web-quality-menu"><li v-for="option in webQualityOptions" :key="option.value"><button type="button" :class="{selected: option.value === webQualityChoice}" @click.stop="chooseWebQuality(option.value)">{{ option.label }}</button></li></ul></div><div class="web-partner-control"><button type="button" class="web-quality-toggle" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-haspopup="true" :aria-expanded="webPartnerMenuOpen ? 'true' : 'false'" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen">{{ webWwpSessionId ? 'Watching together' : 'Watch with Partner' }}</button><div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button></div></div></header><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
       <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
     </template>
