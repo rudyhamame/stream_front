@@ -2252,8 +2252,8 @@ onMounted(async () => {
         <section class="welcome-provider-box">
           <div class="welcome-provider-head">
             <div class="welcome-provider-head-text">
-              <h1>Your playlist</h1>
-              <p>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') + ' library' : 'No provider connected yet' }}</p>
+              <p class="eyebrow">YOUR PLAYLIST</p>
+              <h1>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') : 'No provider connected' }}</h1>
             </div>
             <div v-if="sources.length" class="welcome-provider-stats" aria-label="Provider catalog totals">
               <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
