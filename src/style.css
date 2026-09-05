@@ -657,21 +657,18 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .welcome-page-heading h1 em { color:#baff3f; font-style:normal; }
 .welcome-page-heading .welcome-profile-button { position:static; flex:0 0 auto; margin:0; padding:4px; }
 .welcome-page-heading .welcome-profile-button .profile-avatar { flex:0 0 auto; aspect-ratio:1; }
-.welcome-partner-status { display:inline-flex; align-items:center; gap:8px; margin:0 0 22px; padding:7px 14px; border-radius:999px; border:1px solid #2c3a2c; background:#1a2119; color:#9aa694; font:600 13px 'DM Sans'; cursor:pointer; }
-.welcome-partner-status:hover { border-color:#3d4f3d; }
-.welcome-partner-dot { width:9px; height:9px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; flex:0 0 auto; }
-.welcome-partner-status.is-online { color:#34d399; border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.12); }
-.welcome-partner-status.is-offline { color:#9aa694; }
-.welcome-partner-status.is-unknown { color:#fbbf24; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.12); }
-.welcome-partner-name { display:inline-flex; align-items:center; gap:7px; }
-.welcome-partner-heart-chip { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; flex:0 0 auto; background:radial-gradient(circle at 50% 40%,#241014,#0d0b09); border:1px solid rgba(239,68,68,.45); box-shadow:inset 0 1px 2px rgba(0,0,0,.55); }
-.welcome-partner-heart { width:13px; height:13px; color:#ef4444; transform-origin:center; }
-.welcome-partner-status.is-offline .welcome-partner-heart-chip { border-color:rgba(107,114,128,.4); background:radial-gradient(circle at 50% 40%,#1a1d18,#0d0f0c); }
-.welcome-partner-status.is-offline .welcome-partner-heart { color:#6b7280; opacity:.65; }
-.welcome-partner-status.is-online .welcome-partner-heart-chip { border-color:rgba(239,68,68,.75); box-shadow:0 0 12px rgba(239,68,68,.5),inset 0 1px 2px rgba(0,0,0,.55); }
-.welcome-partner-status.is-online .welcome-partner-heart { animation:partner-heartbeat 1.25s ease-in-out infinite; }
-@keyframes partner-heartbeat { 0%,55%,100% { transform:scale(1); } 12% { transform:scale(1.28); } 26% { transform:scale(1.05); } 38% { transform:scale(1.2); } }
-@media (prefers-reduced-motion:reduce) { .welcome-partner-heart { animation:none !important; } }
+.welcome-identity-cluster { display:flex; align-items:center; gap:6px; flex:0 0 auto; }
+.welcome-identity-cluster .profile-avatar { width:34px; height:34px; border-width:2px; font-size:15px; box-shadow:none; }
+.welcome-partner-avatar { color:#06241d; background:linear-gradient(145deg,#b8fff0,#2dbb9f); transition:opacity .18s ease,filter .18s ease,box-shadow .18s ease; }
+.welcome-partner-link { display:grid; place-items:center; width:24px; height:24px; padding:0; border:0; border-radius:50%; background:transparent; color:#5c6b58; cursor:pointer; flex:0 0 auto; transition:color .18s ease,transform .18s ease,filter .18s ease; }
+.welcome-partner-link svg { width:22px; height:22px; }
+.welcome-partner-link:hover,.welcome-partner-link:focus-visible { outline:none; transform:scale(1.1); }
+.welcome-identity-cluster.is-online .welcome-partner-link { color:#34d399; filter:drop-shadow(0 0 6px rgba(52,211,153,.55)); }
+.welcome-identity-cluster.is-offline .welcome-partner-link { color:#6b7280; }
+.welcome-identity-cluster.is-unknown .welcome-partner-link { color:#fbbf24; }
+.welcome-identity-cluster.is-online .welcome-partner-avatar { box-shadow:0 0 0 2px rgba(52,211,153,.6); }
+.welcome-identity-cluster.is-offline .welcome-partner-avatar { opacity:.5; filter:grayscale(.4); }
+.welcome-identity-cluster.is-unknown .welcome-partner-avatar { opacity:.6; color:#2b1b05; background:linear-gradient(145deg,#ffe8a3,#e39b21); }
 .home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; justify-content:space-between; gap:30px; min-height:250px; padding:18px 0 28px; }
 .home-hero-copy { max-width:650px; }
 .home-hero-copy .welcome-profile-button { position:static; margin:0 0 30px 18px; padding:0; border:0; background:transparent; }
