@@ -638,12 +638,14 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .welcome-provider-box { margin:0 0 28px; }
 .welcome-provider-box h1 { margin:0 0 5px; color:#f5f2ea; font:600 clamp(24px,3vw,32px)/1.05 'Space Grotesk'; letter-spacing:-.04em; }
 .welcome-provider-box>p:not(.eyebrow) { margin:0; color:#aeb7a0; font-size:13px; line-height:1.45; }
-.welcome-provider-head { display:flex; justify-content:space-between; align-items:center; gap:24px; flex-wrap:wrap; }
-.welcome-provider-head-text { flex:1 1 auto; display:flex; flex-direction:column; text-align:left; }
-.welcome-provider-stats { flex:0 0 auto; display:flex; gap:10px; }
+.welcome-provider-head { display:flex; align-items:center; gap:20px; flex-wrap:wrap; padding:16px 18px; border:1px solid rgba(186,255,63,.14); border-radius:16px; background:linear-gradient(120deg,rgba(20,30,18,.55),rgba(12,17,12,.35)); }
+.welcome-provider-head-text { flex:1 1 240px; min-width:0; display:flex; flex-direction:column; text-align:right; align-items:flex-end; order:2; }
+.welcome-provider-head-text p { overflow-wrap:anywhere; }
+.welcome-provider-stats { flex:0 0 auto; display:flex; gap:10px; order:1; }
 .welcome-provider-stats div { display:flex; flex-direction:column; align-items:center; gap:3px; min-width:74px; padding:10px 12px; border-radius:13px; background:rgba(12,17,12,.55); }
 .welcome-provider-stats strong { color:#baff3f; font:700 18px/1.2 'Space Grotesk'; white-space:nowrap; font-variant-numeric:tabular-nums; }
 .welcome-provider-stats span { color:#aeb7a0; font:700 9px/1.2 'DM Sans'; letter-spacing:.06em; }
+@media(max-width:640px) { .welcome-provider-head-text { order:0; text-align:left; align-items:flex-start; flex-basis:100%; } .welcome-provider-stats { order:1; } }
 .welcome-provider-clear { display:block; margin:10px auto 0; padding:8px 16px; border:1px solid rgba(255,120,120,.32); border-radius:12px; background:rgba(60,20,20,.35); color:#ff9d9d; font:600 12px 'DM Sans'; cursor:pointer; }
 .welcome-provider-clear:hover:not(:disabled) { background:rgba(80,24,24,.5); border-color:rgba(255,120,120,.5); }
 .welcome-provider-clear:disabled { opacity:.5; cursor:default; }
@@ -654,6 +656,16 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#b8ff
 .welcome-page-heading h1 em { color:#baff3f; font-style:normal; }
 .welcome-page-heading .welcome-profile-button { position:static; flex:0 0 auto; margin:0; padding:4px; }
 .welcome-page-heading .welcome-profile-button .profile-avatar { flex:0 0 auto; aspect-ratio:1; }
+.welcome-partner-status { display:inline-flex; align-items:center; gap:8px; margin:0 0 22px; padding:7px 14px; border-radius:999px; border:1px solid #2c3a2c; background:#1a2119; color:#9aa694; font:600 13px 'DM Sans'; cursor:pointer; }
+.welcome-partner-status:hover { border-color:#3d4f3d; }
+.welcome-partner-dot { width:9px; height:9px; border-radius:50%; background:currentColor; box-shadow:0 0 8px currentColor; flex:0 0 auto; }
+.welcome-partner-status.is-online { color:#34d399; border-color:rgba(52,211,153,.4); background:rgba(52,211,153,.12); }
+.welcome-partner-status.is-offline { color:#9aa694; }
+.welcome-partner-status.is-unknown { color:#fbbf24; border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.12); }
+.welcome-partner-name { display:inline-flex; align-items:center; gap:6px; }
+.welcome-partner-heart { width:16px; height:16px; flex:0 0 auto; color:#ef4444; transform-origin:center; animation:partner-heartbeat 1.4s ease-in-out infinite; }
+@keyframes partner-heartbeat { 0%,100% { transform:scale(1); opacity:.8; } 50% { transform:scale(1.18); opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .welcome-partner-heart { animation:none; } }
 .home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; justify-content:space-between; gap:30px; min-height:250px; padding:18px 0 28px; }
 .home-hero-copy { max-width:650px; }
 .home-hero-copy .welcome-profile-button { position:static; margin:0 0 30px 18px; padding:0; border:0; background:transparent; }

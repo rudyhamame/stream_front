@@ -172,6 +172,9 @@ const partnerEmail = ref("");
 const partnerEmailInput = ref("");
 const partnerMessage = ref("");
 const partnerMessageType = ref("info");
+const partnerLinked = ref(false);
+const partnerOnline = ref(false);
+const partnerName = ref("");
 const scannerOpen = ref(false);
 const scannerError = ref("");
 const failedLogoUrls = ref(new Set());
@@ -427,6 +430,9 @@ async function loadPartnerSettings() {
     const data = await request("/api/account/partner");
     partnerEmail.value = data.partnerEmail || "";
     partnerEmailInput.value = partnerEmail.value;
+    partnerLinked.value = Boolean(data.linked);
+    partnerOnline.value = Boolean(data.online);
+    partnerName.value = data.name || "";
   } catch { /* Settings page just shows the field empty on a transient failure. */ }
 }
 async function savePartnerEmail() {
@@ -2137,7 +2143,7 @@ onMounted(async () => {
     watchLibraryRevision();
     watchPartnerInvite();
     deviceStatusTimer = window.setInterval(() => {
-      if (!pairing.value && deviceToken.value) { loadLinkedDevices().catch(() => {}); sendBrowserHeartbeat(); }
+      if (!pairing.value && deviceToken.value) { loadLinkedDevices().catch(() => {}); sendBrowserHeartbeat(); loadPartnerSettings().catch(() => {}); }
     }, 10_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
@@ -2233,6 +2239,15 @@ onMounted(async () => {
           <div><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1></div>
           <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
         </header>
+
+        <button v-if="partnerEmail" type="button" class="welcome-partner-status" :class="partnerLinked ? (partnerOnline ? 'is-online' : 'is-offline') : 'is-unknown'" @click="openSafariPage('settings')">
+          <span class="welcome-partner-dot" aria-hidden="true"></span>
+          <span v-if="!partnerLinked">Watch partner not found: {{ partnerEmail }}</span>
+          <span v-else class="welcome-partner-name">
+            <svg class="welcome-partner-heart" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path d="M11.29 20.66c.2.2.45.29.71.29s.51-.1.71-.29l7.5-7.5c2.35-2.35 2.35-6.05 0-8.41-2.3-2.28-5.85-2.35-8.21-.2-2.36-2.15-5.91-2.09-8.21.2-2.35 2.36-2.35 6.06 0 8.41zM5.21 6.16C6 5.38 7 4.99 8.01 4.99s2.01.39 2.79 1.17l.5.5c.39.39 1.02.39 1.41 0l.5-.5c1.56-1.56 4.02-1.56 5.59 0 1.56 1.57 1.56 4.02 0 5.58l-6.79 6.79-6.79-6.79a3.91 3.91 0 0 1 0-5.58Z"/></svg>
+            {{ partnerName || partnerEmail }} · {{ partnerOnline ? 'online' : 'offline' }}
+          </span>
+        </button>
 
         <section class="welcome-provider-box">
           <div class="welcome-provider-head">
