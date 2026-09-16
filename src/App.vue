@@ -10,8 +10,18 @@ import PauseIcon from "./components/icons/PauseIcon.vue";
 import PlayIcon from "./components/icons/PlayIcon.vue";
 import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
 import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
+import LockKeyholeIcon from "./components/icons/LockKeyholeIcon.vue";
+import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vue";
 
 const browserOrigin = window.location.origin;
+const legalPage = computed(() => {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/privacy') return 'privacy';
+  if (path === '/android/privacy') return 'android-privacy';
+  if (path === '/terms') return 'terms';
+  if (path === '/delete-account') return 'delete-account';
+  return '';
+});
 const canonicalBackend = browserOrigin;
 const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
 const base = configuredBackend;
@@ -27,6 +37,9 @@ function browserPlaybackUrl(raw) {
   return target.toString();
 }
 const browserApp = ref(true);
+const navOpen = ref(false);
+const openCardKey = ref("");
+const toggleCardActions = key => { openCardKey.value = openCardKey.value === key ? "" : key; };
 const pageStorageKey = "rh-safari-page";
 const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "settings"];
 const storedPage = window.localStorage.getItem(pageStorageKey);
@@ -45,6 +58,7 @@ function openSafariPage(page) {
   const tab = { series: "series", movies: "movie", channels: "channel" }[page];
   if (tab) safariLibraryTab.value = tab;
   safariPage.value = page;
+  navOpen.value = false;
 }
 function openBrowserLibrary(tab) {
   openSafariPage({ series: "series", movie: "movies", channel: "channels" }[tab] || "series");
@@ -87,33 +101,52 @@ const playlistPreviewError = ref("");
 const webNowPlaying = ref(null);
 const webPlaying = ref(false);
 const webMuted = ref(false);
+// Set when the browser's autoplay policy forced a muted start (the common case
+// for a Watch-with-Partner joiner, whose click gesture has expired by the time
+// HLS.js is ready). Drives the "Tap to unmute" pill.
+const webAutoplayBlocked = ref(false);
 const webCurrentTime = ref(0);
 const webDuration = ref(0);
 const webPlaybackOffset = ref(0);
+const webBufferedTime = ref(0);
 const webPendingSeek = ref(-1);
 const webBufferRecoveryPosition = ref(-1);
 const webMediaReady = ref(false);
 const webPlaybackRetryCount = ref(0);
 const webBuffering = ref(false);
 const webControlsVisible = ref(true);
-const webQualityKey = "rh-web-quality";
-const webQualityOptions = [
-  { value: "1080", label: "1080p" },
-  { value: "720", label: "720p" },
-  { value: "480", label: "480p" },
-  { value: "360", label: "360p" },
-];
-const storedWebQuality = window.localStorage.getItem(webQualityKey);
-const webQualityChoice = ref(webQualityOptions.some(option => option.value === storedWebQuality) ? storedWebQuality : "1080");
-const webQualityMenuOpen = ref(false);
-const webQualityLabel = computed(() => webQualityOptions.find(option => option.value === webQualityChoice.value)?.label || "1080p");
 const webPlayerError = ref("");
+const webEncodeStrategy = ref("");
 const webStreamTicket = ref("");
 const webForceHls = ref(false);
 const webWwpSessionId = ref("");
+// True only for the INVITED partner (joined via an invite's stream ticket, no
+// ownership of the host's source). The host keeps false and authenticates with
+// its own device token. Governs which credential every playback request sends.
+const webIsWwpGuest = ref(false);
 const webPartnerMenuOpen = ref(false);
 const pendingPartnerInvite = ref(null);
+// Watch with Partner voice call (WebRTC, runs inside an <iframe> served by the
+// streamer). webCall* only ever matter while a WWP session is live.
+const webCallActive = ref(false);
+const webCallRole = ref("caller");
+const webCallIncoming = ref(false);
+const webCallFrame = ref(null);
+const webCallUrl = computed(() => {
+  if (!webWwpSessionId.value) return "";
+  const token = webStreamTicket.value || deviceToken.value || "";
+  const p = new URLSearchParams({
+    s: webWwpSessionId.value, t: token, role: webCallRole.value,
+    name: partnerName.value || "Partner",
+  });
+  return `${browserStreamer}/api/xtream/wwp-call/${encodeURIComponent(webWwpSessionId.value)}/page?${p.toString()}`;
+});
 const webFullscreen = ref(false);
+const webMini = ref(false);
+// Mini-player drag: {left,top} in px once the user has moved it, else null =
+// the default bottom-right corner from CSS.
+const webMiniPos = ref(null);
+let miniDrag = null, webMiniJustDragged = false;
 let webHls = null;
 let liveTvHls = null;
 let liveTvRequestId = 0;
@@ -121,7 +154,14 @@ let playlistPreviewHls = null;
 let playlistPreviewRequestId = 0;
 let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
+let webStallTimer = null;
 let webBufferingTimer = null;
+let webDirectStartupTimer = null;
+let webPlaybackToken = 0;
+let liveTvRecoveryTimer = null;
+let liveTvRecoveryAttempts = 0;
+let playlistPreviewRecoveryTimer = null;
+let playlistPreviewRecoveryAttempts = 0;
 let webSeekTimer = null;
 let webControlsTimer = null;
 async function loadHlsConstructor() {
@@ -130,30 +170,23 @@ async function loadHlsConstructor() {
 }
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const profileSelectionKey = "rh-profile-selection-pending";
-const pairCode = new URLSearchParams(window.location.search).get("pair") || "";
-// A Roku QR is an explicit request to authenticate for that Roku. Never let
-// an existing Library browser token silently approve or bypass this flow.
-// Clear it before deviceToken is initialized and before pairing info is
-// requested, while leaving the short-lived pair code in the URL intact.
-if (pairCode) window.localStorage.removeItem("rh-device-token");
-const deviceToken = ref(pairCode ? "" : storedToken());
+const deviceToken = ref(storedToken());
 const appReady = ref(!deviceToken.value);
-const pairingDeviceId = ref("");
-const pairing = ref(Boolean(pairCode) || !deviceToken.value);
-const pairingReady = ref(false);
-const pairingNeedsSignup = ref(false);
-const pairingMode = ref(pairCode ? "signup" : "login");
+const pairing = ref(!deviceToken.value);
+const pairingMode = ref("login");
 const pairingEmail = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
-const loginDevices = ref([]);
-const selectedLoginDevice = ref("");
 const authBusy = ref(false);
 const profiles = ref([]);
 const activeProfileId = ref(window.localStorage.getItem("rh-profile-id") || "");
 const profileChooser = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
+const profilePinOpen = ref(false);
+const profilePin = ref("");
+const profilePinConfirmation = ref("");
+const profilePinMessage = ref("");
 const profileImageInput = ref(null);
 const profileCropOpen = ref(false);
 const profileCropSource = ref("");
@@ -167,16 +200,20 @@ const newPassword = ref("");
 const newPasswordConfirmation = ref("");
 const passwordMessage = ref("");
 const passwordMessageType = ref("info");
+const deleteAccountOpen = ref(false);
+const deleteAccountPassword = ref("");
+const deleteAccountMessage = ref("");
 const partnerEmailOpen = ref(false);
 const partnerEmail = ref("");
 const partnerEmailInput = ref("");
+const partnerProfileCode = ref("");
+const partnerProfileCodeInput = ref("");
 const partnerMessage = ref("");
 const partnerMessageType = ref("info");
 const partnerLinked = ref(false);
 const partnerOnline = ref(false);
 const partnerName = ref("");
-const scannerOpen = ref(false);
-const scannerError = ref("");
+const partnerAvatar = ref("");
 const failedLogoUrls = ref(new Set());
 const brandLogoReady = ref(false);
 {
@@ -186,7 +223,6 @@ const brandLogoReady = ref(false);
   if (brandLogo.decode) brandLogo.decode().then(reveal).catch(reveal);
   else brandLogo.onload = brandLogo.onerror = reveal;
 }
-let qrScanner = null;
 const imageUrl = value => {
   const url = String(value || '').trim();
   return /^https?:\/\//i.test(url) ? api(`/api/xtream/logo?url=${encodeURIComponent(url)}`) : url;
@@ -200,7 +236,7 @@ async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
   const response = await fetch(api(path), { ...options, headers });
-  const data = response.status === 204 ? null : await response.json().catch(() => ({}));
+  const data = response.status === 204 ? null : normalizeBrowserText(await response.json().catch(() => ({})));
   if (!response.ok) {
     const error = new Error(data?.error || `Request failed (${response.status})`);
     error.status = response.status;
@@ -209,40 +245,32 @@ async function request(path, options = {}) {
   return data;
 }
 
-async function loadPairingInfo() {
-  if (!pairCode) return;
-  const data = await request("/api/device-session/info", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
-  pairingNeedsSignup.value = Boolean(data.needsSignup);
-  pairingDeviceId.value = data.deviceId || "";
-  pairingMode.value = pairingNeedsSignup.value ? "signup" : "login";
-  pairingReady.value = true;
-  // A trusted QR is created only by a Roku that already holds a locally saved
-  // device token from a previous successful login. Exchange its one-time,
-  // short-lived code for a browser token; no credentials are present in the QR.
-  if (data.canAutoLogin) {
-    const claimed = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
-    deviceToken.value = claimed.token;
-    appReady.value = false;
-    window.localStorage.setItem("rh-device-token", claimed.token);
-    pairing.value = false;
-    window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    profiles.value = (await request("/api/account/profiles")).items || [];
-    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
-    appReady.value = true;
-    void loadHomeData();
-    return;
+// Some older catalog snapshots contain Arabic presentation forms (the shaped
+// glyphs used by Roku) or UTF-8 decoded as Latin-1. Normalize those values at
+// the Browser boundary so titles render as normal Arabic text again.
+function repairBrowserString(value) {
+  let text = String(value ?? '');
+  const wasRokuShaped = /[\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+  text = text.normalize('NFKC');
+  if (wasRokuShaped) {
+    // shapeArabicForRoku reverses each Arabic phrase for Roku's renderer.
+    // Reverse only those runs here; Latin suffixes such as "- AR" stay put.
+    text = text.replace(/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF][\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\s]*/g, run => [...run].reverse().join(''));
   }
-  if (data.authenticated) {
-    appReady.value = false;
-    pairing.value = false;
-    window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    profiles.value = (await request("/api/account/profiles")).items || [];
-    if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
-    appReady.value = true;
-    void loadHomeData();
+  if (/[ÃÂØÙ]/.test(text)) {
+    try {
+      const bytes = Uint8Array.from([...text].map(char => char.charCodeAt(0) & 0xff));
+      const repaired = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      if (repaired && repaired !== text && !/[ÃÂØÙ]/.test(repaired)) text = repaired.normalize('NFKC');
+    } catch { /* Keep the original when it is not valid UTF-8 mojibake. */ }
   }
+  return text;
+}
+function normalizeBrowserText(value) {
+  if (typeof value === 'string') return repairBrowserString(value);
+  if (Array.isArray(value)) return value.map(normalizeBrowserText);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, normalizeBrowserText(entry)]));
+  return value;
 }
 
 // Password managers and mobile autofill set the <input> value without always
@@ -259,42 +287,26 @@ function syncCredentialsFromForm(event) {
   if (confirm && confirm.value) pairingPasswordConfirmation.value = confirm.value;
 }
 
-async function claimPairing(event) {
-  syncCredentialsFromForm(event);
-  authBusy.value = true;
-  try {
-    if (!pairCode) return;
-    if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
-    if (!pairingPassword.value) throw new Error("Enter your password");
-    if (isPairingSignup.value && pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    const path = isPairingSignup.value ? "/api/device-session/setup" : "/api/device-session/login";
-    const data = await request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode, email: pairingEmail.value, password: pairingPassword.value }) });
-    deviceToken.value = data.token;
-    appReady.value = false;
-    window.localStorage.setItem("rh-device-token", data.token);
-    pairing.value = false;
-    window.history.replaceState({}, "", window.location.pathname);
-    await request("/api/health"); online.value = true; await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
-    appReady.value = true;
-    void loadHomeData();
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { authBusy.value = false; }
-}
-
 async function chooseProfile(profile) {
   if (!profile?.id || profileBusy.value) return;
   appReady.value = false;
   profileBusy.value = true;
   profileError.value = "";
   try {
-    const data = await request(`/api/account/profiles/${encodeURIComponent(profile.id)}/select`, { method: "POST" });
+    let pin = "";
+    if (profile.hasPin) {
+      pin = String(window.prompt(`Enter the 4-digit PIN for ${profile.name}`) || "");
+      if (!pin) { appReady.value = true; return; }
+      if (!/^\d{4}$/.test(pin)) throw new Error("Enter the 4-digit profile PIN.");
+    }
+    const data = await request(`/api/account/profiles/${encodeURIComponent(profile.id)}/select`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ pin }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     activeProfileId.value = profile.id;
     window.localStorage.setItem("rh-profile-id", profile.id);
     await request("/api/health");
     online.value = true;
-    await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadLinkedDevices(), loadWeatherSettings()]);
+    await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadWeatherSettings()]);
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
@@ -305,6 +317,33 @@ async function chooseProfile(profile) {
   } finally {
     profileBusy.value = false;
   }
+}
+
+async function saveProfilePin() {
+  if (!activeProfile.value?.id || profileBusy.value) return;
+  profilePinMessage.value = "";
+  if (!/^\d{4}$/.test(profilePin.value)) { profilePinMessage.value = "Enter exactly 4 digits."; return; }
+  if (profilePin.value !== profilePinConfirmation.value) { profilePinMessage.value = "The PINs do not match."; return; }
+  profileBusy.value = true;
+  try {
+    const data = await request(`/api/account/profiles/${encodeURIComponent(activeProfile.value.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ pin: profilePin.value }) });
+    profiles.value = profiles.value.map(profile => profile.id === data.profile.id ? data.profile : profile);
+    profilePin.value = ""; profilePinConfirmation.value = ""; profilePinOpen.value = false;
+    profilePinMessage.value = "Profile PIN saved.";
+  } catch (error) { profilePinMessage.value = error.message || "Could not save the profile PIN."; }
+  finally { profileBusy.value = false; }
+}
+
+async function removeProfilePin() {
+  if (!activeProfile.value?.id || profileBusy.value) return;
+  profileBusy.value = true; profilePinMessage.value = "";
+  try {
+    const data = await request(`/api/account/profiles/${encodeURIComponent(activeProfile.value.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ pin: "" }) });
+    profiles.value = profiles.value.map(profile => profile.id === data.profile.id ? data.profile : profile);
+    profilePin.value = ""; profilePinConfirmation.value = ""; profilePinOpen.value = false;
+    profilePinMessage.value = "Profile PIN removed.";
+  } catch (error) { profilePinMessage.value = error.message || "Could not remove the profile PIN."; }
+  finally { profileBusy.value = false; }
 }
 
 const activeProfile = computed(() => profiles.value.find(profile => profile.id === activeProfileId.value) || profiles.value.find(profile => profile.isDefault) || null);
@@ -354,13 +393,7 @@ async function signIn(event) {
   try {
     if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
     if (!pairingPassword.value) throw new Error("Enter your password");
-    if (loginDevices.value.length > 1 && !selectedLoginDevice.value) throw new Error("Select a linked Roku device");
-    const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, deviceId: selectedLoginDevice.value }) });
-    if (!data.token) {
-      loginDevices.value = data.devices || [];
-      selectedLoginDevice.value = loginDevices.value[0]?.deviceId || "";
-      return;
-    }
+    const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     profiles.value = (await request("/api/account/profiles")).items || [];
@@ -380,12 +413,17 @@ async function signUp(event) {
     if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
     if (!pairingPassword.value) throw new Error("Enter a password");
     if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
+    const data = await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
+    deviceToken.value = data.token;
+    window.localStorage.setItem("rh-device-token", data.token);
+    profiles.value = (await request("/api/account/profiles")).items || [];
     pairingPassword.value = "";
     pairingPasswordConfirmation.value = "";
-    pairingMode.value = "login";
-    messageType.value = "success";
-    message.value = "Account created. Sign in, then scan a Roku QR code to link your device.";
+    profileError.value = "";
+    window.sessionStorage.setItem(profileSelectionKey, "1");
+    pairing.value = false;
+    window.history.replaceState({}, "", window.location.pathname);
+    profileChooser.value = true;
   } catch (error) { messageType.value = "error"; message.value = error.message; }
   finally { authBusy.value = false; }
 }
@@ -396,7 +434,6 @@ function logout() {
   window.localStorage.removeItem("rh-device-token");
   window.sessionStorage.removeItem(profileSelectionKey);
   pairing.value = true;
-  pairingReady.value = false;
   pairingMode.value = "login";
   pairingEmail.value = "";
   pairingPassword.value = "";
@@ -424,55 +461,51 @@ async function changePassword() {
   }
 }
 
+async function deleteAccount() {
+  deleteAccountMessage.value = "";
+  if (!window.confirm("Delete your account? This permanently removes your library, profiles, and settings. This cannot be undone.")) return;
+  try {
+    busy.value = true;
+    await request("/api/account", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: deleteAccountPassword.value }) });
+    deviceToken.value = "";
+    window.localStorage.removeItem("rh-device-token");
+    window.location.reload();
+  } catch (error) {
+    deleteAccountMessage.value = error.message;
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function loadPartnerSettings() {
   if (!deviceToken.value) return;
   try {
     const data = await request("/api/account/partner");
     partnerEmail.value = data.partnerEmail || "";
     partnerEmailInput.value = partnerEmail.value;
+    partnerProfileCode.value = data.partnerProfileCode || "";
+    partnerProfileCodeInput.value = partnerProfileCode.value;
     partnerLinked.value = Boolean(data.linked);
     partnerOnline.value = Boolean(data.online);
     partnerName.value = data.name || "";
+    partnerAvatar.value = data.avatarImage || "";
   } catch { /* Settings page just shows the field empty on a transient failure. */ }
 }
 async function savePartnerEmail() {
   partnerMessage.value = "";
   try {
-    const data = await request("/api/account/partner", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ partnerEmail: partnerEmailInput.value.trim() }) });
+    const data = await request("/api/account/partner", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ partnerEmail: partnerEmailInput.value.trim(), partnerProfileCode: partnerProfileCodeInput.value.trim() }) });
     partnerEmail.value = data.partnerEmail || "";
     partnerEmailInput.value = partnerEmail.value;
+    partnerProfileCode.value = data.partnerProfileCode || "";
+    partnerProfileCodeInput.value = partnerProfileCode.value;
     partnerEmailOpen.value = false;
     partnerMessageType.value = "success";
-    partnerMessage.value = partnerEmail.value ? `Partner set to ${partnerEmail.value}.` : "Partner cleared.";
+    partnerMessage.value = partnerEmail.value ? `Partner set to ${partnerEmail.value} (${partnerProfileCode.value}).` : "Partner cleared.";
   } catch (error) {
     partnerMessageType.value = "error";
     partnerMessage.value = error.message;
   }
-}
-
-async function unlinkDevice(device) {
-  if (!window.confirm(`Unlink ${device.label}?`)) return;
-  try {
-    busy.value = true;
-    await request(`/api/account/devices/${encodeURIComponent(device.deviceId)}`, { method: "DELETE" });
-    // Unlinking this same browser tab would otherwise reappear on the next
-    // heartbeat a few seconds later — forget the id so a fresh one is used.
-    if (device.kind === "browser" && device.deviceId === browserDeviceId()) window.localStorage.removeItem("rh-browser-device-id");
-    await loadLinkedDevices();
-    messageType.value = "success";
-    message.value = `${device.label} was unlinked.`;
-  } catch (error) { messageType.value = "error"; message.value = error.message; }
-  finally { busy.value = false; }
-}
-
-async function stopQrScanner() {
-  if (!qrScanner) return;
-  try {
-    if (qrScanner.isScanning) await qrScanner.stop();
-    qrScanner.clear();
-  } catch { /* Camera may already have been released by Web. */ }
-  qrScanner = null;
-  scannerOpen.value = false;
 }
 
 function blurRestoredLoginFocus() {
@@ -488,48 +521,7 @@ function enforceProfileSelection() {
   }
 }
 
-function pairingUrlFromScan(value) {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-  try {
-    const scannedUrl = new URL(raw);
-    const scannedPair = scannedUrl.searchParams.get("pair");
-    if (scannedPair) return `${window.location.origin}${window.location.pathname}?pair=${encodeURIComponent(scannedPair)}`;
-  } catch { /* Roku may encode the pairing code as plain text. */ }
-  if (/^[A-Za-z0-9_-]{8,160}$/.test(raw)) {
-    return `${window.location.origin}${window.location.pathname}?pair=${encodeURIComponent(raw)}`;
-  }
-  return "";
-}
-
-async function startQrScanner() {
-  scannerError.value = "";
-  scannerOpen.value = true;
-  await new Promise(resolve => setTimeout(resolve, 50));
-  try {
-    const { Html5Qrcode } = await import("html5-qrcode");
-    qrScanner = new Html5Qrcode("qr-reader");
-    await qrScanner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 230, height: 230 } },
-      async decodedText => {
-        const target = pairingUrlFromScan(decodedText);
-        if (!target) {
-          scannerError.value = "This is not a valid RH Stream pairing QR code.";
-          return;
-        }
-        await stopQrScanner();
-        window.location.assign(target);
-      },
-      () => { /* Most frames do not contain a QR code. */ }
-    );
-  } catch (error) {
-    await stopQrScanner();
-    scannerError.value = error?.message || "Camera permission is required to scan the Roku QR code.";
-  }
-}
-
-onBeforeUnmount(stopQrScanner);
+onBeforeUnmount(() => window.removeEventListener("message", onWwpCallMessage));
 onBeforeUnmount(() => window.removeEventListener("popstate", enforceProfileSelection));
 onBeforeUnmount(() => window.removeEventListener("pageshow", blurRestoredLoginFocus));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
@@ -539,7 +531,7 @@ onBeforeUnmount(() => {
   if (libraryRevisionRetryTimer) clearTimeout(libraryRevisionRetryTimer);
 });
 
-const online = ref(false), sources = ref([]), sourceId = ref(""), linkedDevices = ref([]);
+const online = ref(false), sources = ref([]), sourceId = ref("");
 // A browser tab has no paired deviceId like a Roku does. Generate one once
 // and keep it in localStorage so Connected Devices can tell this browser
 // apart from others (and from itself across reloads) instead of treating
@@ -561,25 +553,6 @@ async function sendBrowserHeartbeat() {
   try { await request("/api/account/heartbeat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: browserDeviceId(), streaming: webPlaying.value, label: browserDeviceLabel() }) }); }
   catch { /* Best effort — a missed heartbeat just leaves this tab looking briefly offline. */ }
 }
-function relativeTimeFromNow(iso) {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "";
-  if (ms < 60_000) return "just now";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return `${Math.floor(ms / 86_400_000)}d ago`;
-}
-function deviceStatusClass(device) { return device.streaming ? "is-streaming" : device.running ? "is-online" : "is-offline"; }
-function deviceStatusLabel(device) {
-  if (device.streaming) return "Streaming now";
-  if (device.running) return "Online";
-  if (!device.lastSeenAt) return "Never connected";
-  return `Last seen ${relativeTimeFromNow(device.lastSeenAt)}`;
-}
-function deviceLocationLabel(device) {
-  if (!device.lastClientIp) return "";
-  return device.tailscaleHostname ? `${device.tailscaleHostname} (Tailscale) · ${device.lastClientIp}` : device.lastClientIp;
-}
 const playlistHealthBySource = ref({});
 let playlistHealthRequestId = 0;
 const weatherLocations = ref([null]);
@@ -590,14 +563,13 @@ const weatherMessage = ref("");
 const weatherMessageType = ref("info");
 const weatherSearchTimers = [null];
 const name = ref(""), url = ref(""), sourceType = ref("xtream"), sourceUsername = ref(""), sourcePassword = ref(""), editing = ref(null), busy = ref(false), loading = ref(false), message = ref(""), messageType = ref("info");
-const kind = ref("channel"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
-const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), view = ref("library"), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
+const kind = ref("series"), items = ref([]), categories = ref([]), languages = ref([]), category = ref("all"), titleLanguage = ref("all"), query = ref("");
+const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
 const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber = ref(null), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
+const episodesFrom = ref("series");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
-const homeRecommendations = ref([]);
-const homeRecommendationLanguage = ref("both");
 const homeLoading = ref(false);
 const homeError = ref("");
 const welcomeProviderItems = ref({ series: [], movie: [], channel: [] });
@@ -605,7 +577,12 @@ const homeFavorites = ref([]);
 const homeContinueWatching = ref([]);
 const homeFavoriteKeys = ref(new Set());
 const homeBackdropUrl = ref("");
-const homeBackdropPlayed = ref(false);
+const backdropEnabled = ref((() => { try { return window.localStorage.getItem("rh-backdrop") !== "0"; } catch { return true; } })());
+function setBackdropEnabled(on) {
+  backdropEnabled.value = on;
+  try { window.localStorage.setItem("rh-backdrop", on ? "1" : "0"); } catch { /* private mode */ }
+  if (!on) { homeBackdropUrl.value = ""; window.clearTimeout(homeBackdropTimer); }
+}
 const welcomeProviderCounts = ref({ series: 0, movie: 0, channel: 0 });
 const welcomeProviderLoading = ref(false);
 const welcomeProviderError = ref("");
@@ -613,11 +590,15 @@ let welcomeProviderRequestId = 0;
 let homeRequestId = 0;
 let libraryRevision = 0, libraryRevisionController = null, libraryRevisionRetryTimer = null;
 let partnerInviteRevision = 0, partnerInviteController = null, partnerInviteRetryTimer = null;
-let wwpSyncRevision = 0, wwpSyncController = null, wwpSyncRetryTimer = null;
+let wwpSyncToken = "", wwpKnownRevision = 0, wwpKnownControlRevision = 0, wwpLastSeenStart = -1;
+let wwpSyncController = null, wwpSyncRetryTimer = null, wwpApplyingRemote = false, wwpRemoteEnded = false;
+// Leader-follower frame-lock: the host broadcasts its position; the guest keeps
+// converging onto it. No negotiation, so no way to deadlock.
+let wwpHostBeatTimer = null, wwpFollowTimer = null, wwpClockOffset = 0;
+let wwpHostState = null, wwpUserPaused = false, wwpLastFollowSeek = 0;
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
-const savedCount = computed(() => savedItems.value.length);
 function normalizeSearchText(value) {
   return String(value || "")
     .normalize("NFKC")
@@ -648,14 +629,10 @@ const visibleItems = computed(() => {
     || (selectionFilter.value === "available" && !savedKeys.value.has(item.key)));
   return [...filtered].sort((a, b) => {
     if (sortBy.value === "recent") return String(b.added || "").localeCompare(String(a.added || ""));
-    if (sortBy.value === "category") return String(a.categoryId || "").localeCompare(String(b.categoryId || "")) || a.title.localeCompare(b.title);
+    if (sortBy.value === "category") return String(a.category || "").localeCompare(String(b.category || ""), undefined, { numeric: true, sensitivity: "base" }) || a.title.localeCompare(b.title);
     return compareCatalogTitles(a, b);
   });
 });
-const typeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item?.kind === value).length])));
-const savedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, savedItems.value.filter(item => item?.kind === value).length])));
-const archiveCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, archivedItems.value.filter(item => item?.kind === value).length])));
-const savedItemsForTab = computed(() => savedItems.value.filter(item => item?.kind === kind.value));
 const hasMoreCatalog = computed(() => page.value < pages.value);
 // Managed category assignments are the single Library shown by Roku, Web,
 // and Browser. Source enabledItems remain an import pool for Playlist only.
@@ -678,19 +655,24 @@ const homeRecent = computed(() => Object.fromEntries(["series", "movie", "channe
 ])));
 const rokuTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value, rokuLibraryItems.value.filter(item => item?.kind === value).length])));
 function rokuItemsForTab(value) { return rokuLibraryItems.value.filter(item => item?.kind === value); }
+// Library / Live TV are scoped to the selected provider too (account + profile
+// scoping is already done server-side by the device token).
+const inSelectedProvider = entry => { const cur = String(sourceId.value || ""); return !cur || String(entry?.sourceId || "") === cur; };
 const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry?.kind === safariLibraryTab.value));
-const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item?.kind === safariLibraryTab.value));
+const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item?.kind === safariLibraryTab.value && inSelectedProvider(item)));
 const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value,
-  managedLibraryCategories.value.filter(category => category?.kind === value).reduce((count, category) => count + (category.items || []).filter(Boolean).length, 0),
+  managedLibraryCategories.value.filter(category => category?.kind === value).reduce((count, category) => count + (category.items || []).filter(item => item && inSelectedProvider(item)).length, 0),
 ])));
 const libraryRails = computed(() => {
-  return managedCategoriesForTab.value.filter(category => category.items.length).map(category => ({ id: category.id, name: category.name, items: category.items }));
+  return managedCategoriesForTab.value
+    .map(category => ({ id: category.id, name: category.name, items: (category.items || []).filter(item => item && inSelectedProvider(item)) }))
+    .filter(category => category.items.length);
 });
 const liveTvChannels = computed(() => {
   const channels = new Map();
   for (const category of managedLibraryCategories.value.filter(entry => entry?.kind === "channel")) {
     for (const item of category?.items || []) {
-      if (!item) continue;
+      if (!item || !inSelectedProvider(item)) continue;
       const key = item.libraryKey || `${item.sourceId || "source"}:${item.id}`;
       if (!channels.has(key)) channels.set(key, { ...item, categoryName: category.name });
     }
@@ -717,27 +699,44 @@ const webPlayerSrc = computed(() => {
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
-  const streamFormat = String(item.streamFormat || '').trim().toLowerCase();
-  const originalFormat = String(item.originalFormat || item.extension || '').trim().toLowerCase();
-  const directVods = new Set(['mp4', 'm4v', 'mov']);
-  const shouldUseDirect = !webForceHls.value && playableKind !== 'channel'
-    && (streamFormat === 'mp4' || (!streamFormat && directVods.has(originalFormat)));
+  // Original quality always tries the raw file first, whatever its container -
+  // handleWebVideoError/the startup watchdog in configureMoviePlayback fall
+  // back to HLS the moment that attempt fails or stalls, so a container the
+  // browser cannot actually play costs one quick failed attempt, not a stuck
+  // player.
+  // Normal AUTO is one policy for Movies, Series episodes and Live channels:
+  // resolve this route to the real provider URL first, then fall back to the
+  // server's HLS Full Transcode pipeline if the client rejects or stalls.
+  // Watch-with-Partner must remain on its shared HLS generation.
+  const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value;
   const generated = playableSourceId && item.id
     ? (shouldUseDirect
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  // Match Roku: preserve the backend's transport decision and only generate
-  // a route for older catalog items that do not carry one.
-  const raw = webForceHls.value ? generated : (item.playbackUrl || item.url || generated);
+  // Original quality (shouldUseDirect) always attempts our own direct URL
+  // rather than the backend's per-item playbackUrl/url, which may point at
+  // HLS for containers the browser can actually play fine - see the comment
+  // above. A forced quality rung or shared partner session needs HLS.
+  const raw = generated || item.playbackUrl || item.url || "";
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
-    if (playableKind !== 'channel') target.searchParams.set("quality", webQualityChoice.value);
   }
-  if (target.origin === new URL(browserStreamer).origin && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
-  else if (deviceToken.value) target.searchParams.set("deviceToken", deviceToken.value);
+  // The invited partner does not own this source, so every media request must
+  // carry the host's stream ticket and NOTHING else - sending the partner's own
+  // device token would make the server resolve the source (and the job owner)
+  // under the wrong account and 404. The host authenticates with its own
+  // long-lived device token; its 5-minute stream ticket is not the media key.
+  const onStreamer = target.origin === new URL(browserStreamer).origin;
+  if (webIsWwpGuest.value) {
+    if (onStreamer && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
+  } else if (deviceToken.value) {
+    target.searchParams.set("deviceToken", deviceToken.value);
+  } else if (onStreamer && webStreamTicket.value) {
+    target.searchParams.set("streamTicket", webStreamTicket.value);
+  }
   if (webWwpSessionId.value) target.searchParams.set("wwpSessionId", webWwpSessionId.value);
   return target.toString();
 });
@@ -752,16 +751,21 @@ const webStreamFormatLabel = computed(() => {
   return "Original";
 });
 
-async function loadStreamTicket(item) {
+async function resolveWebPlayableItem(item) {
   if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
   let playable = item;
   if (item.kind === "series" && !item.isEpisode) {
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
-    playable = { ...item, id: episode.id, title: `${item.title} · ${episode.title}`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
+    playable = { ...item, id: episode.id, seriesId: item.id, isEpisode: true, seriesTitle: details.title || item.title, title: `${details.title || item.title} (${episode.episodeNumber || ""})`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
     webNowPlaying.value = playable;
   }
+  return playable;
+}
+
+async function loadStreamTicket(item) {
+  const playable = await resolveWebPlayableItem(item);
   const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
   webStreamTicket.value = data.ticket || "";
   if (!webStreamTicket.value) throw new Error("Could not authorize this stream.");
@@ -789,10 +793,14 @@ function parseDuration(value) {
 
 function handleWebMetadata(event) {
   const duration = Number(event.target.duration) || 0;
-  // Movie playback is delivered through a deliberately rolling HLS manifest.
+  // HLS movie playback is delivered through a deliberately rolling manifest.
   // Safari reports that short window as media duration, so it must never be
-  // used as the movie's timeline length.
-  if (webNowPlaying.value?.kind === "movie") return;
+  // used as the movie's timeline length. A native MP4 element, by contrast,
+  // reports the real full duration and should be trusted.
+  // The rolling HLS window (movie, series episode, or any WWP stream) never
+  // carries the real timeline length - only a native MP4 element does.
+  const rollingHls = webForceHls.value || webWwpSessionId.value || isHlsPlaybackUrl(webPlayerSrc.value);
+  if (webNowPlaying.value?.kind !== "channel" && rollingHls) return;
   if (!Number.isFinite(duration) || duration <= 0) return;
   const absoluteDuration = webPlaybackOffset.value + duration;
   // Safari can expose only the currently buffered HLS window here. Never let
@@ -801,24 +809,67 @@ function handleWebMetadata(event) {
 }
 
 async function loadMovieDuration(item) {
-  if (!item?.sourceId || !item?.id || !['movie', 'series'].includes(item.kind)) return;
-  const catalogDuration = parseDuration(item.duration);
-  if (catalogDuration > 0) webDuration.value = Math.max(webDuration.value, catalogDuration);
-  if (item.kind !== "movie") return;
+  if (!item?.sourceId || !item?.id || !['movie', 'series'].includes(item.kind)) return false;
   try {
-    const params = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
-    const data = await request(`/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration${params}`);
-    if (webNowPlaying.value?.key !== item.key) return;
+    const params = new URLSearchParams();
+    if (item.extension) params.set("ext", item.extension);
+    if (item.kind === "series" && item.seriesId) params.set("seriesId", String(item.seriesId));
+    const query = params.toString() ? `?${params}` : "";
+    // Movies resolve via get_vod_info, series episodes via the series JSON -
+    // both are metadata calls, no provider stream / lease involved.
+    const path = item.kind === "movie"
+      ? `/api/xtream/movie/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}/duration${query}`
+      : `/api/xtream/media-duration/${encodeURIComponent(item.sourceId)}/series/${encodeURIComponent(item.id)}${query}`;
+    const data = await request(path, { cache: "no-store", signal: AbortSignal.timeout(30_000) });
+    if (webNowPlaying.value !== item) return false;
     const seconds = Number(data.seconds) || parseDuration(data.duration);
-    if (seconds > 0) webDuration.value = Math.max(webDuration.value, seconds);
-  } catch { /* The media element can still provide duration when available. */ }
+    if (seconds > 0) {
+      webDuration.value = seconds;
+      return true;
+    }
+  } catch { /* Surface the bounded lookup failure in playWebMovie. */ }
+  return false;
+}
+
+// Watch with Partner guest: resolve the VOD length via the host's stream
+// ticket (the guest cannot query the host's source with its own token).
+async function loadWwpGuestDuration(invite) {
+  if (!invite?.sourceId || !invite?.id || !invite?.streamTicket) return;
+  try {
+    const url = new URL(api(`/api/xtream/media-duration/${encodeURIComponent(invite.sourceId)}/${encodeURIComponent(invite.kind)}/${encodeURIComponent(invite.id)}`), base);
+    url.searchParams.set("streamTicket", invite.streamTicket);
+    if (invite.extension) url.searchParams.set("ext", invite.extension);
+    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    const res = await fetch(url, { cache: "no-store", headers: deviceToken.value ? { "x-device-token": deviceToken.value } : {} });
+    const data = await res.json().catch(() => ({}));
+    const seconds = Number(data.seconds) || 0;
+    if (seconds > 0 && webWwpSessionId.value === invite.wwpSessionId) webDuration.value = Math.max(webDuration.value, seconds);
+  } catch { /* the scrubber just stays open-ended */ }
 }
 
 const webRemainingTime = computed(() => Math.max(0, webDuration.value - webCurrentTime.value));
 const webTimelineStyle = computed(() => {
-  const percent = webDuration.value ? Math.min(100, Math.max(0, (webCurrentTime.value / webDuration.value) * 100)) : 0;
-  return { "--web-progress": `${percent}%` };
+  const total = webDuration.value || 0;
+  const clamp = value => Math.min(100, Math.max(0, value));
+  const percent = total ? clamp((webCurrentTime.value / total) * 100) : 0;
+  // The lighter portion of the bar: media already downloaded ahead of the
+  // playhead. Never let it read behind the played portion.
+  const buffered = total ? clamp((Math.max(webBufferedTime.value, webCurrentTime.value) / total) * 100) : 0;
+  return { "--web-progress": `${percent}%`, "--web-buffered": `${Math.max(percent, buffered)}%` };
 });
+
+// How far the media element has buffered, expressed on the movie's absolute
+// timeline (currentTime is relative to the rolling manifest's re-based origin).
+function refreshWebBuffered() {
+  const video = webVideo.value;
+  if (!video || !video.buffered || !video.buffered.length) { webBufferedTime.value = webCurrentTime.value; return; }
+  const now = video.currentTime;
+  let ahead = now;
+  for (let i = 0; i < video.buffered.length; i += 1) {
+    if (video.buffered.start(i) - 0.25 <= now && now <= video.buffered.end(i) + 0.25) { ahead = video.buffered.end(i); break; }
+  }
+  webBufferedTime.value = webPlaybackOffset.value + ahead;
+}
 const webUpNext = computed(() => null);
 
 function clearWebControlsTimer() {
@@ -828,7 +879,7 @@ function clearWebControlsTimer() {
 
 function scheduleWebControlsHide() {
   clearWebControlsTimer();
-  if (!webPlaying.value || webBuffering.value || webPlayerError.value || webQualityMenuOpen.value) return;
+  if (!webPlaying.value || webBuffering.value || webPlayerError.value) return;
   webControlsTimer = setTimeout(() => { webControlsVisible.value = false; }, 3600);
 }
 
@@ -842,12 +893,42 @@ function handleWebPlayerPointerMove(event) {
   showWebControls();
 }
 
+function startMiniDrag(event) {
+  if (!webMini.value || event.button !== 0 || event.target?.closest?.("button")) return;
+  const section = event.currentTarget;
+  const rect = section.getBoundingClientRect();
+  miniDrag = { grabX: event.clientX - rect.left, grabY: event.clientY - rect.top, w: rect.width, h: rect.height, startX: event.clientX, startY: event.clientY, moved: false };
+  section.setPointerCapture?.(event.pointerId);
+  window.addEventListener("pointermove", onMiniDrag);
+  window.addEventListener("pointerup", endMiniDrag, { once: true });
+}
+function onMiniDrag(event) {
+  if (!miniDrag) return;
+  if (!miniDrag.moved && Math.hypot(event.clientX - miniDrag.startX, event.clientY - miniDrag.startY) < 4) return;
+  miniDrag.moved = true;
+  const maxX = Math.max(4, window.innerWidth - miniDrag.w - 4);
+  const maxY = Math.max(4, window.innerHeight - miniDrag.h - 4);
+  webMiniPos.value = {
+    left: Math.min(Math.max(4, event.clientX - miniDrag.grabX), maxX),
+    top: Math.min(Math.max(4, event.clientY - miniDrag.grabY), maxY),
+  };
+}
+function endMiniDrag() {
+  window.removeEventListener("pointermove", onMiniDrag);
+  webMiniJustDragged = Boolean(miniDrag?.moved);
+  miniDrag = null;
+  if (webMiniJustDragged) setTimeout(() => { webMiniJustDragged = false; }, 0);
+}
+function webFrameClick(event) {
+  if (webMini.value) { if (!webMiniJustDragged) webMini.value = false; return; }
+  toggleWebControls(event);
+}
+
 function toggleWebControls(event) {
   if (event?.target?.closest?.("button, input")) return;
   // A tap on the video means playback is interactive again; clear any
   // transient buffering state so the spinner cannot remain stuck over it.
   webBuffering.value = false;
-  webQualityMenuOpen.value = false;
   webControlsVisible.value = !webControlsVisible.value;
   if (webControlsVisible.value) scheduleWebControlsHide(); else clearWebControlsTimer();
 }
@@ -855,6 +936,9 @@ function toggleWebControls(event) {
 function onWebPlay() {
   webPlaying.value = true;
   webBuffering.value = false;
+  // The WWP resume path (toggleWebPlayback / applyRemoteWwpControl) always does
+  // a full restartWebAt because the shared job was torn down on pause, and it
+  // sends its own control ping - so nothing to relay from here.
   // The media element is playing, so any earlier "Playback unavailable" was
   // a transient stall that has since recovered. Clear it so the error card
   // cannot sit on top of a working stream and pin the controls open.
@@ -865,6 +949,54 @@ function onWebPlay() {
 function onWebPause() {
   webPlaying.value = false;
   showWebControls();
+  // NB: no WWP relay here - the element pauses for buffering stalls, stream
+  // truncation and error recovery too, which would spam the partner. Only the
+  // explicit play/pause button (toggleWebPlayback) relays.
+}
+
+// Watch with Partner: relay our own play/pause (and the exact spot) to the
+// partner. The long-poll in watchWwpSync() carries the reverse direction.
+async function sendWwpControl(paused) {
+  const sessionId = webWwpSessionId.value;
+  if (!sessionId) return;
+  const positionMs = Math.round(Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0)) * 1000);
+  try {
+    const url = new URL(`${browserStreamer}/api/xtream/wwp-control/${encodeURIComponent(sessionId)}`);
+    url.searchParams.set("paused", paused ? "1" : "0");
+    url.searchParams.set("positionMs", String(positionMs));
+    // Send BOTH credentials: the host's own stream ticket is short-lived (5 min)
+    // and would otherwise silently 401 mid-session, but their device token does
+    // not expire. The server accepts whichever resolves.
+    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    if (webStreamTicket.value) url.searchParams.set("streamTicket", webStreamTicket.value);
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) console.warn(`[WWP] control relay ${response.status}`);
+  } catch (error) { console.warn("[WWP] control relay failed", error?.message || error); }
+}
+
+// Apply the partner's play/pause locally - this is what makes our own play
+// button toggle (webPlaying drives its icon) and the controls flash up.
+async function applyRemoteWwpControl(data) {
+  const video = webVideo.value;
+  if (!video || typeof data.paused !== "boolean" || data.paused === video.paused) return;
+  wwpApplyingRemote = true;
+  wwpUserPaused = data.paused === true;   // mirror the host's intent
+  try {
+    if (data.paused) {
+      video.pause();
+      webPlaying.value = false;
+    } else {
+      // Following the partner's "play" is not a user gesture - a muted retry
+      // (inside startWebPlayback) is what keeps the follower from silently
+      // staying paused while the other side plays on.
+      await startWebPlayback(video);
+    }
+    showWebControls();
+  } finally {
+    // Hold the guard briefly so the resulting element pause/play event does not
+    // echo back out (it would not relay anyway now, but keep it tidy).
+    setTimeout(() => { wwpApplyingRemote = false; }, 300);
+  }
 }
 
 function onWebWaiting() {
@@ -877,21 +1009,41 @@ function onWebWaiting() {
       showWebControls();
     }
   }, 300);
+  clearTimeout(webStallTimer);
+  const resumeAt = webAbsolutePosition();
+  webStallTimer = setTimeout(() => {
+    webStallTimer = null;
+    const video = webVideo.value;
+    if (!webNowPlaying.value || !video || video.readyState >= 3) return;
+    scheduleWebReconnect(resumeAt);
+  }, 20_000);
 }
 
 function onWebTimeUpdate(event) {
   clearTimeout(webBufferingTimer);
+  clearTimeout(webStallTimer);
+  webStallTimer = null;
   const absolutePosition = webPlaybackOffset.value + event.target.currentTime;
-  if (webBufferRecoveryPosition.value >= 5 && absolutePosition + 3 < webBufferRecoveryPosition.value) {
+  // A rebuffer must never drop the viewer back to the start of a segment.
+  // Restore even a ~1s rewind: a small one with a native seek inside the
+  // buffered window, a large one by re-basing the stream.
+  if (webBufferRecoveryPosition.value >= 2 && absolutePosition + 1 < webBufferRecoveryPosition.value) {
     const recoveryPosition = webBufferRecoveryPosition.value;
     webBufferRecoveryPosition.value = -1;
-    webPlaybackOffset.value = recoveryPosition;
-    webCurrentTime.value = recoveryPosition;
-    configureMoviePlayback(recoveryPosition);
+    const rewind = recoveryPosition - absolutePosition;
+    if (rewind <= 30 && webVideo.value) {
+      webVideo.value.currentTime = recoveryPosition - webPlaybackOffset.value;
+      webCurrentTime.value = recoveryPosition;
+    } else {
+      webPlaybackOffset.value = recoveryPosition;
+      webCurrentTime.value = recoveryPosition;
+      configureMoviePlayback(recoveryPosition);
+    }
     return;
   }
   webCurrentTime.value = absolutePosition;
-  if (webBufferRecoveryPosition.value >= 0 && absolutePosition + 3 >= webBufferRecoveryPosition.value) webBufferRecoveryPosition.value = -1;
+  refreshWebBuffered();
+  if (webBufferRecoveryPosition.value >= 0 && absolutePosition + 1 >= webBufferRecoveryPosition.value) webBufferRecoveryPosition.value = -1;
   if (!event.target.paused && event.target.readyState >= 3) {
     webBuffering.value = false;
     // The timeline is advancing with buffered media: the stream is working.
@@ -908,38 +1060,64 @@ function clearWebRecoveryTimer() {
   webRecoveryTimer = null;
 }
 
+function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
+  if (!webNowPlaying.value) return;
+  webPlaybackRetryCount.value += 1;
+  webBuffering.value = true;
+  webPlayerError.value = "";
+  showWebControls();
+  clearWebRecoveryTimer();
+  clearTimeout(webStallTimer);
+  webStallTimer = null;
+  const delay = Math.min(15_000, 750 * (2 ** Math.min(4, webPlaybackRetryCount.value - 1)));
+  webRecoveryTimer = setTimeout(() => {
+    webRecoveryTimer = null;
+    if (webNowPlaying.value) restartWebAt(resumeAt);
+  }, delay);
+}
+
+function webAbsolutePosition() {
+  return Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
+}
+
+// Original quality always tries the direct file first (no HLS at all - the
+// cheapest, most seek-friendly path when the browser can just play the source
+// natively) and falls back to the HLS pipeline (Copy, then the server's own
+// Copy -> transcode cascade) the moment that direct attempt fails or stalls.
+function fallBackToHlsFromDirect(resumeAt) {
+  clearTimeout(webDirectStartupTimer);
+  const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
+  webForceHls.value = true;
+  webEncodeStrategy.value = "HLS FULL TRANSCODE";
+  webPlaybackRetryCount.value = 0;
+  webPlaybackOffset.value = target;
+  webCurrentTime.value = target;
+  webBuffering.value = true;
+  webMediaReady.value = false;
+  showWebControls();
+  configureMoviePlayback(target);
+}
+
 function handleWebVideoError() {
   if (!webNowPlaying.value) return;
   const failedSource = webPlayerSrc.value;
   if (failedSource && !isHlsPlaybackUrl(failedSource) && !webForceHls.value) {
-    webForceHls.value = true;
-    webPlaybackRetryCount.value = 0;
-    webBuffering.value = true;
-    showWebControls();
-    configureMoviePlayback(webCurrentTime.value);
+    // Native transport failed for this item - fall back to the HLS pipeline,
+    // re-based at the exact spot playback stopped.
+    fallBackToHlsFromDirect(webAbsolutePosition());
     return;
   }
-  // A WebView can emit a media error while HLS.js is recovering a segment.
-  // Keep the player alive and show the final error only after retries fail.
-  if (webPlaybackRetryCount.value < 3) {
-    webPlaybackRetryCount.value += 1;
-    webBuffering.value = true;
-    showWebControls();
-    clearWebRecoveryTimer();
-    webRecoveryTimer = setTimeout(() => {
-      webRecoveryTimer = null;
-      if (webHls) webHls.startLoad();
-      else configureMoviePlayback(webPlaybackOffset.value);
-    }, 900 * webPlaybackRetryCount.value);
-    return;
-  }
-  webPlayerError.value = "Playback unavailable";
-  webBuffering.value = false;
-  showWebControls();
+  // Keep retrying with capped backoff while the player remains open. This
+  // survives a streamer restart of any length and resumes VOD at the last
+  // absolute position (Live TV naturally rejoins the live edge).
+  scheduleWebReconnect(webAbsolutePosition());
 }
 
 function onWebReady(event) {
+  if (!webForceHls.value) clearTimeout(webDirectStartupTimer);
   clearTimeout(webBufferingTimer);
+  clearTimeout(webStallTimer);
+  webStallTimer = null;
   if (event?.type === "playing") webPlaying.value = true;
   webBuffering.value = false;
   webPlaybackRetryCount.value = 0;
@@ -954,9 +1132,51 @@ function onWebReady(event) {
       webMediaReady.value = true;
     };
     if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(reveal);
-    else setTimeout(reveal, 500);
+    // rVFC never fires while the decoder is wedged (audio plays, frame is
+    // black) - reveal on a hard timeout too so a recovered stream is not left
+    // invisible, and start the "video wedged" watchdog.
+    setTimeout(reveal, 1200);
+    startWebVideoWedgeWatchdog(video);
   }
   scheduleWebControlsHide();
+}
+
+// After an error-recovery restart the MSE video decoder can stay wedged: audio
+// advances but no frame is ever painted (videoWidth stays 0). Nudge it, then
+// fall back to a full stream reload.
+let webWedgeWatchdog = null;
+let webWedgeStage = 0;
+let webWedgeRestarts = 0;
+function clearWebVideoWedgeWatchdog() {
+  if (webWedgeWatchdog) clearInterval(webWedgeWatchdog);
+  webWedgeWatchdog = null;
+  webWedgeStage = 0;
+}
+function startWebVideoWedgeWatchdog(video) {
+  clearWebVideoWedgeWatchdog();
+  let lastTime = -1;
+  let stalls = 0;
+  webWedgeWatchdog = setInterval(() => {
+    if (video !== webVideo.value || video.paused) { clearWebVideoWedgeWatchdog(); return; }
+    const advancing = video.currentTime > lastTime + 0.05;
+    lastTime = video.currentTime;
+    // Audio advancing + a real frame painted => healthy, we are done.
+    if (advancing && video.videoWidth > 0) { clearWebVideoWedgeWatchdog(); return; }
+    if (!advancing) { stalls = 0; return; }
+    stalls += 1;
+    if (stalls === 2 && webWedgeStage < 1) {
+      webWedgeStage = 1;
+      try { video.currentTime = video.currentTime + 0.12; } catch { /* not seekable yet */ }
+    } else if (stalls >= 4 && webWedgeStage < 2) {
+      webWedgeStage = 2;
+      clearWebVideoWedgeWatchdog();
+      if (webWedgeRestarts >= 2) { webMediaReady.value = true; webVideo.value.style.opacity = "1"; return; }
+      webWedgeRestarts += 1;
+      const resumeAt = webAbsolutePosition();
+      webMediaReady.value = false;
+      restartWebAt(resumeAt);
+    }
+  }, 1000);
 }
 
 function onWebFirstFrame() {
@@ -964,11 +1184,18 @@ function onWebFirstFrame() {
   onWebReady();
 }
 
+// Set by restartWebAt when the reload is a deliberate user seek/quality change;
+// consumed (once) here so the server treats it as a real seek and moves the
+// partner. A recovery/join/follow reload leaves it false.
+let wwpSeekIntent = false;
 function movieStreamUrl(startSeconds = 0) {
   const source = webPlayerSrc.value;
   if (!source) return "";
   const target = new URL(source);
-  if (startSeconds > 0 && isHlsPlaybackUrl(target.toString())) target.searchParams.set("start", String(Math.floor(startSeconds)));
+  const hls = isHlsPlaybackUrl(target.toString());
+  if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
+  if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
+  wwpSeekIntent = false;
   return target.toString();
 }
 
@@ -979,10 +1206,72 @@ function isHlsPlaybackUrl(source) {
   } catch { return String(source || '').includes('/api/xtream/hls/'); }
 }
 
+// Start playback, surviving the browser's autoplay policy. An un-muted
+// programmatic play() with no fresh user gesture is rejected - this is why a
+// Watch-with-Partner joiner's video used to sit frozen while only the host
+// played. On rejection we retry muted (which every browser allows) and raise
+// the "Tap to unmute" pill so sound is one tap away.
+async function startWebPlayback(video) {
+  if (!video) return false;
+  try {
+    await video.play();
+    webPlaying.value = true;
+    if (!video.muted) { webMuted.value = false; webAutoplayBlocked.value = false; }
+    return true;
+  } catch { /* autoplay policy rejected the un-muted play */ }
+  // Only a Watch-with-Partner guest force-plays muted to stay synced with the
+  // host. Everyone else stays paused with sound intact - the centre Play button
+  // is right there, one tap away. Never silently mute a movie.
+  if (!(webWwpSessionId.value && webIsWwpGuest.value)) {
+    webPlaying.value = false;
+    return false;
+  }
+  try {
+    video.muted = true;
+    webMuted.value = true;
+    webAutoplayBlocked.value = true;
+    await video.play();
+    webPlaying.value = true;
+    return true;
+  } catch {
+    webPlaying.value = false;
+    return false;
+  }
+}
+
+function unmuteWebPlayback() {
+  const video = webVideo.value;
+  if (!video) return;
+  video.muted = false;
+  webMuted.value = false;
+  webAutoplayBlocked.value = false;
+  if (video.paused) startWebPlayback(video);
+}
+
+// The server picks copy vs. transcode per file (a probe decision, not the
+// viewer's quality rung) and reports it as response headers on the manifest.
+// A plain independent fetch is the simplest way to read them without hooking
+// hls.js's own loader - the manifest is tiny, so the extra request is cheap.
+function describeEncodeStrategy(strategy, videoMode) {
+  if (strategy === "HLS_REMUX") return "Copy";
+  if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
+  if (strategy === "HLS_PARTIAL_TRANSCODE") return videoMode === "transcode" ? "Video transcode" : "Audio transcode";
+  return "";
+}
+async function fetchWebEncodeStrategy(url) {
+  try {
+    const response = await fetch(url, { cache: "no-store" });
+    webEncodeStrategy.value = describeEncodeStrategy(response.headers.get("X-RH-Strategy") || "", response.headers.get("X-RH-Video-Mode") || "") || "HLS FULL TRANSCODE";
+  } catch { webEncodeStrategy.value = "HLS FULL TRANSCODE"; }
+}
+
 async function configureMoviePlayback(startSeconds = 0) {
   await nextTick();
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
+  webEncodeStrategy.value = "";
+  const playbackToken = ++webPlaybackToken;
+  clearTimeout(webDirectStartupTimer);
   if (!video || !source) {
     webPlayerError.value = "This movie does not have a playable stream.";
     return;
@@ -992,72 +1281,125 @@ async function configureMoviePlayback(startSeconds = 0) {
     webHls = null;
   }
   clearWebRecoveryTimer();
+  clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
   video.removeAttribute("src");
+  // Drop any object source and force a full element reset so the previous
+  // decoder never carries over (the cause of a black frame with live audio
+  // after an error-recovery reload).
+  try { video.srcObject = null; } catch { /* not all browsers */ }
   video.style.opacity = "0";
+  // Carry the current mute choice onto the (re)loaded element so a pre-muted
+  // auto-play start (WWP joiner) is not fighting an un-muted element.
+  video.muted = webMuted.value;
   video.load();
   try {
     const directPlayback = !isHlsPlaybackUrl(source);
     if (directPlayback) {
-      video.src = source;
-      await video.play();
-      webPlaying.value = true;
+      webEncodeStrategy.value = "DIRECT";
+      // Native MP4 carries the whole timeline, so a resume point is a real
+      // element seek once metadata is in (not a re-based manifest request).
+      const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
+      if (seekTarget > 0) {
+        video.addEventListener("loadedmetadata", () => {
+          try { video.currentTime = seekTarget; } catch { /* not seekable yet */ }
+          webPendingSeek.value = -1;
+        }, { once: true });
+      }
+      // A container the browser cannot actually decode often never fires
+      // `error` at all - it just sits there. If metadata has not arrived
+      // within a few seconds, treat that as a failed direct attempt too.
+      video.addEventListener("loadedmetadata", () => clearTimeout(webDirectStartupTimer), { once: true });
+      webDirectStartupTimer = setTimeout(() => {
+        if (playbackToken !== webPlaybackToken || webForceHls.value || video.readyState >= 1) return;
+        fallBackToHlsFromDirect(webNowPlaying.value?.kind === "channel" ? 0 : Math.max(startSeconds, webAbsolutePosition()));
+      }, 6000);
+      // Chrome/Firefox need hls.js to consume a provider's live m3u8. Loading
+      // the /play URL through hls.js still follows the 302 and streams directly
+      // from the provider; it does not invoke RH HLS/transcoding.
+      if (webNowPlaying.value?.kind === "channel") {
+        const Hls = await loadHlsConstructor();
+        if (Hls.isSupported()) {
+          webHls = new Hls({ enableWorker: true, lowLatencyMode: true, liveSyncDurationCount: 3 });
+          webHls.on(Hls.Events.ERROR, (_event, data) => {
+            if (data.fatal && playbackToken === webPlaybackToken && !webForceHls.value) fallBackToHlsFromDirect(0);
+          });
+          webHls.on(Hls.Events.MEDIA_ATTACHED, () => startWebPlayback(video));
+          webHls.loadSource(source);
+          webHls.attachMedia(video);
+        } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+          video.src = source;
+          await startWebPlayback(video);
+        } else fallBackToHlsFromDirect(0);
+      } else {
+        video.src = source;
+        await startWebPlayback(video);
+      }
     } else {
+      webEncodeStrategy.value = "HLS FULL TRANSCODE";
+      fetchWebEncodeStrategy(source);
       const Hls = await loadHlsConstructor();
       if (Hls.isSupported()) {
         webHls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          // Start playback at the movie's beginning, not the rolling manifest's
-          // live edge, and skip the ABR bandwidth probe on the single-rendition
-          // stream so the first fragment loads immediately.
-          startPosition: 0,
+          // Normally start at segment 0 - the ffmpeg job's -ss offset IS the
+          // resume point. A Watch-with-Partner participant instead rides the
+          // live edge of the shared, already-running job so it lands where the
+          // partner is, not ~20-30s back at the start of the rolling window.
+          startPosition: webWwpSessionId.value ? -1 : 0,
           testBandwidth: false,
           startFragPrefetch: true,
+          // Buffer far ahead so a provider hiccup mid-stream rides out on the
+          // cushion instead of stalling; keep a longer back-buffer for rewinds.
+          // (The server keeps ~HLS_VOD_LIST_SIZE*2s of segments on disk.)
+          maxBufferLength: 240,
+          maxMaxBufferLength: 300,
+          backBufferLength: 90,
+          // Recover from a stall faster instead of waiting out the default.
+          nudgeMaxRetry: 10,
+          fragLoadingMaxRetry: 8,
+          manifestLoadingMaxRetry: 6,
+          fragLoadingRetryDelay: 500,
         });
         webHls.on(Hls.Events.ERROR, (_event, data) => {
           if (!data.fatal) return;
-          if (webPlaybackRetryCount.value < 3) {
+          if (data.type === Hls.ErrorTypes.MEDIA_ERROR && webPlaybackRetryCount.value < 2) {
             webPlaybackRetryCount.value += 1;
-            webBuffering.value = true;
-            showWebControls();
-            if (data.type === Hls.ErrorTypes.MEDIA_ERROR) webHls.recoverMediaError();
-            else {
-              clearWebRecoveryTimer();
-              webRecoveryTimer = setTimeout(() => webHls?.startLoad(), 900 * webPlaybackRetryCount.value);
-            }
-          } else {
-            webPlayerError.value = "This movie could not be played right now.";
-            webBuffering.value = false;
+            webHls.recoverMediaError();
+            return;
           }
+          scheduleWebReconnect(webAbsolutePosition());
         });
-        webHls.on(Hls.Events.MEDIA_ATTACHED, async () => {
-          try { await video.play(); webPlaying.value = true; } catch { /* The user can press Play. */ }
-        });
+        webHls.on(Hls.Events.MEDIA_ATTACHED, () => { startWebPlayback(video); });
         webHls.loadSource(source);
         webHls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
-        await video.play();
-        webPlaying.value = true;
+        await startWebPlayback(video);
       } else webPlayerError.value = "HLS playback is not supported on this device.";
     }
-  } catch { webPlayerError.value = "This movie could not be played right now."; }
+  } catch { scheduleWebReconnect(Math.max(0, startSeconds)); }
 }
 
 async function playWebMovie(item) {
   webStreamTicket.value = "";
-  // No Auto option: a quality rung is always in effect, and a rung is only
-  // honoured by the transcoding HLS pipeline, so every play routes through
-  // /api/xtream/hls instead of direct play.
-  webForceHls.value = true;
-  webQualityMenuOpen.value = false;
+  // Starting a normal playback ends any WWP guest role from a previous session.
+  if (webWwpSessionId.value) stopWwpSync();
+  webIsWwpGuest.value = false;
+  webMuted.value = false;
+  webAutoplayBlocked.value = false;
+  // Original attempts the real provider URL first. Only rejection/stall or
+  // Watch-with-Partner selects HLS Full Transcode.
+  webForceHls.value = false;
   webNowPlaying.value = item;
+  webMini.value = false;
   webPlaying.value = false;
   webMuted.value = false;
   webCurrentTime.value = 0;
   webDuration.value = 0;
   webPlaybackOffset.value = 0;
+  webBufferedTime.value = 0;
   webPendingSeek.value = -1;
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
@@ -1065,10 +1407,21 @@ async function playWebMovie(item) {
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
-  await loadStreamTicket(item);
-  // The catalog duration only sizes the scrubber; it must not sit on the
-  // playback critical path. Let it resolve in the background.
-  void loadMovieDuration(webNowPlaying.value);
+  webWedgeRestarts = 0;
+  clearWebVideoWedgeWatchdog();
+  await resolveWebPlayableItem(item);
+  // VOD startup is gated on the bounded provider-duration lookup. The Direct
+  // request is attached only after this finishes, so the provider's one stream
+  // slot cannot be taken by playback before ffprobe gets the real runtime.
+  if (webNowPlaying.value?.kind !== "channel") {
+    const durationResolved = await loadMovieDuration(webNowPlaying.value);
+    if (!durationResolved || webDuration.value <= 0) {
+      webPlayerError.value = "Could not determine the video duration from the provider. Please try again.";
+      webBuffering.value = false;
+      return;
+    }
+  }
+  await loadStreamTicket(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
@@ -1089,6 +1442,7 @@ async function playLibraryItem(item) {
 
 async function openSeriesEpisodes(item) {
   const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
+  episodesFrom.value = ["welcome", "series", "movies", "channels"].includes(safariPage.value) ? safariPage.value : "series";
   selectedSeries.value = item;
   seriesEpisodes.value = [];
   selectedSeasonNumber.value = null;
@@ -1119,11 +1473,14 @@ async function openSeriesEpisodes(item) {
 }
 
 function playSeriesEpisode(episode) {
-  return playLibraryItem({ ...episode, title: `${episode.seriesTitle || selectedSeries.value?.title} · ${episode.title}` });
+  const seriesTitle = episode.seriesTitle || selectedSeries.value?.title || "";
+  return playLibraryItem({ ...episode, title: `${seriesTitle} (${episode.episodeNumber || ""})` });
 }
 
 function stopLiveTvPreview({ clearSelection = false } = {}) {
   liveTvRequestId += 1;
+  clearTimeout(liveTvRecoveryTimer);
+  liveTvRecoveryTimer = null;
   if (liveTvHls) {
     liveTvHls.destroy();
     liveTvHls = null;
@@ -1136,6 +1493,7 @@ function stopLiveTvPreview({ clearSelection = false } = {}) {
   }
   liveTvLoading.value = false;
   if (clearSelection) {
+    liveTvRecoveryAttempts = 0;
     liveTvSelected.value = null;
     liveTvError.value = "";
   }
@@ -1143,6 +1501,8 @@ function stopLiveTvPreview({ clearSelection = false } = {}) {
 
 function stopPlaylistPreview({ clearSelection = false } = {}) {
   playlistPreviewRequestId += 1;
+  clearTimeout(playlistPreviewRecoveryTimer);
+  playlistPreviewRecoveryTimer = null;
   if (playlistPreviewHls) {
     playlistPreviewHls.destroy();
     playlistPreviewHls = null;
@@ -1155,12 +1515,14 @@ function stopPlaylistPreview({ clearSelection = false } = {}) {
   }
   playlistPreviewLoading.value = false;
   if (clearSelection) {
+    playlistPreviewRecoveryAttempts = 0;
     playlistPreviewSelected.value = null;
     playlistPreviewError.value = "";
   }
 }
 
-async function selectPlaylistPreview(item) {
+async function selectPlaylistPreview(item, { recovery = false } = {}) {
+  if (!recovery) playlistPreviewRecoveryAttempts = 0;
   stopPlaylistPreview();
   const requestId = playlistPreviewRequestId;
   playlistPreviewSelected.value = item;
@@ -1187,6 +1549,8 @@ async function selectPlaylistPreview(item) {
     const video = playlistPreviewVideo.value;
     if (!video) throw new Error("The preview player is unavailable.");
     const startPlayback = async () => {
+      playlistPreviewRecoveryAttempts = 0;
+      playlistPreviewError.value = "";
       playlistPreviewLoading.value = false;
       try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
     };
@@ -1197,9 +1561,19 @@ async function selectPlaylistPreview(item) {
       playlistPreviewHls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
       playlistPreviewHls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
-        playlistPreviewLoading.value = false;
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) playlistPreviewHls?.recoverMediaError();
-        else playlistPreviewError.value = "This item is unavailable right now.";
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && playlistPreviewRecoveryAttempts < 2) {
+          playlistPreviewRecoveryAttempts += 1;
+          playlistPreviewHls?.recoverMediaError();
+          return;
+        }
+        playlistPreviewLoading.value = true;
+        playlistPreviewError.value = "Reconnecting…";
+        playlistPreviewRecoveryAttempts += 1;
+        const delay = Math.min(15_000, 750 * (2 ** Math.min(4, playlistPreviewRecoveryAttempts - 1)));
+        clearTimeout(playlistPreviewRecoveryTimer);
+        playlistPreviewRecoveryTimer = setTimeout(() => {
+          if (playlistPreviewSelected.value === item) selectPlaylistPreview(item, { recovery: true });
+        }, delay);
       });
       playlistPreviewHls.attachMedia(video);
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -1208,8 +1582,13 @@ async function selectPlaylistPreview(item) {
     } else throw new Error("Preview playback is not supported in this browser.");
   } catch (error) {
     if (requestId !== playlistPreviewRequestId) return;
-    playlistPreviewLoading.value = false;
-    playlistPreviewError.value = error.message || "This item is unavailable right now.";
+    playlistPreviewLoading.value = true;
+    playlistPreviewError.value = "Reconnecting…";
+    playlistPreviewRecoveryAttempts += 1;
+    const delay = Math.min(15_000, 750 * (2 ** Math.min(4, playlistPreviewRecoveryAttempts - 1)));
+    playlistPreviewRecoveryTimer = setTimeout(() => {
+      if (playlistPreviewSelected.value === item) selectPlaylistPreview(item, { recovery: true });
+    }, delay);
   }
 }
 
@@ -1219,7 +1598,8 @@ function handleLiveTvScroll(event) {
   if (liveTvVisibleCount.value < liveTvChannels.value.length) liveTvVisibleCount.value += 20;
 }
 
-async function selectLiveTvChannel(item) {
+async function selectLiveTvChannel(item, { recovery = false } = {}) {
+  if (!recovery) liveTvRecoveryAttempts = 0;
   stopLiveTvPreview();
   const requestId = liveTvRequestId;
   liveTvSelected.value = item;
@@ -1239,6 +1619,9 @@ async function selectLiveTvChannel(item) {
     const video = liveTvVideo.value;
     if (!video) throw new Error("The TV preview is unavailable.");
     const startPlayback = async () => {
+      liveTvRecoveryAttempts = 0;
+      liveTvError.value = "";
+      liveTvLoading.value = false;
       try { await video.play(); } catch { /* Native controls remain available when autoplay is blocked. */ }
     };
     const Hls = await loadHlsConstructor();
@@ -1248,9 +1631,19 @@ async function selectLiveTvChannel(item) {
       liveTvHls.on(Hls.Events.MANIFEST_PARSED, startPlayback);
       liveTvHls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal) return;
-        liveTvLoading.value = false;
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) liveTvHls?.recoverMediaError();
-        else liveTvError.value = "This channel is unavailable right now.";
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR && liveTvRecoveryAttempts < 2) {
+          liveTvRecoveryAttempts += 1;
+          liveTvHls?.recoverMediaError();
+          return;
+        }
+        liveTvLoading.value = true;
+        liveTvError.value = "Reconnecting…";
+        liveTvRecoveryAttempts += 1;
+        const delay = Math.min(15_000, 750 * (2 ** Math.min(4, liveTvRecoveryAttempts - 1)));
+        clearTimeout(liveTvRecoveryTimer);
+        liveTvRecoveryTimer = setTimeout(() => {
+          if (liveTvSelected.value === item) selectLiveTvChannel(item, { recovery: true });
+        }, delay);
       });
       liveTvHls.attachMedia(video);
     } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -1259,8 +1652,13 @@ async function selectLiveTvChannel(item) {
     } else throw new Error("Live TV playback is not supported in this browser.");
   } catch (error) {
     if (requestId !== liveTvRequestId) return;
-    liveTvLoading.value = false;
-    liveTvError.value = error.message || "This channel is unavailable right now.";
+    liveTvLoading.value = true;
+    liveTvError.value = "Reconnecting…";
+    liveTvRecoveryAttempts += 1;
+    const delay = Math.min(15_000, 750 * (2 ** Math.min(4, liveTvRecoveryAttempts - 1)));
+    liveTvRecoveryTimer = setTimeout(() => {
+      if (liveTvSelected.value === item) selectLiveTvChannel(item, { recovery: true });
+    }, delay);
   }
 }
 
@@ -1273,9 +1671,24 @@ watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
 watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 
 async function closeWebPlayer() {
+  // Watch with Partner: tell the other participant to close too (unless it was
+  // them closing that brought us here). sendBeacon so it survives a tab close.
+  if (webWwpSessionId.value && !wwpRemoteEnded) {
+    const q = new URLSearchParams();
+    if (webStreamTicket.value) q.set("streamTicket", webStreamTicket.value);
+    if (deviceToken.value) q.set("deviceToken", deviceToken.value);
+    const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
+    try { navigator.sendBeacon(endUrl); } catch { fetch(endUrl, { method: "POST", keepalive: true }).catch(() => {}); }
+  }
+  wwpRemoteEnded = false;
   stopWwpSync();
   clearWebControlsTimer();
   clearWebRecoveryTimer();
+  clearTimeout(webStallTimer);
+  clearTimeout(webDirectStartupTimer);
+  webPlaybackToken += 1;
+  webStallTimer = null;
+  clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
   if (webSeekTimer) {
     clearTimeout(webSeekTimer);
@@ -1295,17 +1708,28 @@ async function closeWebPlayer() {
   webPlaying.value = false;
   webPlayerError.value = "";
   webFullscreen.value = false;
+  webMini.value = false;
+  webMiniPos.value = null;
   webPendingSeek.value = -1;
   webMediaReady.value = false;
   webBuffering.value = false;
-  webQualityMenuOpen.value = false;
 }
 
 async function toggleWebPlayback() {
   if (!webVideo.value) return;
+  const wwp = webWwpSessionId.value && !wwpApplyingRemote;
   if (webVideo.value.paused) {
+    wwpUserPaused = false;
+    if (wwp) sendWwpControl(false);
     try { await webVideo.value.play(); } catch { webPlayerError.value = "Playback could not start."; }
-  } else webVideo.value.pause();
+  } else {
+    wwpUserPaused = true;
+    clearWebRecoveryTimer();
+    clearTimeout(webStallTimer);
+    webStallTimer = null;
+    webVideo.value.pause();
+    if (wwp) sendWwpControl(true);
+  }
 }
 
 function seekWebMovie(event) {
@@ -1320,7 +1744,7 @@ function seekWebTo(target) {
   webCurrentTime.value = next;
   showWebControls();
   if (webSeekTimer) clearTimeout(webSeekTimer);
-  webSeekTimer = setTimeout(() => restartWebAt(next), 650);
+  webSeekTimer = setTimeout(() => restartWebAt(next, { userSeek: true }), 650);
 }
 
 function seekWebBy(seconds) {
@@ -1328,12 +1752,23 @@ function seekWebBy(seconds) {
   seekWebTo(basePosition + seconds);
 }
 
-async function restartWebAt(target) {
+async function restartWebAt(target, opts = {}) {
   webSeekTimer = null;
   if (!webNowPlaying.value) return;
   webPendingSeek.value = -1;
-  const directSource = webPlayerSrc.value;
-  if (directSource && !isHlsPlaybackUrl(directSource) && webVideo.value) {
+  // Only a deliberate user seek / quality change should move the partner. A
+  // reload from error-recovery or from following the partner must NOT, or a
+  // flaky provider's constant restarts turn into a restart cascade between the
+  // two players.
+  wwpSeekIntent = Boolean(opts.userSeek) && Boolean(webWwpSessionId.value);
+  wwpApplyingRemote = true;
+  setTimeout(() => { wwpApplyingRemote = false; }, 1500);
+  const nextSource = webPlayerSrc.value;
+  const nextIsHls = isHlsPlaybackUrl(nextSource);
+  // A bare element seek only works when the media element is already bound to
+  // this exact native stream (no HLS.js instance in play). When the transport
+  // kind is switching (rung <-> Auto), the element must be rebuilt instead.
+  if (nextSource && !nextIsHls && !webHls && webVideo.value) {
     webPlaybackOffset.value = 0;
     webCurrentTime.value = target;
     webPlayerError.value = "";
@@ -1341,32 +1776,18 @@ async function restartWebAt(target) {
     showWebControls();
     try {
       webVideo.value.currentTime = target;
-      await webVideo.value.play();
+      if (!await startWebPlayback(webVideo.value)) handleWebVideoError();
     } catch { handleWebVideoError(); }
     return;
   }
-  webPlaybackOffset.value = target;
+  webPlaybackOffset.value = nextIsHls ? target : 0;
   webCurrentTime.value = target;
+  if (!nextIsHls) webPendingSeek.value = target;
   webPlayerError.value = "";
   webBuffering.value = true;
   webMediaReady.value = false;
   showWebControls();
   await configureMoviePlayback(target);
-}
-
-async function chooseWebQuality(value) {
-  webQualityMenuOpen.value = false;
-  if (value === webQualityChoice.value) return;
-  webQualityChoice.value = value;
-  try { window.localStorage.setItem(webQualityKey, value); } catch { /* Safari private mode */ }
-  if (!webNowPlaying.value || webNowPlaying.value.kind === "channel") return;
-  // Re-open the stream at the current spot with the new rung. The backend forks
-  // a fresh ffmpeg job per rung, the same way a seek restarts playback.
-  const resumeAt = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
-  webForceHls.value = true;
-  webPlaybackRetryCount.value = 0;
-  showWebControls();
-  await restartWebAt(resumeAt);
 }
 
 // Watch with Partner: invite the account set in Settings to watch the exact
@@ -1379,11 +1800,17 @@ async function sendPartnerInvite() {
     const start = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
     const data = await request("/api/partner/invite", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, extension: item.extension || "", title: item.title || "", start, quality: webQualityChoice.value }),
+      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, extension: item.extension || "", title: item.title || "", start, quality: "", durationSeconds: Math.round(webDuration.value) || 0, hostAvatar: activeProfile.value?.avatarImage || "" }),
     });
     webWwpSessionId.value = data.wwpSessionId;
+    webIsWwpGuest.value = false; // we are the host - keep authenticating with our device token
     messageType.value = "success";
     message.value = `Invite sent to ${data.partnerEmail}.`;
+    // Force our own playback onto the shared HLS job. A direct-play MP4 keeps a
+    // second provider connection open that the partner's HLS job then can't get
+    // (one connection per provider line), so the partner never buffers until we
+    // close our player. Both sides must ride the identical HLS job.
+    webForceHls.value = true;
     // Reload our own stream at the same spot, now tagged with the session id,
     // so the server has something to reconcile the partner's join against.
     await restartWebAt(start);
@@ -1395,17 +1822,36 @@ async function sendPartnerInvite() {
 }
 
 async function joinPartnerInvite(invite) {
+  if (!invite?.wwpSessionId) return;
+  // A second tap on "Join" (or a re-delivered invite) must not spin up a
+  // second HLS.js on the same element and a second sync long-poll.
+  if (webWwpSessionId.value === invite.wwpSessionId && webNowPlaying.value) { pendingPartnerInvite.value = null; return; }
   pendingPartnerInvite.value = null;
   webStreamTicket.value = invite.streamTicket || "";
   webWwpSessionId.value = invite.wwpSessionId;
+  webIsWwpGuest.value = true; // joined via the host's ticket; never send our own token on media requests
   webForceHls.value = true;
-  webQualityMenuOpen.value = false;
   webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, extension: invite.extension || "", title: invite.title || "Watch with partner" };
   webPlaying.value = false;
-  webMuted.value = false;
-  webCurrentTime.value = 0;
-  webDuration.value = 0;
-  webPlaybackOffset.value = 0;
+  // The Join click's user-gesture is spent by the time HLS.js is ready, so the
+  // first play() will be an auto-play and must start muted; the unmute pill
+  // (and any tap on the video) restores sound.
+  webMuted.value = true;
+  webAutoplayBlocked.value = true;
+  const joinAt = Math.max(0, Number(invite.start) || 0);
+  webCurrentTime.value = joinAt;
+  // A WWP partner does not own the host's source. The invite carries the
+  // host's duration; if the host had none either, try the duration endpoint
+  // ourselves with the host's stream ticket (it resolves the snapshot / any
+  // cached probe under the host's account).
+  webDuration.value = Math.max(0, Number(invite.durationSeconds) || 0);
+  if (!webDuration.value && invite.kind !== "channel") void loadWwpGuestDuration(invite);
+  // The stream is served with -ss joinAt, so video.currentTime 0 maps to this
+  // absolute position - the display anchor must be joinAt, not 0, or the timer
+  // reads ~joinAt seconds behind the host. wwp-sync re-anchors it precisely to
+  // the shared job's real -ss right after (the server may snap our start).
+  webPlaybackOffset.value = joinAt;
+  webBufferedTime.value = joinAt;
   webPendingSeek.value = -1;
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
@@ -1413,8 +1859,7 @@ async function joinPartnerInvite(invite) {
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
-  if (invite.quality && webQualityOptions.some(option => option.value === invite.quality)) webQualityChoice.value = invite.quality;
-  await configureMoviePlayback(Math.max(0, Number(invite.start) || 0));
+  await configureMoviePlayback(joinAt);
   watchWwpSync();
 }
 
@@ -1422,30 +1867,44 @@ function toggleWebMute() {
   if (!webVideo.value) return;
   webVideo.value.muted = !webVideo.value.muted;
   webMuted.value = webVideo.value.muted;
+  if (!webMuted.value) webAutoplayBlocked.value = false;
+  if (!webMuted.value && webVideo.value.paused) startWebPlayback(webVideo.value);
 }
 
 async function fullscreenWebMovie(event) {
   event?.preventDefault?.();
   event?.stopPropagation?.();
-  const video = webVideo.value;
-  if (!video) return;
+  if (!webVideo.value) return;
 
-  const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
-  if (fullscreenElement || webFullscreen.value) {
+  // From the mini-player this just pops back to the full overlay.
+  if (webMini.value) { webMini.value = false; return; }
+  const fsElement = document.fullscreenElement || document.webkitFullscreenElement;
+  if (fsElement || webFullscreen.value) {
     try {
       if (document.exitFullscreen) await document.exitFullscreen();
       else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
-    } catch { /* CSS fullscreen can still be closed below. */ }
+      else if (webVideo.value.webkitExitFullscreen) webVideo.value.webkitExitFullscreen();
+    } catch { /* CSS fullscreen still toggled off below */ }
     webFullscreen.value = false;
+    webMini.value = true; // exit fullscreen -> float in the corner
     return;
   }
+  // Real OS-level fullscreen. Prefer the player element / page (keeps our own
+  // controls); on iPhone the element Fullscreen API does not exist, so fall
+  // back to the native <video> fullscreen, which IS the only true fullscreen
+  // there. The CSS .is-fullscreen layout rides along as a last resort.
+  webMini.value = false;
   webFullscreen.value = true;
-  const frame = video.closest(".web-video-frame") || video;
+  const target = webVideo.value.closest(".web-player") || document.documentElement;
   try {
-    if (frame.requestFullscreen) await frame.requestFullscreen();
-    else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
-    else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-  } catch { /* Keep the CSS fullscreen layout as a usable fallback. */ }
+    if (target.requestFullscreen) await target.requestFullscreen({ navigationUI: "hide" });
+    else if (target.webkitRequestFullscreen) target.webkitRequestFullscreen();
+    else if (webVideo.value.webkitEnterFullscreen) webVideo.value.webkitEnterFullscreen();
+    else if (webVideo.value.webkitRequestFullscreen) webVideo.value.webkitRequestFullscreen();
+  } catch {
+    // Element API rejected (rare) - try the native video before giving up.
+    try { webVideo.value.webkitEnterFullscreen?.(); } catch { /* CSS fallback */ }
+  }
   showWebControls();
 }
 
@@ -1454,6 +1913,9 @@ onBeforeUnmount(() => {
   stopLiveTvPreview({ clearSelection: true });
   stopPlaylistPreview({ clearSelection: true });
   clearWebRecoveryTimer();
+  clearTimeout(webStallTimer);
+  clearTimeout(liveTvRecoveryTimer);
+  clearTimeout(playlistPreviewRecoveryTimer);
   clearTimeout(webBufferingTimer);
   document.removeEventListener("fullscreenchange", handleFullscreenChange);
   document.removeEventListener("pointermove", handleWebPlayerPointerMove);
@@ -1461,7 +1923,10 @@ onBeforeUnmount(() => {
 
 function handleFullscreenChange() {
   if (document.fullscreenElement || !webFullscreen.value) return;
+  // Leaving fullscreen drops the player into the floating corner mini-player
+  // rather than the full in-app overlay, so the app stays usable behind it.
   webFullscreen.value = false;
+  if (webNowPlaying.value) webMini.value = true;
 }
 
 document.addEventListener("fullscreenchange", handleFullscreenChange);
@@ -1552,6 +2017,7 @@ async function loadWelcomeProvider(provider = sources.value.find(source => sourc
   } finally {
     if (requestId === welcomeProviderRequestId) welcomeProviderLoading.value = false;
   }
+  // The backdrop montage is per playlist provider - refresh it for this one.
 }
 
 function welcomeItemEnabled(item) {
@@ -1594,18 +2060,27 @@ function homeExtraItem(raw) {
   if (!raw || typeof raw !== "object") return null;
   const id = raw.id || raw.itemId;
   const kind = raw.kind || raw.type;
-  if (!id || !raw.sourceId || !["series", "movie", "channel"].includes(kind)) return null;
+  if (!id || !["series", "movie", "channel"].includes(kind)) return null;
+  // A saved favourite / continue-watching entry can carry a stale sourceId -
+  // the provider is recreated with a fresh _id per profile. When it no longer
+  // resolves, fall back to a source we can actually reach (the only one, or
+  // the currently selected provider) so its episodes/playback still work.
+  const resolvedSourceId = sources.value.some(source => source.id === raw.sourceId)
+    ? raw.sourceId
+    : (sources.value.length === 1 ? sources.value[0].id : (sourceId.value || raw.sourceId || ""));
+  if (!resolvedSourceId) return null;
   return homeItem({
     ...raw,
     id: String(id),
     kind,
+    sourceId: resolvedSourceId,
     logo: raw.logo || raw.poster || "",
     category: raw.category || raw.categoryId || "",
   }, kind);
 }
 
 function favoriteKeyOf(item) {
-  return `${item?.kind || "item"}:${item?.id || item?.itemId || ""}`;
+  return `${item?.sourceId || sourceId.value || ""}:${item?.kind || "item"}:${item?.id || item?.itemId || ""}`;
 }
 
 async function loadHomeExtras() {
@@ -1621,11 +2096,31 @@ async function loadHomeExtras() {
   homeContinueWatching.value = contItems.map(homeExtraItem).filter(Boolean);
 }
 
-function isHomeFavorite(item) {
-  return homeFavoriteKeys.value.has(favoriteKeyOf(item));
+// The player's favourite button acts on a series episode's SERIES, never the
+// single episode - the button just happens to live in the episode player.
+function favoriteTargetOf(item) {
+  if (item?.kind === "series" && item.isEpisode && item.seriesId) {
+    return {
+      id: String(item.seriesId),
+      kind: "series",
+      sourceId: item.sourceId || "",
+      title: item.seriesTitle
+        || (selectedSeries.value?.id === item.seriesId ? selectedSeries.value.title : "")
+        || String(item.title || "").split(" · ")[0]
+        || "",
+      logo: selectedSeries.value?.logo || item.logo || "",
+      category: item.category || "",
+    };
+  }
+  return item;
 }
 
-async function toggleHomeFavorite(item) {
+function isHomeFavorite(item) {
+  return homeFavoriteKeys.value.has(favoriteKeyOf(favoriteTargetOf(item)));
+}
+
+async function toggleHomeFavorite(rawItem) {
+  const item = favoriteTargetOf(rawItem);
   if (!item?.id || !item?.kind) return;
   const key = favoriteKeyOf(item);
   const next = new Set(homeFavoriteKeys.value);
@@ -1642,6 +2137,7 @@ async function toggleHomeFavorite(item) {
         id: item.id, title: item.title || "", kind: item.kind,
         sourceId: item.sourceId || "", logo: item.logo || "",
         category: item.category || item.categoryId || "", extension: item.extension || "",
+        favorite: !wasFavorite,
       }),
     });
   } catch (error) {
@@ -1654,9 +2150,14 @@ async function toggleHomeFavorite(item) {
 
 const homeRails = computed(() => {
   const rails = [];
-  if (homeFavorites.value.length) rails.push({ id: "favorites", eyebrow: "FAVORITES", title: "Your favorites", items: homeFavorites.value });
-  if (homeContinueWatching.value.length) rails.push({ id: "continue", eyebrow: "CONTINUE WATCHING", title: "Jump back in", items: homeContinueWatching.value });
-  if (homeRecommendations.value.length) rails.push({ id: "ai", eyebrow: "AI RECOMMENDATIONS", title: "Picked for you", items: homeRecommendations.value });
+  // Every rail on Welcome is scoped to the selected provider (the account +
+  // profile scoping is already done server-side by the device token).
+  const currentSource = String(sourceId.value || "");
+  const forProvider = list => currentSource ? list.filter(entry => String(entry?.sourceId || "") === currentSource) : list;
+  const favorites = forProvider(homeFavorites.value);
+  const continueWatching = forProvider(homeContinueWatching.value);
+  if (favorites.length) rails.push({ id: "favorites", eyebrow: "FAVORITES", title: "Your favorites", items: favorites });
+  if (continueWatching.length) rails.push({ id: "continue", eyebrow: "CONTINUE WATCHING", title: "Jump back in", items: continueWatching });
   for (const rail of [{ kind: "series", label: "New series" }, { kind: "movie", label: "New movies" }, { kind: "channel", label: "New live channels" }]) {
     const items = welcomeProviderItems.value[rail.kind] || [];
     if (items.length) rails.push({ id: `new-${rail.kind}`, eyebrow: rail.label.toUpperCase(), title: rail.label, items });
@@ -1667,45 +2168,6 @@ const homeRails = computed(() => {
 async function loadHomeData(force = false) {
   if (!deviceToken.value) return;
   void loadHomeExtras();
-  const requestId = ++homeRequestId;
-  homeLoading.value = true;
-  homeError.value = "";
-  try {
-    const language = homeRecommendationLanguage.value;
-    const recommendations = await request("/api/recommendations/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ language }) });
-    if (requestId === homeRequestId) homeRecommendations.value = (recommendations.items || [])
-      .map(item => {
-        const home = homeItem(item, item?.kind || item?.type);
-        // The selection API only accepts `kind:id` keys; the 3-part home key
-        // is rejected, so items added from this rail must carry the short key.
-        return home ? { ...home, key: `${home.kind}:${home.id}` } : null;
-      })
-      .filter(Boolean);
-  } catch (error) {
-    if (requestId === homeRequestId) homeRecommendations.value = [];
-    if (requestId === homeRequestId && error?.status !== 404) homeError.value = "Some recommendations are temporarily unavailable.";
-  } finally {
-    if (requestId === homeRequestId) homeLoading.value = false;
-  }
-  if (requestId === homeRequestId && homeRecommendations.value.length) pollHomeBackdrop(0);
-}
-
-let homeBackdropTimer = 0;
-async function pollHomeBackdrop(attempt = 0) {
-  window.clearTimeout(homeBackdropTimer);
-  if (!deviceToken.value || !browserApp.value || attempt > 20) return;
-  try {
-    const language = homeRecommendationLanguage.value;
-    const status = await request(`/api/recommendations/ai/backdrop?language=${encodeURIComponent(language)}`, { cache: "no-store" });
-    if (status?.ready && status.url) {
-      const separator = status.url.includes("?") ? "&" : "?";
-      homeBackdropUrl.value = api(`${status.url}${separator}deviceToken=${encodeURIComponent(deviceToken.value)}`);
-      return;
-    }
-    if (status?.building || attempt < 3) homeBackdropTimer = window.setTimeout(() => pollHomeBackdrop(attempt + 1), 8000);
-  } catch {
-    /* backdrop is best-effort; stop polling on error */
-  }
 }
 
 function playHomeItem(item) {
@@ -1765,28 +2227,66 @@ async function watchWwpSync() {
   const controller = wwpSyncController;
   try {
     const url = new URL(`${browserStreamer}/api/xtream/wwp-sync/${encodeURIComponent(sessionId)}`);
-    url.searchParams.set("since", String(wwpSyncRevision));
+    url.searchParams.set("since", wwpSyncToken);
+    // Both credentials - see sendWwpControl. The host's 5-minute stream ticket
+    // must not be the only key or their follow-the-partner sync dies at 5 min.
+    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
     if (webStreamTicket.value) url.searchParams.set("streamTicket", webStreamTicket.value);
-    else if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
     const response = await fetch(url, { cache: "no-store", signal: controller.signal });
     if (controller.signal.aborted || webWwpSessionId.value !== sessionId) return;
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || "Watch with Partner sync failed");
     wwpSyncController = null;
+    // The other partner closed their player - close ours too.
+    if (data.ended === true) { wwpRemoteEnded = true; closeWebPlayer(); return; }
     const nextRevision = Number(data.revision) || 0;
-    const changed = wwpSyncRevision > 0 && nextRevision !== wwpSyncRevision;
-    wwpSyncRevision = nextRevision;
-    if (changed && webNowPlaying.value) {
-      const incomingStart = Math.max(0, Number(data.start) || 0);
-      const currentPosition = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
-      const staleEcho = Math.abs(incomingStart - currentPosition) < 2 && (!data.quality || data.quality === webQualityChoice.value);
-      if (!staleEcho) {
-        if (data.quality && webQualityOptions.some(option => option.value === data.quality) && data.quality !== webQualityChoice.value) {
-          webQualityChoice.value = data.quality;
-          try { window.localStorage.setItem(webQualityKey, data.quality); } catch { /* Safari private mode */ }
-        }
-        await restartWebAt(incomingStart);
+    const nextControlRevision = Number(data.controlRevision) || 0;
+    const firstPoll = wwpSyncToken === "";
+    const seekChanged = !firstPoll && nextRevision !== wwpKnownRevision;
+    // Also honour a paused partner on our very first poll (we joined while they
+    // were already paused), so we do not start playing out of sync.
+    const controlChanged = firstPoll ? data.paused === true : nextControlRevision !== wwpKnownControlRevision;
+    wwpKnownRevision = nextRevision;
+    wwpKnownControlRevision = nextControlRevision;
+    wwpSyncToken = String(data.token || `${nextRevision}.${nextControlRevision}`);
+    // Frame-lock: track the host's clock + last known position for the follower.
+    wwpClockOffset = (Number(data.serverNow) || Date.now()) - Date.now();
+    if (webIsWwpGuest.value && Number.isFinite(Number(data.controlAt))) {
+      wwpHostState = {
+        posMs: Number(data.controlPositionMs) || 0,
+        atServerMs: Number(data.controlAt) || Date.now(),
+        paused: data.paused === true,
+      };
+    }
+    startWwpFollowing();
+    // Voice call: a non-empty callRing while we are not already in the call
+    // means the partner tapped "Start call".
+    webCallIncoming.value = Boolean(data.callRing) && !webCallActive.value;
+    if (webNowPlaying.value) {
+      // Re-anchor the displayed position to the shared job's real -ss. Both
+      // participants request their own (0.1s-different) start and the server
+      // snaps them onto one job; data.start is that authoritative offset. Only
+      // adjust for a small settled gap - a big one is a genuine seek handled
+      // below, and mid-restart we leave it alone.
+      const anchor = Math.max(0, Number(data.start) || 0);
+      const anchorGap = anchor - webPlaybackOffset.value;
+      if (!seekChanged && !wwpApplyingRemote && Math.abs(anchorGap) > 1.5 && Math.abs(anchorGap) < 25) {
+        webPlaybackOffset.value = anchor;
+        webCurrentTime.value = Math.max(0, webCurrentTime.value + anchorGap);
+        webBufferedTime.value = Math.max(webBufferedTime.value + anchorGap, webCurrentTime.value);
       }
+      if (seekChanged) {
+        const incomingStart = Math.max(0, Number(data.start) || 0);
+        // Compare against the LAST job -ss we saw, not our drifting playback
+        // position - otherwise every revision bump yanks us back by however
+        // long we have been watching since.
+        const startMoved = wwpLastSeenStart < 0 || Math.abs(incomingStart - wwpLastSeenStart) > 1;
+        wwpLastSeenStart = incomingStart;
+        if (startMoved) {
+          await restartWebAt(incomingStart);
+        }
+      }
+      if (controlChanged) await applyRemoteWwpControl(data);
     }
     watchWwpSync();
   } catch (error) {
@@ -1795,11 +2295,96 @@ async function watchWwpSync() {
   }
 }
 
+// Host: broadcast our position every 3s. Guest: converge onto the host's
+// position every 2s (extrapolated from the last wwp-sync). Neither ever blocks
+// the other, so there is no deadlock path.
+function startWwpFollowing() {
+  if (!webWwpSessionId.value) return;
+  if (webIsWwpGuest.value) {
+    if (!wwpFollowTimer) wwpFollowTimer = window.setInterval(followWwpHost, 2000);
+  } else if (!wwpHostBeatTimer) {
+    wwpHostBeatTimer = window.setInterval(() => {
+      if (webWwpSessionId.value && !webIsWwpGuest.value) sendWwpControl(Boolean(webVideo.value?.paused));
+    }, 3000);
+  }
+}
+function stopWwpFollowing() {
+  if (wwpHostBeatTimer) { window.clearInterval(wwpHostBeatTimer); wwpHostBeatTimer = null; }
+  if (wwpFollowTimer) { window.clearInterval(wwpFollowTimer); wwpFollowTimer = null; }
+  wwpHostState = null; wwpClockOffset = 0; wwpUserPaused = false;
+  const video = webVideo.value;
+  if (video && video.playbackRate !== 1) video.playbackRate = 1;
+}
+function followWwpHost() {
+  const video = webVideo.value;
+  if (!webIsWwpGuest.value || !video || !webNowPlaying.value || !wwpHostState) return;
+  if (wwpApplyingRemote || webSeekTimer || webBuffering.value || webPlayerError.value) return;
+  if (wwpHostState.paused) {
+    if (!video.paused) { wwpApplyingRemote = true; video.pause(); webPlaying.value = false; setTimeout(() => { wwpApplyingRemote = false; }, 300); }
+    return;
+  }
+  if (video.paused) {
+    if (!wwpUserPaused) startWebPlayback(video).catch(() => {});
+    return;
+  }
+  const serverNow = Date.now() + wwpClockOffset;
+  const expected = wwpHostState.posMs / 1000 + Math.max(0, serverNow - wwpHostState.atServerMs) / 1000;
+  const drift = (webPlaybackOffset.value + (video.currentTime || 0)) - expected;   // >0 = guest ahead
+  const abs = Math.abs(drift);
+  if (abs > 1.5 && Date.now() - wwpLastFollowSeek > 3500) {
+    wwpLastFollowSeek = Date.now();
+    try { video.currentTime = Math.max(0, (video.currentTime || 0) - drift); } catch { /* not seekable yet */ }
+    video.playbackRate = 1;
+  } else if (abs > 0.35) {
+    video.playbackRate = drift > 0 ? 0.93 : 1.07;
+  } else if (video.playbackRate !== 1) {
+    video.playbackRate = 1;
+  }
+}
+
 function stopWwpSync() {
+  endWebCall();
+  stopWwpFollowing();
+  webCallIncoming.value = false;
   webWwpSessionId.value = "";
-  wwpSyncRevision = 0;
+  webIsWwpGuest.value = false;
+  wwpSyncToken = "";
+  wwpKnownRevision = 0;
+  wwpKnownControlRevision = 0;
+  wwpLastSeenStart = -1;
   if (wwpSyncController) { wwpSyncController.abort(); wwpSyncController = null; }
   if (wwpSyncRetryTimer) { clearTimeout(wwpSyncRetryTimer); wwpSyncRetryTimer = null; }
+}
+
+// Watch with Partner voice call. The RTCPeerConnection lives in the iframe
+// (webCallUrl); here we just show/hide it and answer the ring.
+function startWebCall() {
+  if (!webWwpSessionId.value || webCallActive.value) return;
+  webPartnerMenuOpen.value = false;
+  webCallRole.value = "caller";
+  webCallIncoming.value = false;
+  webCallActive.value = true;
+}
+function answerWebCall() {
+  if (!webWwpSessionId.value) return;
+  webCallRole.value = "callee";
+  webCallIncoming.value = false;
+  webCallActive.value = true;
+}
+function declineWebCall() {
+  webCallIncoming.value = false;
+  const sessionId = webWwpSessionId.value;
+  if (!sessionId) return;
+  const token = webStreamTicket.value || deviceToken.value || "";
+  fetch(`${browserStreamer}/api/xtream/wwp-call/${encodeURIComponent(sessionId)}/ring?ringing=0&streamTicket=${encodeURIComponent(token)}&deviceToken=${encodeURIComponent(token)}`, { cache: "no-store" }).catch(() => {});
+}
+function endWebCall() {
+  if (!webCallActive.value) return;
+  try { webCallFrame.value?.contentWindow?.postMessage({ wwpCall: "hangup" }, "*"); } catch { /* iframe gone */ }
+  webCallActive.value = false;
+}
+function onWwpCallMessage(event) {
+  if (event?.data?.wwpCall === "ended") webCallActive.value = false;
 }
 
 function openCategoryItems(category) {
@@ -1920,11 +2505,6 @@ async function loadPlaylistHealth() {
   }
 }
 
-async function loadLinkedDevices() {
-  const data = await request(`/api/account/devices?refresh=${Date.now()}`, { cache: "no-store" });
-  linkedDevices.value = data.items || [];
-}
-
 async function loadWeatherSettings() {
   if (!deviceToken.value) return;
   const data = await request("/api/account/weather-locations");
@@ -2009,6 +2589,10 @@ async function loadCatalog(reset = true) {
     const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     const nextItems = data.items || [];
+    if (data.stale) {
+      message.value = "Showing the last saved provider catalog. It may be out of date.";
+      messageType.value = "warning";
+    }
     const mergedItems = reset ? nextItems : [...items.value, ...nextItems.filter(item => !items.value.some(existing => existing.key === item.key))];
     items.value = mergedItems.sort(compareCatalogTitles);
     rememberItems(nextItems);
@@ -2076,7 +2660,6 @@ async function deleteCurrentSource() {
 }
 async function chooseKind(value) { if (kind.value === value && items.value.length) return; kind.value = value; category.value = "all"; titleLanguage.value = "all"; query.value = ""; loadPlaylistCategories(); await loadCatalog(); }
 function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems([item]); selectedKeys.value = selectedKeys.value.includes(item.key) ? selectedKeys.value.filter(key => key !== item.key) : [...selectedKeys.value, item.key]; }
-async function movePage(delta) { page.value += delta; await loadCatalog(false); }
 
 let searchTimer;
 let deviceStatusTimer;
@@ -2085,9 +2668,12 @@ watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-
 watch(safariPage, value => {
   if (!deviceToken.value) return;
   if (value === "playlist") loadPlaylistCategories();
+  // Welcome needs its provider rails refreshed too - loadSources() fans out to
+  // loadManagedLibrary() + loadWelcomeProvider() when the Welcome page is open,
+  // so navigating back to Welcome always repopulates it.
   const pageRequest = value === "playlist"
     ? loadSources()
-    : value === "settings"
+    : (value === "settings" || value === "welcome")
       ? loadSources(sourceId.value, { loadPlaylist: false })
       : loadManagedLibrary();
   pageRequest.catch(error => {
@@ -2103,14 +2689,33 @@ onMounted(async () => {
   document.addEventListener("keydown", handleNavigationKeydown);
   window.addEventListener("popstate", enforceProfileSelection);
   window.addEventListener("pageshow", blurRestoredLoginFocus);
+  window.addEventListener("message", onWwpCallMessage);
   if (pairing.value) {
     blurRestoredLoginFocus();
     window.setTimeout(blurRestoredLoginFocus, 0);
   }
   try {
+    // Roku Settings' "Browser auto log in" QR lands here with ?pair=<code>.
+    // The Roku already proved account ownership when it minted the code, so
+    // scanning it is treated as sufficient proof here too - no password.
+    const pairCode = new URLSearchParams(window.location.search).get("pair");
     if (pairCode) {
-      await loadPairingInfo();
-      return;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("pair");
+      window.history.replaceState({}, "", url);
+      if (!deviceToken.value) {
+        try {
+          const claim = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+          if (claim?.token) {
+            window.localStorage.setItem("rh-device-token", claim.token);
+            deviceToken.value = claim.token;
+            pairing.value = false;
+          }
+        } catch (error) {
+          messageType.value = "error";
+          message.value = error.message;
+        }
+      }
     }
     if (!deviceToken.value) return;
     if (window.sessionStorage.getItem(profileSelectionKey)) {
@@ -2127,7 +2732,7 @@ onMounted(async () => {
     await Promise.all([request("/api/health"), loadSources(sourceId.value, { loadPlaylist: false })]);
     online.value = true;
     appReady.value = true;
-    void Promise.all([loadLinkedDevices(), loadWeatherSettings(), sendBrowserHeartbeat(), loadPartnerSettings()]).catch(() => {});
+    void Promise.all([loadWeatherSettings(), sendBrowserHeartbeat(), loadPartnerSettings()]).catch(() => {});
     void request("/api/account/profiles").then(data => {
       profiles.value = data.items || [];
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
@@ -2143,52 +2748,81 @@ onMounted(async () => {
     watchLibraryRevision();
     watchPartnerInvite();
     deviceStatusTimer = window.setInterval(() => {
-      if (!pairing.value && deviceToken.value) { loadLinkedDevices().catch(() => {}); sendBrowserHeartbeat(); loadPartnerSettings().catch(() => {}); }
+      if (!pairing.value && deviceToken.value) { sendBrowserHeartbeat(); loadPartnerSettings().catch(() => {}); }
     }, 10_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
 </script>
 
 <template>
-  <main class="shell" :class="{ 'safari-app-mode': browserApp, 'login-shell': pairing }">
-    <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
-    <section v-if="pairing" class="pairing-gate login-gate">
-      <div class="pairing-card login-card" :class="{ 'login-card-plain': !pairCode }">
-        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV PLAYER</span></div>
-        <p v-if="pairCode" class="eyebrow">ROKU LIBRARY</p>
-        <h1 v-if="pairCode && isPairingSignup">Create your account</h1>
-        <h1 v-else-if="pairCode">Open your Roku library</h1>
-        <h1 v-else-if="!isPairingSignup">Sign in to your library</h1>
-        <h1 v-else>Create your account</h1>
-        <p v-if="pairCode && !pairingReady">Checking the secure Roku link…</p>
-        <template v-else-if="pairCode">
-          <p>{{ isPairingSignup ? 'Create an account to activate this Roku and manage its library from your phone.' : 'Sign in to link this Roku and open its library. The TV will connect automatically.' }}</p>
-          <p class="pairing-device-code">You are linking Roku device <code>{{ pairingDeviceId || pairCode }}</code>. This device identity is saved with your account; your email address and password are never stored in or shared through the QR code.</p>
-          <form novalidate @submit.prevent="claimPairing">
-            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required :autocomplete="isPairingSignup ? 'new-password' : 'current-password'" placeholder="Your password"></label>
-            <label v-if="isPairingSignup">Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
-            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ isPairingSignup ? 'Create account & activate Roku' : 'Sign in & link Roku' }}</span></button>
-            <button v-if="pairingNeedsSignup" type="button" class="source-action" @click="pairingMode = isPairingSignup ? 'login' : 'signup'">{{ isPairingSignup ? 'I already have an account' : 'Create a new account' }}</button>
-          </form>
+  <main class="shell" :class="{ 'safari-app-mode': browserApp && !legalPage, 'login-shell': pairing && !legalPage, 'legal-shell': legalPage }">
+    <section v-if="legalPage" class="legal-page" :aria-labelledby="`${legalPage}-title`">
+      <div class="legal-page-inner">
+        <a class="legal-brand" href="/" aria-label="RH IPTV Player home"><span class="legal-brand-mark">RH</span><span>IPTV PLAYER</span></a>
+        <p class="legal-eyebrow">RH IPTV PLAYER</p>
+        <h1 :id="`${legalPage}-title`">{{ legalPage === 'terms' ? 'Terms of use' : legalPage === 'delete-account' ? 'Delete your account' : (legalPage === 'android-privacy' ? 'Android privacy policy' : 'Privacy policy') }}</h1>
+        <p class="legal-updated">Effective September 11, 2026</p>
+        <template v-if="legalPage === 'delete-account'">
+          <p>You can permanently delete your RH IPTV Player account, profiles, library, favourites, and playback history at any time, from a browser or the app - no need to keep it installed.</p>
+          <h2>Delete it yourself (immediate)</h2>
+          <p>1. Sign in at <a :href="browserOrigin">{{ browserOrigin }}</a> (or open the app) with your account email and password.<br>2. Go to <strong>Settings &rarr; Delete account</strong>.<br>3. Confirm with your password. Your account and all associated data are deleted immediately - this cannot be undone.</p>
+          <h2>Can't sign in? Request deletion by email</h2>
+          <p>Email <a href="mailto:rudyhamameca@gmail.com?subject=Delete%20my%20RH%20IPTV%20Player%20account">rudyhamameca@gmail.com</a> from the address on your account and we will delete it for you, usually within a few days.</p>
+          <h2>What gets deleted</h2>
+          <p>Your account credentials, profiles, linked devices, favourites, watch history and resume positions, and any Watch-with-Partner pairing are all permanently removed. Provider/playlist credentials you connected are deleted along with the account, not retained separately.</p>
+          <h2>Delete only some of your data</h2>
+          <p>You don't have to delete your whole account to remove specific data. From the app or <a :href="browserOrigin">{{ browserOrigin }}</a> you can: remove individual titles from Favourites or your Library, and delete a connected playlist/provider (Settings &rarr; Sources) to erase its catalogue and credentials while keeping the rest of your account.</p>
         </template>
-        <template v-else-if="!isPairingSignup">
-          <template v-if="!scannerOpen">
-            <form novalidate @submit.prevent="signIn">
-              <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-              <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
-              <label v-if="loginDevices.length">Roku device<select v-model="selectedLoginDevice" required><option v-for="device in loginDevices" :key="device.deviceId" :value="device.deviceId">{{ device.label }}</option></select></label>
-              <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
-            </form>
-            <button type="button" class="source-action login-signup-action" @click="pairingMode = 'signup'">Sign up</button>
-            <p class="login-scan-copy">To link a new Roku, scan its QR code.</p>
-            <button type="button" class="source-action scan-action" @click="startQrScanner">Scan Roku QR code</button>
-          </template>
-          <div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div>
-          <p v-if="scannerError" class="xtream-message is-error">{{ scannerError }}</p>
+        <template v-else-if="legalPage === 'privacy' || legalPage === 'android-privacy'">
+          <p v-if="legalPage === 'android-privacy'">RH IPTV Player for Android is a personal streaming library that lets you connect an authorised provider, organise content by profile, and continue watching across linked devices. This policy explains what information the Android app uses and how it is protected.</p>
+          <p v-else>RH IPTV Player is a personal streaming library that lets you connect an authorised provider, organise content by profile, and continue watching across linked devices. This policy explains what information we use to provide those features.</p>
+          <h2>Information we collect</h2>
+          <p>We collect your email address and password when you create an account, profile names and preferences you choose, linked-device and pairing information, favourites, playback history, and resume positions. Provider credentials and catalogue data are used only to connect your authorised playlist and deliver requested media.</p>
+          <h2>How we use information</h2>
+          <p>We use this information to authenticate you, keep your library isolated to your account and profiles, synchronise playback and favourites, operate subscriptions, prevent abuse, and provide support. We do not sell personal information or use it for third-party advertising.</p>
+          <h2>Sharing and retention</h2>
+          <p>Information is shared only with the service providers needed to host the app, store account data, process Roku subscriptions, and deliver media you request. We retain account data while your account is active or as needed for security and legal obligations. You may <a href="/delete-account">delete your account and all associated data</a> at any time.</p>
+          <h2>Security and your choices</h2>
+          <p>We use authenticated connections and scoped account access. You are responsible for keeping your password and provider credentials private. You can update profile data or <a href="/delete-account">delete your account</a> at any time.</p>
+          <h2>Contact</h2>
+          <p>Questions or privacy requests: <a href="mailto:rudyhamameca@gmail.com">rudyhamameca@gmail.com</a>.</p>
         </template>
         <template v-else>
-          <p>Create an account to manage your Roku library. You can link a Roku after signing up.</p>
+          <p>These Terms govern your use of RH IPTV Player. By creating an account, linking a Roku device, or using the service, you agree to these Terms.</p>
+          <h2>Eligibility and accounts</h2>
+          <p>You must provide accurate information and keep your account secure. You are responsible for activity under your account and for ensuring that anyone using a linked profile is authorised by you.</p>
+          <h2>Authorised content and providers</h2>
+          <p>RH IPTV Player is a software client and library manager. You may connect only playlists and media sources that you are legally entitled to access. We do not provide or endorse unauthorised content, and availability depends on the provider you choose.</p>
+          <h2>Subscriptions and payments</h2>
+          <p>Any paid plan, price, billing period, renewal, cancellation, and refund terms are shown at purchase through Roku Pay. Subscriptions are processed by Roku and are subject to Roku’s payment terms. Cancelling stops future renewals; access continues through the paid period unless otherwise stated.</p>
+          <h2>Acceptable use</h2>
+          <p>Do not bypass authentication, share access in a way that violates your provider’s terms, interfere with the service, or use it for unlawful purposes. We may suspend access when necessary to protect users or the service.</p>
+          <h2>Availability and liability</h2>
+          <p>The service is provided as available. Provider outages, network conditions, device limitations, and catalogue changes may affect playback. To the extent permitted by law, RH IPTV Player is not liable for indirect losses arising from those conditions.</p>
+          <h2>Contact</h2>
+          <p>Support: <a href="mailto:rudyhamameca@gmail.com">rudyhamameca@gmail.com</a>.</p>
+        </template>
+        <nav class="legal-links" aria-label="Legal navigation"><a href="/privacy">Privacy policy</a><a href="/android/privacy">Android privacy policy</a><a href="/terms">Terms of use</a><a href="/delete-account">Delete account</a><a href="/">Back to RH IPTV Player</a></nav>
+      </div>
+    </section>
+    <div v-if="!legalPage" class="app-content">
+    <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
+    <section v-if="pairing" class="pairing-gate login-gate">
+      <div class="login-art"><img class="login-rh-art" src="/login/rh-login-art.png" alt="RH"></div>
+      <div class="pairing-card login-card login-card-plain">
+        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV PLAYER</span></div>
+        <h1 v-if="!isPairingSignup">Sign in to your library</h1>
+        <h1 v-else>Create your account</h1>
+        <template v-if="!isPairingSignup">
+          <form novalidate @submit.prevent="signIn">
+            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
+            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
+          </form>
+          <button type="button" class="source-action login-signup-action" @click="pairingMode = 'signup'">Sign up</button>
+        </template>
+        <template v-else>
+          <p>Create an account to start building your library.</p>
           <form novalidate @submit.prevent="signUp">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
@@ -2209,7 +2843,7 @@ onMounted(async () => {
           <button v-for="profile in profiles" :key="profile.id" type="button" class="profile-option" :disabled="profileBusy" @click="chooseProfile(profile)">
             <span class="profile-avatar" :class="`profile-avatar-${profile.avatar || 'lime'}`"><img v-if="profile.avatarImage" :src="profile.avatarImage" alt=""><template v-else>{{ profile.name.slice(0, 1).toUpperCase() }}</template></span>
             <strong>{{ profile.name }}</strong>
-            <small>{{ profile.isDefault ? 'Main profile' : 'Library profile' }}</small>
+            <small class="profile-lock-line"><LockKeyholeIcon v-if="profile.hasPin" /><LockKeyholeOpenAltIcon v-else /><span>{{ profile.hasPin ? 'PIN protected' : (profile.isDefault ? 'Main profile' : 'Library profile') }}</span></small>
           </button>
         </div>
         <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
@@ -2219,7 +2853,7 @@ onMounted(async () => {
     <template v-else>
     <template v-if="browserApp">
       <div class="home-background" aria-hidden="true"></div>
-      <video v-if="homeBackdropUrl && safariPage === 'welcome'" class="home-backdrop-video" :class="{done:homeBackdropPlayed}" :src="homeBackdropUrl" autoplay muted loop playsinline preload="auto" aria-hidden="true" @playing="homeBackdropPlayed = true" @error="homeBackdropUrl = ''"></video>
+      <video v-if="homeBackdropUrl && safariPage === 'welcome'" class="home-backdrop-video" :src="homeBackdropUrl" autoplay muted loop playsinline preload="auto" aria-hidden="true" @error="homeBackdropUrl = ''"></video>
       <div class="home-aurora home-aurora-one" aria-hidden="true"></div>
       <div class="home-aurora home-aurora-two" aria-hidden="true"></div>
       <div class="home-overlay" aria-hidden="true"></div>
@@ -2228,9 +2862,9 @@ onMounted(async () => {
       <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV Player</span></div>
       <div class="topbar-actions"><button type="button" class="logout-button" @click="logout">Log out</button></div>
     </nav>
-    <section v-if="browserApp" class="browser-app-shell">
+    <section v-if="browserApp" class="browser-app-shell" :class="{ 'nav-open': navOpen }">
       <aside class="browser-sidebar">
-        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"></div>
+        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"></button>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
@@ -2238,13 +2872,13 @@ onMounted(async () => {
         <header class="welcome-page-heading">
           <div><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1></div>
           <div class="welcome-identity-cluster" :class="partnerEmail ? (partnerLinked ? (partnerOnline ? 'is-online' : 'is-offline') : 'is-unknown') : ''">
-            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
             <template v-if="partnerEmail">
+              <button type="button" class="welcome-profile-button" :aria-label="'Watch partner: ' + (partnerName || partnerEmail)" :title="partnerName || partnerEmail" @click="openSafariPage('settings')"><span class="profile-avatar welcome-partner-avatar"><img v-if="partnerAvatar" :src="partnerAvatar" alt=""><template v-else>{{ (partnerName || partnerEmail).slice(0, 1).toUpperCase() }}</template></span></button>
               <button type="button" class="welcome-partner-link" :aria-label="partnerLinked ? ((partnerName || partnerEmail) + (partnerOnline ? ' is online' : ' is offline')) : ('Watch partner not found: ' + partnerEmail)" :title="partnerLinked ? ((partnerName || partnerEmail) + (partnerOnline ? ' · online' : ' · offline')) : ('Watch partner not found: ' + partnerEmail)" @click="openSafariPage('settings')">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M17 7h-3v2h3c1.65 0 3 1.35 3 3s-1.35 3-3 3h-3v2h3c2.76 0 5-2.24 5-5s-2.24-5-5-5M7 17h3v-2H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h3V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5"/><path d="M6 11h12v2H6z"/></svg>
               </button>
-              <button type="button" class="welcome-profile-button" :aria-label="'Watch partner: ' + (partnerName || partnerEmail)" :title="partnerName || partnerEmail" @click="openSafariPage('settings')"><span class="profile-avatar welcome-partner-avatar">{{ (partnerName || partnerEmail).slice(0, 1).toUpperCase() }}</span></button>
             </template>
+            <button v-if="activeProfile" type="button" class="welcome-profile-button" aria-label="Change profile" title="Change profile" @click="profileChooser = true"><span class="profile-avatar" :class="`profile-avatar-${activeProfile.avatar || 'lime'}`"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt=""><template v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</template></span></button>
           </div>
         </header>
 
@@ -2252,7 +2886,10 @@ onMounted(async () => {
           <div class="welcome-provider-head">
             <div class="welcome-provider-head-text">
               <p class="eyebrow">YOUR PLAYLIST</p>
-              <h1>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') : 'No provider connected' }}</h1>
+              <select v-if="sources.length > 1" class="welcome-provider-select" aria-label="Choose playlist provider" :value="sourceId" @change="chooseSource($event.target.value)">
+                <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
+              </select>
+              <h1 v-else>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') : 'No provider connected' }}</h1>
             </div>
             <div v-if="sources.length" class="welcome-provider-stats" aria-label="Provider catalog totals">
               <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
@@ -2269,15 +2906,23 @@ onMounted(async () => {
         <section v-for="rail in homeRails" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div></header>
           <div class="home-rail-track">
-            <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" role="button" tabindex="0" @click="toggleWelcomeItem(item)" @keydown.enter.prevent="toggleWelcomeItem(item)">
+            <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
               <span class="home-card-art">
                 <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
                 <span v-else class="home-card-fallback"><b>RH</b><em>{{ item.title }}</em></span>
-                <button type="button" class="home-fav-action" :class="{on:isHomeFavorite(item)}" :aria-label="isHomeFavorite(item) ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleHomeFavorite(item)">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" :fill="isHomeFavorite(item) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="m12 17.3-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.8 1.6 7z"/></svg>
-                </button>
+                <transition name="card-fade">
+                  <button v-if="openCardKey === homeItemKey(item)" type="button" class="home-fav-action" :class="{on:isHomeFavorite(item)}" :aria-label="isHomeFavorite(item) ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleHomeFavorite(item)">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" :fill="isHomeFavorite(item) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="m12 17.3-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.8 1.6 7z"/></svg>
+                  </button>
+                </transition>
+                <transition name="card-fade">
+                  <span v-if="openCardKey === homeItemKey(item)" class="card-actions">
+                    <button type="button" class="card-action-btn" aria-label="Play" title="Play" @click.stop="playLibraryItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+                    <button type="button" class="card-action-btn" :class="{on:welcomeItemEnabled(item)}" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" :title="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" @click.stop="toggleWelcomeItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path :d="welcomeItemEnabled(item) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"/></svg></button>
+                  </span>
+                </transition>
               </span>
-              <strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || typeLabel(item.kind) }}</small>
+              <strong>{{ item.title }}</strong><small>{{ item.category || typeLabel(item.kind) }}</small>
             </div>
           </div>
         </section>
@@ -2308,15 +2953,18 @@ onMounted(async () => {
           </p>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="playlist-grid" :class="{'is-channel-grid':kind === 'channel'}" @scroll="handlePlaylistScroll">
-            <div v-for="item in visibleItems" :key="item.key" class="playlist-card" :class="{enabled:savedKeys.has(item.key)}" tabindex="0" role="button" :aria-pressed="savedKeys.has(item.key)" @click="toggleWelcomeItem(item)" @keydown.enter.prevent="toggleWelcomeItem(item)" @keydown.space.prevent="toggleWelcomeItem(item)">
+            <div v-for="item in visibleItems" :key="item.key" class="playlist-card" :class="{enabled:savedKeys.has(item.key), 'is-open': openCardKey === item.key}" @click="toggleCardActions(item.key)">
               <span class="playlist-card-art">
                 <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
                 <span v-else class="playlist-card-fallback" :data-kind="kind"><span class="fallback-mark">RH</span><span class="fallback-name">{{ item.title }}</span><span class="fallback-kind">{{ typeLabel(kind) }}</span></span>
-                <span class="playlist-card-toggle" :class="{on:savedKeys.has(item.key)}" aria-hidden="true">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path :d="savedKeys.has(item.key) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"></path></svg>
-                </span>
+                <transition name="card-fade">
+                  <span v-if="openCardKey === item.key" class="card-actions">
+                    <button type="button" class="card-action-btn" aria-label="Play" title="Play" @click.stop="playLibraryItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+                    <button type="button" class="card-action-btn" :class="{on:savedKeys.has(item.key)}" :aria-label="savedKeys.has(item.key) ? 'Remove from library' : 'Add to library'" :title="savedKeys.has(item.key) ? 'Remove from library' : 'Add to library'" @click.stop="toggleWelcomeItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path :d="savedKeys.has(item.key) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"></path></svg></button>
+                  </span>
+                </transition>
               </span>
-              <span class="playlist-card-copy"><strong>{{ item.title }}</strong><small>{{ item.category || item.categoryId || 'Uncategorized' }}</small></span>
+              <span class="playlist-card-copy"><strong>{{ item.title }}</strong><small>{{ item.category || 'Uncategorized' }}</small></span>
             </div>
             <div v-if="loadingMore" class="playlist-grid-more">Loading more…</div>
           </div>
@@ -2325,16 +2973,22 @@ onMounted(async () => {
       </article>
 
       <article v-if="safariPage === 'episodes'" class="safari-page safari-episodes-page">
-        <div class="safari-episodes-heading"><button type="button" class="web-player-back" aria-label="Back to Series" @click="openSafariPage('series')">‹</button><div><p class="eyebrow">EPISODES</p><h1>{{ selectedSeries?.title || 'Series' }}</h1><span v-if="seriesEpisodes.length">{{ seriesEpisodes.length }} episode{{ seriesEpisodes.length === 1 ? '' : 's' }}</span></div></div>
+        <div class="safari-episodes-heading">
+          <button type="button" class="episodes-back" :aria-label="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" :title="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" @click="openSafariPage(episodesFrom)">
+            <svg v-if="episodesFrom === 'welcome'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
+            <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <div><p class="eyebrow">EPISODES</p><h1>{{ selectedSeries?.title || 'Series' }}</h1></div>
+        </div>
         <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
-        <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }}</p>
+        <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }} <button type="button" @click="openSeriesEpisodes(selectedSeries)">Retry</button></p>
         <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
           <nav class="series-season-selector" aria-label="Select season">
             <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" @click="selectedSeasonNumber = season.number">{{ season.title }}</button>
           </nav>
           <div class="series-seasons">
             <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season">
-              <header><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episode{{ season.episodes.length === 1 ? '' : 's' }}</span></header>
+              <header><span>{{ season.episodes.length }} / {{ seriesEpisodes.length }} episodes</span></header>
               <div class="series-episode-list">
                 <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
                   <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span v-if="episode.extension || episode.streamFormat" class="series-episode-format">{{ streamFormatLabel(episode) }}</span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
@@ -2349,7 +3003,7 @@ onMounted(async () => {
       <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span></div></div>
         <section v-if="categoryManagerOpen" class="library-category-manager">
-          <header><div><p class="eyebrow">ROKU RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control both this Library and Roku.</span></header>
+          <header><div><p class="eyebrow">LIBRARY RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control what appears in your Library.</span></header>
           <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
           <div class="library-category-list">
             <article v-for="managedCategory in managedCategoriesForTab" :key="managedCategory.id" class="library-category-entry">
@@ -2386,96 +3040,78 @@ onMounted(async () => {
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
         <section v-if="activeProfile" class="settings-profile-card">
-          <div class="settings-section-heading"><div><p class="eyebrow">PROFILE</p><h2>Profile picture</h2></div><span>{{ activeProfile.name }}</span></div>
+          <div class="settings-section-heading"><div><p class="eyebrow">PROFILE</p><h2>Profile picture</h2></div><span>{{ activeProfile.name }} <code class="profile-code-badge" title="Your profile code - share it so a partner can add this exact profile">{{ activeProfile.code }}</code></span></div>
           <div class="profile-picture-editor"><button type="button" class="profile-picture-preview" :disabled="profileBusy" @click="openProfileImagePicker"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt="Current profile picture"><span v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span></button><div><p class="profile-picture-help">Set a real profile picture for your account.</p><button type="button" class="source-action" :disabled="profileBusy" @click="openProfileImagePicker">{{ activeProfile.avatarImage ? 'Change picture' : 'Upload picture' }}</button><input ref="profileImageInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="loadProfileImage"></div></div>
           <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+          <div class="profile-password-divider"></div>
+          <div class="profile-password-heading"><div><p class="eyebrow">PROFILE SECURITY</p><h3 class="profile-lock-line"><LockKeyholeIcon v-if="activeProfile.hasPin" /><LockKeyholeOpenAltIcon v-else /><span>{{ activeProfile.hasPin ? '4-digit PIN enabled' : 'No profile PIN' }}</span></h3></div><button type="button" class="source-action" @click="profilePinOpen = !profilePinOpen; profilePinMessage = ''">{{ profilePinOpen ? 'Cancel' : (activeProfile.hasPin ? 'Change PIN' : 'Set PIN') }}</button></div>
+          <form v-if="profilePinOpen" class="web-password-form profile-password-form" @submit.prevent="saveProfilePin"><label>New 4-digit PIN<input v-model="profilePin" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" required autocomplete="new-password"></label><label>Confirm PIN<input v-model="profilePinConfirmation" type="password" inputmode="numeric" pattern="[0-9]{4}" minlength="4" maxlength="4" required autocomplete="new-password"></label><div class="profile-pin-actions"><button type="submit" class="primary-action" :disabled="profileBusy">Save PIN</button><button v-if="activeProfile.hasPin" type="button" class="source-action" :disabled="profileBusy" @click="removeProfilePin">Remove PIN</button></div></form>
+          <p v-if="profilePinMessage" class="web-password-message">{{ profilePinMessage }}</p>
           <div class="profile-password-divider"></div>
           <div class="profile-password-heading"><div><p class="eyebrow">SECURITY</p><h3>Change password</h3></div><button type="button" class="source-action" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel' : 'Update password' }}</button></div>
           <form v-if="changePasswordOpen" class="web-password-form profile-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
           <div class="profile-password-divider"></div>
-          <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? partnerEmail : 'No partner set' }}</h3></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
-          <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
+          <div class="profile-password-heading"><div><p class="eyebrow">DANGER ZONE</p><h3>Delete account</h3></div><button type="button" class="source-action web-delete-account-toggle" @click="deleteAccountOpen = !deleteAccountOpen; deleteAccountMessage = ''">{{ deleteAccountOpen ? 'Cancel' : 'Delete account' }}</button></div>
+          <form v-if="deleteAccountOpen" class="web-password-form profile-password-form" @submit.prevent="deleteAccount"><p>This permanently deletes your account, library, profiles, and settings. This cannot be undone.</p><label>Current password<input v-model="deleteAccountPassword" type="password" minlength="8" required autocomplete="current-password"></label><button type="submit" class="primary-action web-delete-account-confirm" :disabled="busy">Permanently delete account</button><p v-if="deleteAccountMessage" class="web-password-message is-error">{{ deleteAccountMessage }}</p></form>
+          <div class="profile-password-divider"></div>
+          <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? `${partnerEmail} (${partnerProfileCode})` : 'No partner set' }}</h3><p class="profile-picture-help">Your profile code is <code class="profile-code-badge">{{ activeProfile.code }}</code> - give it to whoever adds you as their partner.</p></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail; partnerProfileCodeInput = partnerProfileCode">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
+          <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><label>Partner's profile code<input v-model="partnerProfileCodeInput" type="text" placeholder="e.g. R1" maxlength="6" autocomplete="off" style="text-transform:uppercase"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
         </section>
-        <section class="web-linked-settings"><div class="settings-section-heading"><div><p class="eyebrow">YOUR DEVICES</p><h2>Connected Devices</h2></div><span>{{ linkedDevices.length }} connected</span></div><div v-if="linkedDevices.length" class="web-linked-settings-list"><article v-for="device in linkedDevices" :key="device.id"><div class="linked-roku-icon">{{ device.kind === 'browser' ? '◱' : '▣' }}</div><div class="linked-roku-copy"><strong>{{ device.label }}</strong><small>{{ device.kind === 'browser' ? 'Browser' : 'Roku' }} · Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</small><span class="device-status" :class="deviceStatusClass(device)"><i></i>{{ deviceStatusLabel(device) }}</span><small v-if="deviceLocationLabel(device)">{{ deviceLocationLabel(device) }}</small></div><button type="button" class="web-unlink-button" :disabled="busy" @click="unlinkDevice(device)">Unlink</button></article></div><div class="linked-roku-actions"><p v-if="!linkedDevices.length" class="web-empty">No devices are connected yet.</p><button type="button" class="source-action web-scan-roku" @click="startQrScanner">Scan Roku QR code</button></div><div v-if="scannerOpen" class="scanner-panel"><div id="qr-reader"></div><button type="button" class="source-action" @click="stopQrScanner">Cancel scan</button></div></section>
+        <section class="settings-profile-card">
+          <div class="settings-section-heading"><div><p class="eyebrow">APPEARANCE</p><h2>Preferences</h2></div></div>
+          <div class="settings-toggle-row">
+            <div><strong>Welcome page video backdrop</strong><small>Looping montage of clips from your newest titles behind the Welcome page.</small></div>
+            <button type="button" class="rh-switch" role="switch" :aria-checked="backdropEnabled ? 'true' : 'false'" :class="{ on: backdropEnabled }" @click="setBackdropEnabled(!backdropEnabled)"><span class="rh-switch-knob"></span></button>
+          </div>
+        </section>
       </article>
       <div v-if="profileCropOpen" class="profile-crop-backdrop" role="dialog" aria-modal="true" aria-label="Crop profile picture"><section class="profile-crop-modal"><div class="settings-section-heading"><div><p class="eyebrow">PROFILE PHOTO</p><h2>Frame your picture</h2></div><button type="button" class="close" @click="profileCropOpen=false">×</button></div><div class="profile-crop-window"><img :src="profileCropSource" alt="Crop preview" :style="{transform:`translate(${(50-profileCropX)/4}%, ${(50-profileCropY)/4}%) scale(${profileCropZoom})`}" @load="cropImageLoaded"></div><label class="crop-control">Zoom <input v-model.number="profileCropZoom" type="range" min="1" max="3" step="0.05"></label><label class="crop-control">Horizontal position <input v-model.number="profileCropX" type="range" min="0" max="100"></label><label class="crop-control">Vertical position <input v-model.number="profileCropY" type="range" min="0" max="100"></label><div class="profile-crop-actions"><button type="button" class="source-action" @click="profileCropOpen=false">Cancel</button><button type="button" class="primary-action" :disabled="profileBusy" @click="saveProfileImage">Save picture</button></div></section></div>
 
       <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
       </div></div>
     </section>
-    <template v-else>
-    <header class="manager-hero">
-      <div>
-        <p class="eyebrow">ROKU PLAYLIST BUILDER</p>
-        <h1>Build your<br><em>Roku library.</em></h1>
-        <p>Select only what you want on the TV. Organize Series, Movies, and Channels here; archived items stay safely outside the Roku feed.</p>
-      </div>
-      <div class="hero-note"><span class="hero-note-icon">✓</span><strong>One focused workflow</strong><small>Choose · Filter · Save</small></div>
-    </header>
-
-    <section v-if="linkedDevices.length" class="linked-devices" aria-label="Linked Roku devices">
-      <div><p class="eyebrow">YOUR DEVICES</p><h2>Linked Rokus</h2></div>
-      <div class="linked-device-list"><article v-for="device in linkedDevices" :key="device.id"><span class="linked-device-icon">▣</span><span><strong>{{ device.label }}</strong><small>Linked {{ new Date(device.linkedAt).toLocaleDateString() }}</small></span></article></div>
-    </section>
-
-    <section class="xtream-control-panel">
-      <div class="section-heading"><div><p class="eyebrow">STEP 01 · CONNECTION</p><h2>Choose a catalog source</h2><p class="section-copy">Connect an Xtream source once, then manage exactly what Roku can see.</p></div><span class="section-count">{{ sources.length }} source{{ sources.length === 1 ? '' : 's' }}</span></div>
-      <p class="section-copy">Read-only playlist catalog. Sources and Roku selections cannot be changed here.</p>
-      <div class="xtream-source-list">
-        <article v-for="source in sources" :key="source.id" :class="{active:source.id===sourceId}">
-          <button type="button" class="xtream-source-choice" @click="chooseSource(source.id)"><strong>{{source.name}}</strong><small>{{source.endpoint}}</small></button>
-        </article>
-      </div>
-
-      <template v-if="sourceId">
-        <div class="xtream-view-tabs">
-          <button type="button" :class="{active:view==='library'}" @click="view='library'"><span class="tab-icon">▣</span>Roku library <span>{{ savedCount }}</span></button>
-          <button type="button" :class="{active:view==='archive'}" @click="view='archive'"><span class="tab-icon">⌁</span>Archive <span>{{ archivedItems.length }}</span></button>
+      <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
+      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+        <div v-if="webMini" class="web-mini-bar">
+          <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
+          <strong>{{ webNowPlaying.title }}</strong>
+          <button type="button" class="web-pl-btn" aria-label="Expand" @click.stop="webMini = false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+          <button type="button" class="web-pl-btn" aria-label="Close player" @click.stop="closeWebPlayer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
         </div>
-
-        <template v-if="view==='library'">
-          <div class="workspace-heading"><div><p class="eyebrow">STEP 02 · CURATE CONTENT</p><h2>What should Roku show?</h2></div><div class="selection-summary"><strong>{{ savedCount }}</strong><span>enabled on Roku</span></div></div>
-          <div class="content-type-tabs" role="tablist" aria-label="Roku content type">
-            <button type="button" v-for="value in ['series','movie','channel']" :key="value" role="tab" :aria-selected="kind===value" :class="{active:kind===value}" @click="chooseKind(value)"><span class="type-icon">{{ typeIcon(value) }}</span><span><strong>{{ typeLabel(value) }}</strong><small>{{ typeCounts[value] || 0 }} enabled</small></span><b>{{ archiveCounts[value] || 0 }} archived</b></button>
+        <div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError || !webPlaying}">
+          <header class="web-player-topbar">
+            <button type="button" class="web-pl-btn web-pl-back" aria-label="Close player" @click.stop="closeWebPlayer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
+            <h2 class="web-player-name">{{ webNowPlaying.title }}</h2>
+            <div class="web-player-topbar-actions">
+              <span v-if="webEncodeStrategy" class="web-strategy-badge" :title="'Server encode: ' + webEncodeStrategy">{{ webEncodeStrategy }}</span>
+              <div class="web-partner-control">
+                <button type="button" class="web-pl-btn" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-label="Watch with Partner" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.24 4.76c-2.3-2.29-5.87-2.35-8.24-.19-2.37-2.16-5.93-2.09-8.24.2-2.36 2.37-2.36 6.07 0 8.43l7.53 7.52c.2.19.45.29.71.29s.51-.1.71-.29l7.53-7.52c2.36-2.36 2.36-6.06 0-8.43Zm-1.41 7.02-6.82 6.81-6.82-6.81a3.92 3.92 0 0 1 0-5.6C5.98 5.39 6.99 5 8 5s2.02.39 2.8 1.18l.5.5c.39.39 1.02.39 1.41 0l.5-.5c1.57-1.57 4.04-1.57 5.62 0 1.57 1.58 1.57 4.04 0 5.6"/><path d="M13 8.5h-2V11H8.5v2H11v2.5h2V13h2.5v-2H13z"/></svg></button>
+                <div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button><button v-if="webWwpSessionId && !webCallActive" type="button" class="primary-action wwp-call-start" @click.stop="startWebCall">🎙 Start voice call</button><button v-if="webCallActive" type="button" class="primary-action wwp-call-end" @click.stop="endWebCall">End voice call</button></div>
+              </div>
+            </div>
+          </header>
+          <button v-if="!webPlaying || (webBuffering && !webPlayerError)" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button>
+          <footer class="web-player-bottombar">
+            <button type="button" class="web-pl-btn web-pl-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
+            <span class="web-player-time">{{ formatTime(webCurrentTime) }} <i>/ {{ formatTime(webDuration) }}</i></span>
+            <input type="range" class="web-player-scrub" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Seek" @pointerdown="showWebControls" @input="seekWebMovie">
+            <button type="button" class="web-pl-btn" aria-label="Skip to next" :disabled="!webUpNext" @click.stop="webUpNext && playWebMovie(webUpNext)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7zM16 5h2.4v14H16z"/></svg></button>
+            <button type="button" class="web-pl-btn" :aria-label="webMuted ? 'Unmute' : 'Mute'" @click.stop="toggleWebMute"><svg v-if="webMuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM23 9l-6 6M17 9l6 6"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg></button>
+            <button type="button" class="web-pl-btn" :aria-label="webFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click.stop="fullscreenWebMovie"><svg v-if="webFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a3 3 0 0 1-3 3H3M21 9h-3a3 3 0 0 1-3-3V3M3 15h3a3 3 0 0 1 3 3v3M15 21v-3a3 3 0 0 1 3-3h3"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5"/></svg></button>
+          </footer>
+        </div>
+        <div v-if="webPlayerError" class="web-player-error">
+          <div class="web-player-error-card">
+            <span class="web-player-error-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
+            <strong>Playback unavailable</strong>
+            <p>The provider dropped this stream. It usually clears in a few seconds.</p>
+            <button type="button" class="primary-action" @click.stop="playWebMovie(webNowPlaying)">Try again</button>
           </div>
-          <div class="xtream-toolbar">
-            <label class="catalog-search"><span>⌕</span><input v-model="query" placeholder="Search this catalog…"></label>
-            <select v-model="category"><option value="all">All categories</option><option v-for="item in categories" :key="item.id" :value="item.id">{{item.name}}</option></select>
-            <select v-model="titleLanguage" aria-label="Filter by title language"><option value="all">Title language: All</option><option v-for="item in languages" :key="item" :value="item">Title language: {{item}}</option></select>
-            <select v-model="sortBy"><option value="name">Sort: A–Z</option><option value="recent">Sort: Recently added</option><option value="category">Sort: Category</option></select>
-            <select v-model="selectionFilter"><option value="all">Show: All items</option><option value="available">Show: Not selected</option><option value="selected">Show: Selected only</option></select>
-            <div class="toolbar-actions"><span class="section-copy">Read-only catalog</span></div>
-          </div>
-          <div v-if="loading" class="loading"><span class="loading-ring"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
-          <div v-else-if="!visibleItems.length" class="loading empty-catalog"><span class="empty-icon">⌕</span><span>No matching {{ typeLabel(kind).toLowerCase() }} found.</span></div>
-          <div v-else class="xtream-item-list">
-            <label v-for="item in visibleItems" :key="item.key" :class="{enabled:savedKeys.has(item.key), pending:selectedKeys.includes(item.key)}">
-              <span class="item-poster"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(kind) }}</span></span>
-              <span class="item-copy"><strong>{{item.title}}</strong><small>{{item.categoryId || 'Uncategorized'}}</small></span><em>{{savedKeys.has(item.key)?"On Roku":selectedKeys.includes(item.key)?"Selected":"Not selected"}}</em>
-            </label>
-          </div>
-          <div class="xtream-pagination"><button type="button" :disabled="page<=1" @click="movePage(-1)">‹ Previous</button><span>Page {{page}} / {{pages}} <b>·</b> {{total}} {{ typeLabel(kind).toLowerCase() }}</span><button type="button" :disabled="page>=pages" @click="movePage(1)">Next ›</button></div>
-          <section class="xtream-enabled-section">
-            <div class="section-heading compact"><div><p class="eyebrow">SAVED ON ROKU</p><h2>{{ typeLabel(kind) }}</h2></div><span class="section-count accent-count">{{ typeCounts[kind] || 0 }}</span></div>
-            <div v-if="savedItemsForTab.length" class="xtream-enabled-table"><div v-for="item in savedItemsForTab" :key="item.key" class="xtream-enabled-row" :class="{'web-playable-row': true}" @click="playWebMovie(item)"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code><div class="xtream-row-actions"><button type="button" class="xtream-play-button" @click.stop="playWebMovie(item)">Play</button></div></div></div>
-            <div v-else class="empty xtream-enabled-empty"><strong>No {{ typeLabel(kind).toLowerCase() }} items enabled.</strong><span>No enabled items were returned by the server.</span></div>
-          </section>
-        </template>
-
-        <section v-else class="xtream-enabled-section archive-section">
-          <div class="section-heading"><div><p class="eyebrow">STORED SAFELY · NOT ON ROKU</p><h2>Archive</h2><p class="section-copy">Archived items returned by the server.</p></div><span class="section-count accent-count">{{ archivedItems.length }}</span></div>
-          <div v-if="archivedItems.length" class="archive-summary"><span v-for="value in ['series','movie','channel']" :key="value"><b>{{archiveCounts[value] || 0}}</b> {{typeLabel(value)}}</span></div>
-          <div v-if="archivedItems.length" class="xtream-enabled-table"><div v-for="item in archivedItems" :key="item.key" class="xtream-enabled-row"><div class="xtream-enabled-name"><span class="item-poster small"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><span v-else>{{ typeIcon(item.kind) }}</span></span><strong>{{item.title}}</strong></div><span class="xtream-kind-badge">{{typeLabel(item.kind)}}</span><code>{{item.id}}</code></div></div>
-          <div v-else class="empty xtream-enabled-empty"><strong>Your archive is empty.</strong><span>Archive an enabled item to keep it available without showing it on Roku.</span></div>
-        </section>
-      </template>
-      <p v-if="message" role="status" aria-live="polite" :class="['xtream-message', `is-${messageType}`]"><span v-if="messageType==='success'">✓</span>{{message}}</p>
+        </div>
+      </div>
+      <article v-if="webUpNext && !webMini" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
     </section>
     </template>
-      <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen}" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="toggleWebControls"><video ref="webVideo" :src="webPlayerSrc" playsinline preload="metadata" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div class="web-player-overlay" :class="{visible: webControlsVisible || webBuffering || webPlayerError}"><header class="web-player-header"><button type="button" class="web-player-back" aria-label="Close player" @click.stop="closeWebPlayer">‹</button><div class="web-player-title"><p class="eyebrow">NOW PLAYING</p><h2>{{ webNowPlaying.title }}</h2><p>{{ webNowPlaying.kind === 'channel' ? 'Live TV' : typeLabel(webNowPlaying.kind) }}</p></div><span v-if="webStreamFormatLabel" class="web-player-format-badge">{{ webStreamFormatLabel }}</span><div v-if="webNowPlaying.kind !== 'channel'" class="web-quality-control"><button type="button" class="web-quality-toggle" :class="{active: webQualityMenuOpen}" aria-haspopup="true" :aria-expanded="webQualityMenuOpen ? 'true' : 'false'" @click.stop="webQualityMenuOpen = !webQualityMenuOpen">{{ webQualityLabel }}</button><ul v-if="webQualityMenuOpen" class="web-quality-menu"><li v-for="option in webQualityOptions" :key="option.value"><button type="button" :class="{selected: option.value === webQualityChoice}" @click.stop="chooseWebQuality(option.value)">{{ option.label }}</button></li></ul></div><div class="web-partner-control"><button type="button" class="web-quality-toggle" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-haspopup="true" :aria-expanded="webPartnerMenuOpen ? 'true' : 'false'" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen">{{ webWwpSessionId ? 'Watching together' : 'Watch with Partner' }}</button><div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button></div></div></header><button type="button" class="web-fullscreen-control" aria-label="Fullscreen" @click.stop="fullscreenWebMovie"><MaximizeIcon /></button><div class="web-center-controls"><button type="button" aria-label="Rewind 10 seconds" @click.stop="seekWebBy(-10)"><RotateCcw10Icon /></button><button type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button><button type="button" aria-label="Forward 10 seconds" @click.stop="seekWebBy(10)"><RotateCw10Icon /></button></div><div class="web-timeline"><button type="button" class="web-timeline-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button><span>{{ formatTime(webCurrentTime) }}</span><input type="range" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Movie progress" @pointerdown="showWebControls" @input="seekWebMovie"><span>-{{ formatTime(webRemainingTime) }}</span></div></div><div v-if="webPlayerError" class="web-player-error"><strong>Playback unavailable</strong><button type="button" @click.stop="playWebMovie(webNowPlaying)">Retry</button></div></div>
-      <article v-if="webUpNext" class="web-up-next"><div class="web-up-next-icon"><img v-if="webUpNext.logo" :src="imageUrl(webUpNext.logo)" :alt="webUpNext.title"><span v-else>▶</span></div><div><p>UP NEXT</p><strong>{{ webUpNext.title }}</strong><small>Continue watching</small></div><button type="button" aria-label="Play next movie" @click="playWebMovie(webUpNext)">▶</button></article>
-    </section>
-    </template>
+    </div>
   </main>
 </template>
