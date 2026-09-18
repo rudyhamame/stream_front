@@ -185,6 +185,7 @@ const activeProfileId = ref(window.localStorage.getItem("rh-profile-id") || "");
 const profileChooser = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
+const newProfileName = ref("");
 const profilePinOpen = ref(false);
 const profilePin = ref("");
 const profilePinConfirmation = ref("");
@@ -319,6 +320,19 @@ async function chooseProfile(profile) {
   } finally {
     profileBusy.value = false;
   }
+}
+
+async function createProfile() {
+  const name = newProfileName.value.trim();
+  if (!name || profileBusy.value) return;
+  profileBusy.value = true;
+  profileError.value = "";
+  try {
+    const data = await request("/api/account/profiles", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
+    profiles.value = [...profiles.value, data.profile];
+    newProfileName.value = "";
+  } catch (error) { profileError.value = error.message || "Could not create the profile."; }
+  finally { profileBusy.value = false; }
 }
 
 async function saveProfilePin() {
@@ -2753,6 +2767,14 @@ onMounted(async () => {
       appReady.value = false;
       return;
     }
+    profiles.value = (await request("/api/account/profiles")).items || [];
+    const currentProfile = await request("/api/account/profile").catch(() => null);
+    if (!currentProfile?.item) {
+      pairing.value = false;
+      profileChooser.value = true;
+      appReady.value = false;
+      return;
+    }
     // Only the health check and the provider catalog gate the boot loader.
     // Everything else enriches an already usable page and loads in the
     // background so a slow response cannot keep the spinner on screen.
@@ -2866,7 +2888,7 @@ onMounted(async () => {
       <div class="profile-chooser-inner">
         <p class="eyebrow">RH LIBRARY</p>
         <h1>Who's watching?</h1>
-        <p class="profile-chooser-copy">Choose a profile to open your personalized library.</p>
+        <p class="profile-chooser-copy">{{ profiles.length ? 'Choose a profile to open your personalized library.' : 'Create a profile to start using the library.' }}</p>
         <div class="profile-grid">
           <button v-for="profile in profiles" :key="profile.id" type="button" class="profile-option" :disabled="profileBusy" @click="chooseProfile(profile)">
             <span class="profile-avatar" :class="`profile-avatar-${profile.avatar || 'lime'}`"><img v-if="profile.avatarImage" :src="profile.avatarImage" alt=""><template v-else>{{ profile.name.slice(0, 1).toUpperCase() }}</template></span>
@@ -2874,6 +2896,7 @@ onMounted(async () => {
             <small class="profile-lock-line"><LockKeyholeIcon v-if="profile.hasPin" /><LockKeyholeOpenAltIcon v-else /><span>{{ profile.hasPin ? 'PIN protected' : (profile.isDefault ? 'Main profile' : 'Library profile') }}</span></small>
           </button>
         </div>
+        <form class="profile-create-form" @submit.prevent="createProfile"><label>Profile name <input v-model="newProfileName" type="text" maxlength="30" required placeholder="Your name"></label><button type="submit" class="primary-action" :disabled="profileBusy || !newProfileName.trim()">Add profile</button></form>
         <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
         <button type="button" class="logout-button profile-chooser-logout" @click="logout">Log out</button>
       </div>
