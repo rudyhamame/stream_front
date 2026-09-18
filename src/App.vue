@@ -12,6 +12,7 @@ import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
 import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 import LockKeyholeIcon from "./components/icons/LockKeyholeIcon.vue";
 import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vue";
+import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -41,7 +42,7 @@ const navOpen = ref(false);
 const openCardKey = ref("");
 const toggleCardActions = key => { openCardKey.value = openCardKey.value === key ? "" : key; };
 const pageStorageKey = "rh-safari-page";
-const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "settings"];
+const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "watchlater", "settings"];
 const storedPage = window.localStorage.getItem(pageStorageKey);
 const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
@@ -52,6 +53,7 @@ const safariMenuItems = [
   { id: "series", label: "Series", icon: FilmRollAltIcon },
   { id: "movies", label: "Movies", icon: MovieIcon },
   { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
+  { id: "watchlater", label: "Watch Later", icon: BookmarkIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
 function openSafariPage(page) {
@@ -2562,6 +2564,30 @@ async function selectWeatherLocation(slot, selectedIndex) {
   }
 }
 
+const favorites = ref([]);
+const favoritesLoading = ref(false);
+async function loadFavorites() {
+  favoritesLoading.value = true;
+  try {
+    const data = await request("/api/favorites");
+    favorites.value = Array.isArray(data?.items) ? data.items : [];
+  } catch {
+    favorites.value = [];
+  } finally {
+    favoritesLoading.value = false;
+  }
+}
+async function removeFavorite(item) {
+  try {
+    await request("/api/favorites/toggle", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: item.id, kind: item.kind, sourceId: item.sourceId, favorite: false }),
+    });
+    favorites.value = favorites.value.filter(entry => entry.id !== item.id);
+  } catch { /* leave the item in place if the server rejects the removal */ }
+}
+
 let catalogRequestId = 0;
 let catalogController = null;
 const playlistRequestSize = 20;
@@ -2667,6 +2693,7 @@ watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value =
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
   if (!deviceToken.value) return;
+  if (value === "watchlater") { loadFavorites(); return; }
   if (value === "playlist") loadPlaylistCategories();
   // Welcome needs its provider rails refreshed too - loadSources() fans out to
   // loadManagedLibrary() + loadWelcomeProvider() when the Welcome page is open,
@@ -2738,6 +2765,7 @@ onMounted(async () => {
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     }).catch(() => {});
     void loadHomeData();
+    if (safariPage.value === "watchlater") void loadFavorites();
     // Warm the lazy HLS.js chunk (~185 KB gzip) while the catalog renders, so
     // the first Play does not wait on that download over the slow tunnel.
     void loadHlsConstructor().catch(() => {});
@@ -2858,14 +2886,11 @@ onMounted(async () => {
       <div class="home-aurora home-aurora-two" aria-hidden="true"></div>
       <div class="home-overlay" aria-hidden="true"></div>
     </template>
-    <nav class="topbar">
-      <div class="brand"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV Player</span></div>
-      <div class="topbar-actions"><button type="button" class="logout-button" @click="logout">Log out</button></div>
-    </nav>
     <section v-if="browserApp" class="browser-app-shell" :class="{ 'nav-open': navOpen }">
       <aside class="browser-sidebar">
         <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"></button>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
+        <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><LockKeyholeOpenAltIcon /></span></button>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
@@ -3035,6 +3060,22 @@ onMounted(async () => {
           </section>
         </div>
         <p v-else class="web-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
+      </article>
+
+      <article v-if="safariPage === 'watchlater'" class="safari-page safari-library-page">
+        <div class="safari-compact-heading"><div><p class="eyebrow">SAVED FOR LATER</p><h1>Watch Later</h1></div><div class="library-heading-actions"><span>{{ favorites.length }} items</span></div></div>
+        <div v-if="favoritesLoading" class="loading">Loading&hellip;</div>
+        <div v-else-if="favorites.length" class="safari-library-rails">
+          <section class="safari-library-rail">
+            <div class="safari-library-rail-track">
+              <div v-for="item in favorites" :key="item.id" class="is-add-item is-playable watch-later-item">
+                <button type="button" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><span class="safari-library-fallback"></span><b>{{ typeIcon(item.kind) }}</b></template></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
+                <button type="button" class="watch-later-remove" :aria-label="`Remove ${item.title} from Watch Later`" @click="removeFavorite(item)">&times;</button>
+              </div>
+            </div>
+          </section>
+        </div>
+        <p v-else class="web-empty safari-library-empty">Nothing saved yet. Tap the bookmark on a Series, Movie, or Channel to add it here.</p>
       </article>
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
