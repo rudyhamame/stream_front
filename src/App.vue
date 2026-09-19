@@ -2068,21 +2068,16 @@ async function loadWelcomeProvider(provider = sources.value.find(source => sourc
   welcomeProviderError.value = "";
   try {
     const encodedSource = encodeURIComponent(provider.id);
-    const [series, movie, channel, rails] = await Promise.all([
-      ...["series", "movie", "channel"].map(value =>
-        request(`/api/xtream/catalog?sourceId=${encodedSource}&kind=${value}&category=all&page=1&limit=20`, { cache: "no-store" })
-      ),
-      request(`/api/xtream/sources/${encodedSource}/rails?limit=1`, { cache: "no-store" }).catch(() => null),
-    ]);
+    const welcome = await request(`/api/catalog/welcome?sourceId=${encodedSource}`, { cache: "no-store" });
     if (requestId !== welcomeProviderRequestId) return;
-    const byKind = [["series", series], ["movie", movie], ["channel", channel]];
+    const byKind = [["series", { items: welcome.series || [] }], ["movie", { items: welcome.movie || [] }], ["channel", { items: welcome.channel || [] }]];
     welcomeProviderItems.value = Object.fromEntries(byKind.map(([kind, data]) => [
       kind, (data.items || []).map(item => welcomeProviderItem(item, provider)).filter(Boolean),
     ]));
     // Prefer the persisted provider-catalog table counts; fall back to the
     // live catalog page total when the source has not been synced yet.
     welcomeProviderCounts.value = Object.fromEntries(byKind.map(([kind, data]) => [
-      kind, Number(rails?.counts?.[kind]) || Number(data?.pagination?.total) || 0,
+      kind, Number(welcome[`${kind}Count`]) || 0,
     ]));
   } catch (error) {
     if (requestId === welcomeProviderRequestId) {
