@@ -2033,7 +2033,11 @@ function applyManagedLibrary(data) {
 }
 
 async function loadManagedLibrary() {
-  applyManagedLibrary(await request(`/api/library/categories?refresh=${Date.now()}`, { cache: "no-store" }));
+  // Library categories/assignments were removed. The profile library is the
+  // saved provider-URL list exposed by the provider source response.
+  const data = await request("/api/xtream/sources", { cache: "no-store" });
+  const items = (data.items || []).flatMap(source => (source.enabledItems || []).map(item => ({ ...item, sourceId: item.sourceId || source.id })));
+  applyManagedLibrary({ categories: [], items });
 }
 
 function homeItemKey(item) {
