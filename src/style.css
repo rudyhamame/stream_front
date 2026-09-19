@@ -107,7 +107,10 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
 
 /* Safari uses a native-style, viewport-bound shell with its primary navigation at the safe-area edge. */
 .safari-app-mode { width:100%; max-width:none; height:100dvh; min-height:100dvh; padding:0; overflow:hidden; background:transparent; }
-.safari-app-mode { height:100svh; min-height:100svh; }
+ .safari-app-mode { height:100svh; min-height:100svh; }
+ .safari-app-mode:not(.login-shell) { background:linear-gradient(rgba(0,0,0,.42),rgba(0,0,0,.42)),url('/login/login-background.png') center/cover no-repeat; }
+ .safari-app-mode .browser-app-shell { height:100svh; }
+ .safari-app-mode.login-shell .login-gate { min-height:100svh; height:100svh; }
 .safari-app-mode { position:relative; }
 .safari-app-mode, .safari-app-mode * { scrollbar-width:none; -ms-overflow-style:none; }
 .safari-app-mode *::-webkit-scrollbar { display:none; width:0; height:0; }
