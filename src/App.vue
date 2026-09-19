@@ -176,9 +176,12 @@ const deviceToken = ref(storedToken());
 const appReady = ref(!deviceToken.value);
 const pairing = ref(!deviceToken.value);
 const pairingMode = ref("login");
+const loginStarted = ref(false);
 const pairingEmail = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
+const signupVerificationId = ref("");
+const signupVerificationCode = ref("");
 const authBusy = ref(false);
 const profiles = ref([]);
 const activeProfileId = ref(window.localStorage.getItem("rh-profile-id") || "");
@@ -427,9 +430,11 @@ async function signUp(event) {
   authBusy.value = true;
   try {
     if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
+    if (!signupVerificationId.value) throw new Error("Send the verification code first");
+    if (!signupVerificationCode.value.trim()) throw new Error("Enter the verification code");
     if (!pairingPassword.value) throw new Error("Enter a password");
     if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    const data = await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
+    const data = await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, verificationId: signupVerificationId.value, verificationCode: signupVerificationCode.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     profiles.value = (await request("/api/account/profiles")).items || [];
@@ -444,13 +449,53 @@ async function signUp(event) {
   finally { authBusy.value = false; }
 }
 
+async function requestSignupCode(event) {
+  syncCredentialsFromForm(event);
+  authBusy.value = true;
+  message.value = "";
+  try {
+    if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
+    const data = await request("/api/account/signup/request-verification", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value }) });
+    if (data.verificationNotRequired) throw new Error("This email is already verified. Sign in instead.");
+    signupVerificationId.value = data.verificationId || "";
+    if (!signupVerificationId.value) throw new Error("Verification code was not created");
+    messageType.value = "success";
+    message.value = data.verificationAlreadyPending
+      ? "A verification code is already pending. Enter the code you received, then create your password."
+      : "Verification code sent. Enter it below, then create your password.";
+  } catch (error) { messageType.value = "error"; message.value = error.message; }
+  finally { authBusy.value = false; }
+}
+
+function showPlatformDevelopment(platform) {
+  messageType.value = "info";
+  message.value = `${platform} app is still in development.`;
+}
+
+function beginSignup() {
+  pairingMode.value = "signup";
+  loginStarted.value = false;
+  signupVerificationId.value = "";
+  signupVerificationCode.value = "";
+  pairingPassword.value = "";
+  pairingPasswordConfirmation.value = "";
+  message.value = "";
+}
+
+function beginLogin() {
+  pairingMode.value = "login";
+  loginStarted.value = true;
+  message.value = "";
+}
+
 function logout() {
   deviceToken.value = "";
   appReady.value = true;
   window.localStorage.removeItem("rh-device-token");
   window.sessionStorage.removeItem(profileSelectionKey);
   pairing.value = true;
-  pairingMode.value = "login";
+    pairingMode.value = "login";
+    loginStarted.value = false;
   pairingEmail.value = "";
   pairingPassword.value = "";
   pairingPasswordConfirmation.value = "";
@@ -2734,6 +2779,11 @@ onMounted(async () => {
   if (pairing.value) {
     blurRestoredLoginFocus();
     window.setTimeout(blurRestoredLoginFocus, 0);
+    // Safari may restore the last focused form control after the first paint.
+    // Repeat the blur after its restoration pass so reload opens unfocused.
+    window.setTimeout(blurRestoredLoginFocus, 80);
+    window.setTimeout(blurRestoredLoginFocus, 300);
+    window.setTimeout(blurRestoredLoginFocus, 700);
   }
   try {
     // Roku Settings' "Browser auto log in" QR lands here with ?pair=<code>.
@@ -2857,31 +2907,47 @@ onMounted(async () => {
     </section>
     <div v-if="!legalPage" class="app-content">
     <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
-    <section v-if="pairing" class="pairing-gate login-gate">
-      <div class="login-art"><img class="login-rh-art" src="/login/rh-login-art.png" alt="RH"></div>
+    <section v-if="pairing" :class="['pairing-gate', 'login-gate', { 'auth-layout': loginStarted || isPairingSignup }]">
+      <div class="login-art"><div class="login-brand-lockup" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div><p class="login-brand-subtitle">Sign in to access your content</p></div>
       <div class="pairing-card login-card login-card-plain">
-        <div class="login-brand"><img class="login-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span>IPTV PLAYER</span></div>
         <h1 v-if="!isPairingSignup">Sign in to your library</h1>
         <h1 v-else>Create your account</h1>
         <template v-if="!isPairingSignup">
-          <form novalidate @submit.prevent="signIn">
-            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
-            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
-          </form>
-          <button type="button" class="source-action login-signup-action" @click="pairingMode = 'signup'">Sign up</button>
+          <template v-if="loginStarted">
+            <form novalidate @submit.prevent="signIn">
+              <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+              <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
+              <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
+            </form>
+            <button type="button" class="source-action login-signup-action" @click="beginSignup">Sign up</button>
+          </template>
+          <template v-else>
+            <button type="button" class="primary-action login-submit" @click="beginLogin">Sign in</button>
+            <button type="button" class="source-action login-signup-action" @click="beginSignup">Sign up</button>
+          </template>
         </template>
         <template v-else>
-          <p>Create an account to start building your library.</p>
-          <form novalidate @submit.prevent="signUp">
+          <p>{{ signupVerificationId ? 'Enter the code from your email, then choose a password.' : 'Enter your email to receive a verification code.' }}</p>
+          <form novalidate @submit.prevent="signupVerificationId ? signUp($event) : requestSignupCode($event)">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
-            <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
-            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Create account</span></button>
+            <template v-if="signupVerificationId">
+              <label>Verification code<input v-model="signupVerificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" required placeholder="Enter the code from your email"></label>
+              <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
+              <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
+            </template>
+            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ signupVerificationId ? 'Create account' : 'Send verification code' }}</span></button>
             <button type="button" class="source-action" @click="pairingMode = 'login'">I already have an account</button>
           </form>
         </template>
         <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
+      </div>
+      <div v-if="!loginStarted && !isPairingSignup" class="login-platform-badges">
+        <a class="android-app-banner" href="https://play.google.com/store/apps/details?id=com.rhstream.library" @click.prevent="showPlatformDevelopment('Android')" aria-label="Android app still in development">
+          <img src="/login/android-play-banner.png" alt="Also on Android — Get it on Google Play">
+        </a>
+        <a class="android-app-banner" href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development">
+          <img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store">
+        </a>
       </div>
     </section>
     <section v-else-if="profileChooser" class="profile-chooser-page">
@@ -2911,9 +2977,9 @@ onMounted(async () => {
     </template>
     <section v-if="browserApp" class="browser-app-shell" :class="{ 'nav-open': navOpen }">
       <aside class="browser-sidebar">
-        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"></button>
-        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span></button></nav>
-        <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><LockKeyholeOpenAltIcon /></span></button>
+        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></button>
+        <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span class="browser-sidebar-label">{{ item.label }}</span></button></nav>
+        <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><LockKeyholeOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
