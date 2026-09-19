@@ -189,6 +189,8 @@ const profileChooser = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
 const newProfileName = ref("");
+const profileCreateOpen = ref(false);
+const profileNameInput = ref(null);
 const profilePinOpen = ref(false);
 const profilePin = ref("");
 const profilePinConfirmation = ref("");
@@ -334,8 +336,17 @@ async function createProfile() {
     const data = await request("/api/account/profiles", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name }) });
     profiles.value = [...profiles.value, data.profile];
     newProfileName.value = "";
+    profileCreateOpen.value = false;
   } catch (error) { profileError.value = error.message || "Could not create the profile."; }
   finally { profileBusy.value = false; }
+}
+
+async function openProfileCreation() {
+  profileCreateOpen.value = true;
+  profileError.value = "";
+  await nextTick();
+  profileNameInput.value?.focus();
+  window.setTimeout(() => profileNameInput.value?.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" }), 80);
 }
 
 async function saveProfilePin() {
@@ -2961,8 +2972,13 @@ onMounted(async () => {
             <strong>{{ profile.name }}</strong>
             <small class="profile-lock-line"><LockKeyholeIcon v-if="profile.hasPin" /><LockKeyholeOpenAltIcon v-else /><span>{{ profile.hasPin ? 'PIN protected' : (profile.isDefault ? 'Main profile' : 'Library profile') }}</span></small>
           </button>
+          <button type="button" class="profile-option profile-add-option" :disabled="profileBusy" @click="openProfileCreation">
+            <span class="profile-avatar profile-add-avatar" aria-hidden="true">+</span>
+            <strong>Add profile</strong>
+            <small>Personal library</small>
+          </button>
         </div>
-        <form class="profile-create-form" @submit.prevent="createProfile"><label>Profile name <input v-model="newProfileName" type="text" maxlength="30" required placeholder="Your name"></label><button type="submit" class="primary-action" :disabled="profileBusy || !newProfileName.trim()">Add profile</button></form>
+        <form v-if="profileCreateOpen" class="profile-create-form" @submit.prevent="createProfile"><label>Profile name <input ref="profileNameInput" v-model="newProfileName" type="text" maxlength="30" required placeholder="Your name"></label><button type="submit" class="primary-action" :disabled="profileBusy || !newProfileName.trim()">Add profile</button></form>
         <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
         <button type="button" class="logout-button profile-chooser-logout" @click="logout">Log out</button>
       </div>
