@@ -2619,6 +2619,71 @@ async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPa
   if (safariPage.value === "welcome") await loadWelcomeProvider(source);
 }
 
+async function saveSource() {
+  busy.value = true;
+  messageType.value = "info";
+  message.value = editing.value ? "Saving playlist changes…" : "Saving playlist…";
+  try {
+    const isEditing = Boolean(editing.value);
+    const data = await request(isEditing ? `/api/xtream/sources/${encodeURIComponent(editing.value)}` : "/api/xtream/sources", {
+      method: isEditing ? "PUT" : "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: name.value, type: sourceType.value, url: url.value, username: sourceUsername.value, password: sourcePassword.value }),
+    });
+    name.value = "";
+    url.value = "";
+    sourceType.value = "xtream";
+    sourceUsername.value = "";
+    sourcePassword.value = "";
+    editing.value = null;
+    await loadSources(data.id, { loadPlaylist: false });
+    await loadPlaylistHealth();
+    messageType.value = "success";
+    message.value = data.warning || "Playlist saved.";
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error.message || "The playlist could not be saved.";
+  } finally {
+    busy.value = false;
+  }
+}
+
+function editSource(source) {
+  editing.value = source.id;
+  name.value = source.name || "";
+  sourceType.value = source.type || "xtream";
+  url.value = source.endpoint || "";
+  sourceUsername.value = "";
+  sourcePassword.value = "";
+}
+
+function cancelEdit() {
+  editing.value = null;
+  name.value = "";
+  url.value = "";
+  sourceType.value = "xtream";
+  sourceUsername.value = "";
+  sourcePassword.value = "";
+}
+
+async function deleteSource(source) {
+  if (!window.confirm(`Delete “${source.name}”?`)) return;
+  busy.value = true;
+  try {
+    await request(`/api/xtream/sources/${encodeURIComponent(source.id)}`, { method: "DELETE" });
+    if (editing.value === source.id) cancelEdit();
+    await loadSources(sources.value.find(item => item.id !== source.id)?.id || "", { loadPlaylist: false });
+    await loadPlaylistHealth();
+    messageType.value = "success";
+    message.value = `Deleted “${source.name}”.`;
+  } catch (error) {
+    messageType.value = "error";
+    message.value = error.message || "The playlist could not be deleted.";
+  } finally {
+    busy.value = false;
+  }
+}
+
 function playlistConnectionStatus(source) {
   return playlistHealthBySource.value[source.id]?.status || source.connectionStatus || "unknown";
 }
@@ -3292,6 +3357,22 @@ onMounted(async () => {
           <div class="profile-password-divider"></div>
           <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? `${partnerEmail} (${partnerProfileCode})` : 'No partner set' }}</h3><p class="profile-picture-help">Your profile code is <code class="profile-code-badge">{{ activeProfile.code }}</code> - give it to whoever adds you as their partner.</p></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail; partnerProfileCodeInput = partnerProfileCode">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
           <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><label>Partner's profile code<input v-model="partnerProfileCodeInput" type="text" placeholder="e.g. R1" maxlength="6" autocomplete="off" style="text-transform:uppercase"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
+        </section>
+        <section class="settings-playlists">
+          <div class="settings-section-heading"><div><p class="eyebrow">PLAYLISTS</p><h2>Manage playlists</h2></div><span>{{ sources.length }} total</span></div>
+          <form class="settings-playlist-form" @submit.prevent="saveSource">
+            <label>Playlist type<select v-model="sourceType"><option value="m3u">M3U</option><option value="xtream">Xtream</option></select></label>
+            <label>Playlist name<input v-model="name" required placeholder="My playlist"></label>
+            <label class="settings-playlist-link">Playlist link<input v-model="url" type="url" required :placeholder="sourceType === 'm3u' ? 'https://provider.com/playlist.m3u' : 'https://provider.com'" spellcheck="false"></label>
+            <template v-if="sourceType === 'xtream'">
+              <label>Username<input v-model="sourceUsername" :required="!editing" autocomplete="username" :placeholder="editing ? 'Leave blank to keep current' : 'Username'"></label>
+              <label>Password<input v-model="sourcePassword" type="password" :required="!editing" autocomplete="new-password" :placeholder="editing ? 'Leave blank to keep current' : 'Password'"></label>
+            </template>
+            <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (editing ? 'Save changes' : 'Add playlist') }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
+          </form>
+          <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
+          <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
+          <p v-else class="web-empty">No playlists added yet.</p>
         </section>
         <section class="settings-profile-card">
           <div class="settings-section-heading"><div><p class="eyebrow">APPEARANCE</p><h2>Preferences</h2></div></div>
