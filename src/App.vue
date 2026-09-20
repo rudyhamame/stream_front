@@ -804,10 +804,8 @@ const webPlayerSrc = computed(() => {
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  // Original quality (shouldUseDirect) always attempts our own direct URL
-  // rather than the backend's per-item playbackUrl/url, which may point at
-  // HLS for containers the browser can actually play fine - see the comment
-  // above. A forced quality rung or shared partner session needs HLS.
+  // Generate the selected transport URL from the source identity rather than
+  // trusting an older catalog playbackUrl to describe browser capability.
   const raw = generated || item.playbackUrl || item.url || "";
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
