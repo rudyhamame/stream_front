@@ -807,10 +807,12 @@ const webPlayerSrc = computed(() => {
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  const providerUrl = typeof item.providerUrl === 'string' ? item.providerUrl : typeof item.providerURL === 'string' ? item.providerURL : '';
+  const providerURL = typeof item.providerURL === 'string' ? item.providerURL : typeof item.providerUrl === 'string' ? item.providerUrl : '';
   // Direct uses the original provider URL verbatim. The resolver redirect is
   // only for older catalog records that do not yet carry it.
-  const raw = (shouldUseDirect && /^https?:\/\//i.test(providerUrl) ? providerUrl : '') || generated || item.playbackUrl || item.url || "";
+  const raw = shouldUseDirect
+    ? (/^https?:\/\//i.test(providerURL) ? providerURL : '')
+    : (generated || '');
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (target.pathname.includes('/api/xtream/hls/')) {
@@ -1286,6 +1288,9 @@ function movieStreamUrl(startSeconds = 0) {
   if (!source) return "";
   const target = new URL(source);
   const hls = target.pathname.includes('/api/xtream/hls/');
+  const item = webNowPlaying.value;
+  const providerURL = typeof item?.providerURL === 'string' ? item.providerURL : typeof item?.providerUrl === 'string' ? item.providerUrl : '';
+  if (hls && providerURL) target.searchParams.set('providerURL', providerURL);
   if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
   if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
   wwpSeekIntent = false;
@@ -1516,6 +1521,11 @@ async function playWebMovie(item) {
   webWedgeRestarts = 0;
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
+  const providerURL = webNowPlaying.value?.providerURL || webNowPlaying.value?.providerUrl;
+  if (typeof providerURL !== 'string' || !/^https?:\/\//i.test(providerURL)) {
+    throw new Error('This item is missing its original provider URL. Refresh the playlist and try again.');
+  }
+  if (!webNowPlaying.value.providerURL) webNowPlaying.value = { ...webNowPlaying.value, providerURL };
   // Native metadata or the HLS response supplies the runtime. A separate
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
@@ -1906,7 +1916,7 @@ async function sendPartnerInvite() {
     const start = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
     const data = await request("/api/partner/invite", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, extension: item.extension || "", title: item.title || "", start, quality: "", durationSeconds: Math.round(webDuration.value) || 0, hostAvatar: activeProfile.value?.avatarImage || "" }),
+      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, providerURL: item.providerURL || item.providerUrl || '', extension: item.extension || "", title: item.title || "", start, quality: "", durationSeconds: Math.round(webDuration.value) || 0, hostAvatar: activeProfile.value?.avatarImage || "" }),
     });
     webWwpSessionId.value = data.wwpSessionId;
     webIsWwpGuest.value = false; // we are the host - keep authenticating with our device token
@@ -1937,7 +1947,7 @@ async function joinPartnerInvite(invite) {
   webWwpSessionId.value = invite.wwpSessionId;
   webIsWwpGuest.value = true; // joined via the host's ticket; never send our own token on media requests
   webForceHls.value = true;
-  webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, extension: invite.extension || "", title: invite.title || "Watch with partner" };
+  webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, providerURL: invite.providerURL || '', extension: invite.extension || "", title: invite.title || "Watch with partner" };
   webPlaying.value = false;
   // The Join click's user-gesture is spent by the time HLS.js is ready, so the
   // first play() will be an auto-play and must start muted; the unmute pill
