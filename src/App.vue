@@ -798,19 +798,19 @@ const webPlayerSrc = computed(() => {
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
-  // Direct is only useful when the browser can decode the source container.
-  // Known unsupported VOD containers enter HLS immediately; compatible or
-  // unknown containers still try Direct and fall back on error/stall.
+  // Let the browser test the actual provider stream. A catalog extension
+  // alone does not describe the codecs/container returned by the provider.
   // Watch-with-Partner must remain on its shared HLS generation.
-  const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value && browserDirectCandidate(item);
+  const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value;
   const generated = playableSourceId && item.id
     ? (shouldUseDirect
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
-  // Generate the selected transport URL from the source identity rather than
-  // trusting an older catalog playbackUrl to describe browser capability.
-  const raw = generated || item.playbackUrl || item.url || "";
+  const providerUrl = typeof item.providerUrl === 'string' ? item.providerUrl : typeof item.providerURL === 'string' ? item.providerURL : '';
+  // Direct uses the original provider URL verbatim. The resolver redirect is
+  // only for older catalog records that do not yet carry it.
+  const raw = (shouldUseDirect && /^https?:\/\//i.test(providerUrl) ? providerUrl : '') || generated || item.playbackUrl || item.url || "";
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (target.pathname.includes('/api/xtream/hls/')) {
@@ -824,7 +824,7 @@ const webPlayerSrc = computed(() => {
   const onStreamer = target.origin === new URL(browserStreamer).origin;
   if (webIsWwpGuest.value) {
     if (onStreamer && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
-  } else if (deviceToken.value) {
+  } else if (onStreamer && deviceToken.value) {
     target.searchParams.set("deviceToken", deviceToken.value);
   } else if (onStreamer && webStreamTicket.value) {
     target.searchParams.set("streamTicket", webStreamTicket.value);
@@ -833,13 +833,6 @@ const webPlayerSrc = computed(() => {
   return target.toString();
 });
 
-function browserDirectCandidate(item) {
-  // The browser fetches live playlists through the server's native HLS proxy
-  // so provider HTTP redirects and missing CORS cannot block segment loads.
-  if (item?.kind === 'channel') return false;
-  const extension = String(item?.extension || '').replace(/^\./, '').toLowerCase();
-  return !['mkv', 'avi', 'wmv', 'flv', 'ts', 'm2ts', 'mpg', 'mpeg'].includes(extension);
-}
 const webStreamFormatLabel = computed(() => {
   const item = webNowPlaying.value;
   if (!item) return "";
@@ -858,7 +851,7 @@ async function resolveWebPlayableItem(item) {
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
-    playable = { ...item, id: episode.id, seriesId: item.id, isEpisode: true, seriesTitle: details.title || item.title, title: `${details.title || item.title} (${episode.episodeNumber || ""})`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
+    playable = { ...item, id: episode.id, seriesId: item.id, isEpisode: true, providerUrl: episode.providerUrl || episode.providerURL || '', seriesTitle: details.title || item.title, title: `${details.title || item.title} (${episode.episodeNumber || ""})`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
     webNowPlaying.value = playable;
   }
   return playable;
@@ -1501,7 +1494,7 @@ async function playWebMovie(item) {
   webIsWwpGuest.value = false;
   webMuted.value = false;
   webAutoplayBlocked.value = false;
-  // Browser-incompatible containers start with HLS; other VOD tries Direct.
+  // Try the original provider URL; media errors select the HLS fallback.
   webForceHls.value = false;
   webNowPlaying.value = item;
   webMini.value = false;
@@ -1521,7 +1514,6 @@ async function playWebMovie(item) {
   webWedgeRestarts = 0;
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
-  webForceHls.value = !browserDirectCandidate(webNowPlaying.value);
   // Native metadata or the HLS response supplies the runtime. A separate
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
