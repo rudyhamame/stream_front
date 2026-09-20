@@ -27,6 +27,8 @@ const canonicalBackend = browserOrigin;
 const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
 const base = configuredBackend;
 const browserStreamer = (import.meta.env.VITE_PLAYBACK_BASE_URL || browserOrigin).replace(/\/$/, "");
+// One control identity per tab; account ownership remains in the signed token.
+const browserPlaybackClientId = crypto.randomUUID();
 const api = path => `${base}${path}`;
 
 function browserPlaybackUrl(raw) {
@@ -34,6 +36,8 @@ function browserPlaybackUrl(raw) {
   if (target.pathname.startsWith("/api/xtream/hls/") || target.pathname.startsWith("/api/xtream/play/")) {
     target.protocol = new URL(browserStreamer).protocol;
     target.host = new URL(browserStreamer).host;
+    target.searchParams.set('client', 'browser');
+    target.searchParams.set('playbackClientId', browserPlaybackClientId);
   }
   return target.toString();
 }
@@ -830,7 +834,9 @@ const webPlayerSrc = computed(() => {
 });
 
 function browserDirectCandidate(item) {
-  if (item?.kind === 'channel') return true;
+  // The browser fetches live playlists through the server's native HLS proxy
+  // so provider HTTP redirects and missing CORS cannot block segment loads.
+  if (item?.kind === 'channel') return false;
   const extension = String(item?.extension || '').replace(/^\./, '').toLowerCase();
   return !['mkv', 'avi', 'wmv', 'flv', 'ts', 'm2ts', 'mpg', 'mpeg'].includes(extension);
 }
@@ -1429,8 +1435,8 @@ async function configureMoviePlayback(startSeconds = 0) {
       }
     } else {
       webEncodeStrategy.value = "HLS FULL TRANSCODE";
-      fetchWebEncodeStrategy(source);
       const Hls = await loadHlsConstructor();
+      if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
         webHls = new Hls({
           enableWorker: true,
@@ -1455,6 +1461,7 @@ async function configureMoviePlayback(startSeconds = 0) {
           fragLoadingRetryDelay: 500,
         });
         webHls.on(Hls.Events.ERROR, (_event, data) => {
+          if (playbackToken !== webPlaybackToken) return;
           if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR && webPlaybackRetryCount.value < 2) {
             webPlaybackRetryCount.value += 1;
@@ -1462,6 +1469,14 @@ async function configureMoviePlayback(startSeconds = 0) {
             return;
           }
           scheduleWebReconnect(webAbsolutePosition());
+        });
+        webHls.on(Hls.Events.MANIFEST_LOADED, (_event, data) => {
+          if (playbackToken !== webPlaybackToken) return;
+          const response = data.networkDetails;
+          const header = name => response?.getResponseHeader?.(name) || response?.headers?.get?.(name) || '';
+          webEncodeStrategy.value = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode')) || 'HLS';
+          const duration = Number(header('X-RH-Duration'));
+          if (duration > 0) webDuration.value = duration;
         });
         // Wait for a usable playlist before asking the media element to play.
         // MEDIA_ATTACHED only means MSE is connected; FFmpeg may still be
@@ -1507,16 +1522,10 @@ async function playWebMovie(item) {
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
   webForceHls.value = !browserDirectCandidate(webNowPlaying.value);
-  // VOD startup is gated on the bounded provider-duration lookup. The Direct
-  // request is attached only after this finishes, so the provider's one stream
-  // slot cannot be taken by playback before ffprobe gets the real runtime.
-  if (webNowPlaying.value?.kind !== "channel") {
-    const durationResolved = await loadMovieDuration(webNowPlaying.value);
-    // A duration lookup can fail when the provider is busy. It must not make
-    // an otherwise playable stream impossible to start.
-    if (!durationResolved) webDuration.value = parseDuration(webNowPlaying.value?.duration);
-  }
-  await loadStreamTicket(webNowPlaying.value);
+  // Native metadata or the HLS response supplies the runtime. A separate
+  // provider probe before Play added up to 30s and competed for its stream slot.
+  webDuration.value = parseDuration(webNowPlaying.value?.duration);
+  if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
