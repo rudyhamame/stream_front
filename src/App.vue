@@ -318,14 +318,21 @@ async function chooseProfile(profile) {
     window.localStorage.setItem("rh-device-token", data.token);
     activeProfileId.value = profile.id;
     window.localStorage.setItem("rh-profile-id", profile.id);
-    await request("/api/health");
     online.value = true;
-    await Promise.all([loadSources(sourceId.value, { loadPlaylist: false }), loadWeatherSettings()]);
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
     appReady.value = true;
-    void loadHomeData();
+    // The profile is active as soon as the server returns its token. Show
+    // Welcome immediately; provider and weather requests must not hold the
+    // chooser open or leave the user on the profile screen.
+    void Promise.all([
+      loadSources(sourceId.value, { loadPlaylist: false }),
+      loadWeatherSettings(),
+    ]).then(() => loadHomeData()).catch(error => {
+      messageType.value = "error";
+      message.value = error?.message || "Your profile opened, but some Welcome data could not load.";
+    });
   } catch (error) {
     profileError.value = error.message || "Could not open this profile.";
   } finally {
