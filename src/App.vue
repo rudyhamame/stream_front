@@ -1301,11 +1301,9 @@ function isHlsPlaybackUrl(source) {
   } catch { return String(source || '').includes('/api/xtream/hls/'); }
 }
 
-// Start playback, surviving the browser's autoplay policy. An un-muted
-// programmatic play() with no fresh user gesture is rejected - this is why a
-// Watch-with-Partner joiner's video used to sit frozen while only the host
-// played. On rejection we retry muted (which every browser allows) and raise
-// the "Tap to unmute" pill so sound is one tap away.
+// A Direct -> HLS switch happens after the original click has expired. When
+// autoplay blocks that delayed play(), start muted and let the viewer restore
+// sound with an explicit tap. Keep genuine media errors on the recovery path.
 async function startWebPlayback(video) {
   if (!video) return false;
   try {
@@ -1313,13 +1311,11 @@ async function startWebPlayback(video) {
     webPlaying.value = true;
     if (!video.muted) { webMuted.value = false; webAutoplayBlocked.value = false; }
     return true;
-  } catch { /* autoplay policy rejected the un-muted play */ }
-  // Only a Watch-with-Partner guest force-plays muted to stay synced with the
-  // host. Everyone else stays paused with sound intact - the centre Play button
-  // is right there, one tap away. Never silently mute a movie.
-  if (!(webWwpSessionId.value && webIsWwpGuest.value)) {
-    webPlaying.value = false;
-    return false;
+  } catch (error) {
+    if (error?.name !== "NotAllowedError") {
+      webPlaying.value = false;
+      return false;
+    }
   }
   try {
     video.muted = true;
@@ -1330,6 +1326,8 @@ async function startWebPlayback(video) {
     return true;
   } catch {
     webPlaying.value = false;
+    webBuffering.value = false;
+    showWebControls();
     return false;
   }
 }
@@ -1466,7 +1464,12 @@ async function configureMoviePlayback(startSeconds = 0) {
           }
           scheduleWebReconnect(webAbsolutePosition());
         });
-        webHls.on(Hls.Events.MEDIA_ATTACHED, () => { startWebPlayback(video); });
+        // Wait for a usable playlist before asking the media element to play.
+        // MEDIA_ATTACHED only means MSE is connected; FFmpeg may still be
+        // creating its first segments. Ignore callbacks from a retired source.
+        webHls.on(Hls.Events.MANIFEST_PARSED, () => {
+          if (playbackToken === webPlaybackToken) startWebPlayback(video);
+        });
         webHls.loadSource(source);
         webHls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
@@ -1816,7 +1819,15 @@ async function toggleWebPlayback() {
   if (webVideo.value.paused) {
     wwpUserPaused = false;
     if (wwp) sendWwpControl(false);
-    try { await webVideo.value.play(); } catch { webPlayerError.value = "Playback could not start."; }
+    const playbackToken = webPlaybackToken;
+    try { await webVideo.value.play(); }
+    catch (error) {
+      // The Direct attempt can be replaced by HLS while play() is pending.
+      // That abort belongs to the old media source, not the new stream.
+      if (playbackToken !== webPlaybackToken || error?.name === "AbortError") return;
+      webBuffering.value = false;
+      webPlayerError.value = "Playback could not start.";
+    }
   } else {
     wwpUserPaused = true;
     clearWebRecoveryTimer();
@@ -3417,6 +3428,7 @@ onMounted(async () => {
             <button type="button" class="web-pl-btn" :aria-label="webFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click.stop="fullscreenWebMovie"><svg v-if="webFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a3 3 0 0 1-3 3H3M21 9h-3a3 3 0 0 1-3-3V3M3 15h3a3 3 0 0 1 3 3v3M15 21v-3a3 3 0 0 1 3-3h3"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5"/></svg></button>
           </footer>
         </div>
+        <button v-if="webAutoplayBlocked && webMuted" type="button" class="web-unmute-prompt" @click.stop="unmuteWebPlayback">Tap to unmute</button>
         <div v-if="webPlayerError" class="web-player-error">
           <div class="web-player-error-card">
             <span class="web-player-error-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
