@@ -1191,7 +1191,10 @@ function fallBackToHlsFromDirect(resumeAt) {
   clearTimeout(webDirectStartupTimer);
   const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
   webForceHls.value = true;
-  webEncodeStrategy.value = "HLS FULL TRANSCODE";
+  // The browser fallback chooses a server strategy only after the HLS
+  // manifest response arrives. Do not claim a full transcode before then:
+  // compatible sources can be remuxed with their original codecs.
+  webEncodeStrategy.value = "HLS STARTING";
   webPlaybackRetryCount.value = 0;
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
@@ -1441,7 +1444,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         await startWebPlayback(video);
       }
     } else {
-      webEncodeStrategy.value = "HLS FULL TRANSCODE";
+      webEncodeStrategy.value = "HLS STARTING";
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
