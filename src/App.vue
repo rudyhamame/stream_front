@@ -2046,13 +2046,18 @@ function catalogItemCacheKey(item) {
   return source && kind && id ? `rh-catalog-item:v1:${encodeURIComponent(source)}:${encodeURIComponent(kind)}:${encodeURIComponent(id)}` : "";
 }
 
+function isWeakCachedTitle(value) {
+  const title = String(value || '').trim();
+  return !title || /^\d+$/.test(title) || /^(series|movie|channel)\s+\d+$/i.test(title);
+}
+
 function hydrateCachedItem(item) {
   if (!item || typeof item !== "object") return item;
   let cached = null;
   try {
     const direct = catalogItemCacheKey(item);
     if (direct) cached = JSON.parse(window.localStorage.getItem(direct) || "null");
-    if (!cached) {
+    if (!cached || isWeakCachedTitle(cached.title)) {
       for (let index = 0; index < window.localStorage.length; index += 1) {
         const key = window.localStorage.key(index) || "";
         if (!key.startsWith("rh-catalog:v3:") && !key.startsWith("rh-catalog:v4:")) continue;
@@ -2061,7 +2066,7 @@ function hydrateCachedItem(item) {
           || (String(candidate.sourceId) === String(item.sourceId) && String(candidate.kind) === String(item.kind) && String(candidate.id) === String(item.id))
           || (item.providerUrl && candidate.providerUrl && String(candidate.providerUrl) === String(item.providerUrl))
           || (String(candidate.sourceId) === String(item.sourceId) && String(candidate.kind) === String(item.kind) && String(candidate.id) === String(item.id || "")));
-        if (match) { cached = match; break; }
+        if (match && (!cached || !isWeakCachedTitle(match.title) || isWeakCachedTitle(cached.title))) { cached = match; if (!isWeakCachedTitle(match.title)) break; }
       }
     }
   } catch { cached = null; }
@@ -2069,7 +2074,7 @@ function hydrateCachedItem(item) {
   return {
     ...cached,
     ...item,
-    title: item.title || cached.title,
+    title: isWeakCachedTitle(item.title) ? (cached.title || item.title) : item.title,
     logo: item.logo || cached.logo,
     poster: item.poster || cached.poster || cached.logo,
     thumbnail: item.thumbnail || cached.thumbnail || cached.logo,
