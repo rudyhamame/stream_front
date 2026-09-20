@@ -1108,7 +1108,8 @@ function onWebWaiting() {
     webStallTimer = null;
     const video = webVideo.value;
     if (!webNowPlaying.value || !video || video.readyState >= 3) return;
-    scheduleWebReconnect(resumeAt);
+    if (!webForceHls.value && !webWwpSessionId.value) fallBackToHlsFromDirect(webAbsolutePosition());
+    else scheduleWebReconnect(Math.max(resumeAt, webAbsolutePosition()));
   }, 20_000);
 }
 
@@ -1193,8 +1194,7 @@ function fallBackToHlsFromDirect(resumeAt) {
 
 function handleWebVideoError() {
   if (!webNowPlaying.value) return;
-  const failedSource = webPlayerSrc.value;
-  if (failedSource && !isHlsPlaybackUrl(failedSource) && !webForceHls.value) {
+  if (!webForceHls.value && !webWwpSessionId.value) {
     // Native transport failed for this item - fall back to the HLS pipeline,
     // re-based at the exact spot playback stopped.
     fallBackToHlsFromDirect(webAbsolutePosition());
@@ -1207,7 +1207,7 @@ function handleWebVideoError() {
 }
 
 function onWebReady(event) {
-  if (!webForceHls.value) clearTimeout(webDirectStartupTimer);
+  if (!webForceHls.value && event?.type === 'playing') clearTimeout(webDirectStartupTimer);
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
@@ -1285,7 +1285,7 @@ function movieStreamUrl(startSeconds = 0) {
   const source = webPlayerSrc.value;
   if (!source) return "";
   const target = new URL(source);
-  const hls = isHlsPlaybackUrl(target.toString());
+  const hls = target.pathname.includes('/api/xtream/hls/');
   if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
   if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
   wwpSeekIntent = false;
@@ -1385,7 +1385,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   video.muted = webMuted.value;
   video.load();
   try {
-    const directPlayback = !isHlsPlaybackUrl(source);
+    const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webEncodeStrategy.value = "DIRECT";
       // Native MP4 carries the whole timeline, so a resume point is a real
@@ -1400,22 +1400,24 @@ async function configureMoviePlayback(startSeconds = 0) {
       // A container the browser cannot actually decode often never fires
       // `error` at all - it just sits there. If metadata has not arrived
       // within a few seconds, treat that as a failed direct attempt too.
-      video.addEventListener("loadedmetadata", () => clearTimeout(webDirectStartupTimer), { once: true });
       webDirectStartupTimer = setTimeout(() => {
-        if (playbackToken !== webPlaybackToken || webForceHls.value || video.readyState >= 1) return;
+        if (playbackToken !== webPlaybackToken || webForceHls.value || webMediaReady.value) return;
         fallBackToHlsFromDirect(webNowPlaying.value?.kind === "channel" ? 0 : Math.max(startSeconds, webAbsolutePosition()));
       }, 6000);
       // Chrome/Firefox need hls.js to consume a provider's live m3u8. Loading
       // the /play URL through hls.js still follows the 302 and streams directly
       // from the provider; it does not invoke RH HLS/transcoding.
-      if (webNowPlaying.value?.kind === "channel") {
+      if (webNowPlaying.value?.kind === "channel" || isHlsPlaybackUrl(source)) {
         const Hls = await loadHlsConstructor();
+        if (playbackToken !== webPlaybackToken) return;
         if (Hls.isSupported()) {
           webHls = new Hls({ enableWorker: true, lowLatencyMode: true, liveSyncDurationCount: 3 });
           webHls.on(Hls.Events.ERROR, (_event, data) => {
             if (data.fatal && playbackToken === webPlaybackToken && !webForceHls.value) fallBackToHlsFromDirect(0);
           });
-          webHls.on(Hls.Events.MEDIA_ATTACHED, () => startWebPlayback(video));
+          webHls.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (playbackToken === webPlaybackToken) startWebPlayback(video);
+          });
           webHls.loadSource(source);
           webHls.attachMedia(video);
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
