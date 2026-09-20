@@ -41,8 +41,11 @@ const browserApp = ref(true);
 const navOpen = ref(false);
 const openCardKey = ref("");
 const toggleCardActions = key => { openCardKey.value = openCardKey.value === key ? "" : key; };
+const closeCardActionsOnOutsideClick = event => {
+  if (!event.target.closest?.(".home-content-card, .playlist-card")) openCardKey.value = "";
+};
 const pageStorageKey = "rh-safari-page";
-const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "watchlater", "settings"];
+const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "settings"];
 const storedPage = window.localStorage.getItem(pageStorageKey);
 const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
@@ -53,7 +56,6 @@ const safariMenuItems = [
   { id: "series", label: "Series", icon: FilmRollAltIcon },
   { id: "movies", label: "Movies", icon: MovieIcon },
   { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
-  { id: "watchlater", label: "Watch Later", icon: BookmarkIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
 function openSafariPage(page) {
@@ -226,7 +228,7 @@ const failedLogoUrls = ref(new Set());
 const brandLogoReady = ref(false);
 {
   const brandLogo = new Image();
-  brandLogo.src = "/login/rh-login-mark.png";
+  brandLogo.src = "/login/rh-snow-logo.png";
   const reveal = () => { brandLogoReady.value = true; };
   if (brandLogo.decode) brandLogo.decode().then(reveal).catch(reveal);
   else brandLogo.onload = brandLogo.onerror = reveal;
@@ -597,6 +599,7 @@ onBeforeUnmount(() => window.removeEventListener("message", onWwpCallMessage));
 onBeforeUnmount(() => window.removeEventListener("popstate", enforceProfileSelection));
 onBeforeUnmount(() => window.removeEventListener("pageshow", blurRestoredLoginFocus));
 onBeforeUnmount(() => document.removeEventListener("keydown", handleNavigationKeydown));
+onBeforeUnmount(() => document.removeEventListener("click", closeCardActionsOnOutsideClick));
 onBeforeUnmount(() => {
   if (deviceStatusTimer) clearInterval(deviceStatusTimer);
   if (libraryRevisionController) libraryRevisionController.abort();
@@ -732,6 +735,26 @@ function rokuItemsForTab(value) { return rokuLibraryItems.value.filter(item => i
 const inSelectedProvider = entry => { const cur = String(sourceId.value || ""); return !cur || String(entry?.sourceId || "") === cur; };
 const managedCategoriesForTab = computed(() => managedLibraryCategories.value.filter(entry => entry?.kind === safariLibraryTab.value));
 const managedItemsForTab = computed(() => managedLibraryItems.value.filter(item => item?.kind === safariLibraryTab.value && inSelectedProvider(item)));
+const browseCategoryId = ref("all");
+const browseFocusIndex = ref(0);
+const browseCategories = computed(() => [{ id: "all", name: "All" }, ...managedCategoriesForTab.value.filter(category => category.items?.length).map(category => ({ id: category.id, name: category.name }))]);
+const browseItems = computed(() => {
+  const category = browseCategoryId.value === "all" ? null : managedCategoriesForTab.value.find(entry => entry.id === browseCategoryId.value);
+  const entries = category ? category.items || [] : managedItemsForTab.value;
+  const unique = new Map();
+  for (const item of entries) {
+    if (!item) continue;
+    const key = item.libraryKey || `${item.sourceId || "source"}:${item.kind}:${item.id}`;
+    if (!unique.has(key)) unique.set(key, item);
+  }
+  return [...unique.values()];
+});
+const browseSelectedItem = computed(() => browseItems.value[browseFocusIndex.value] || browseItems.value[0] || null);
+function selectBrowseCategory(id) { browseCategoryId.value = id || "all"; browseFocusIndex.value = 0; }
+function focusBrowseItem(event, index) {
+  browseFocusIndex.value = index;
+  event.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+}
 const managedTypeCounts = computed(() => Object.fromEntries(["series", "movie", "channel"].map(value => [value,
   managedLibraryCategories.value.filter(category => category?.kind === value).reduce((count, category) => count + (category.items || []).filter(item => item && inSelectedProvider(item)).length, 0),
 ])));
@@ -2010,21 +2033,69 @@ function streamFormatLabel(item) { return String(item?.extension || item?.stream
 
 function applySource(source) {
   if (!source) return;
-  savedItems.value = [...(source.enabledItems || [])];
-  archivedItems.value = [...(source.archivedItems || [])];
+  savedItems.value = (source.enabledItems || []).map(hydrateCachedItem);
+  archivedItems.value = (source.archivedItems || []).map(hydrateCachedItem);
   rememberItems([...savedItems.value, ...archivedItems.value]);
   sources.value = sources.value.map(item => item.id === source.id ? source : item);
 }
 
+function catalogItemCacheKey(item) {
+  const source = String(item?.sourceId || item?.source || "");
+  const kind = String(item?.kind || item?.type || "");
+  const id = String(item?.id || item?.providerId || "");
+  return source && kind && id ? `rh-catalog-item:v1:${encodeURIComponent(source)}:${encodeURIComponent(kind)}:${encodeURIComponent(id)}` : "";
+}
+
+function hydrateCachedItem(item) {
+  if (!item || typeof item !== "object") return item;
+  let cached = null;
+  try {
+    const direct = catalogItemCacheKey(item);
+    if (direct) cached = JSON.parse(window.localStorage.getItem(direct) || "null");
+    if (!cached) {
+      for (let index = 0; index < window.localStorage.length; index += 1) {
+        const key = window.localStorage.key(index) || "";
+        if (!key.startsWith("rh-catalog:v3:") && !key.startsWith("rh-catalog:v4:")) continue;
+        const page = JSON.parse(window.localStorage.getItem(key) || "null");
+        const match = (page?.items || []).find(candidate => candidate.key === item.key
+          || (String(candidate.sourceId) === String(item.sourceId) && String(candidate.kind) === String(item.kind) && String(candidate.id) === String(item.id))
+          || (item.providerUrl && candidate.providerUrl && String(candidate.providerUrl) === String(item.providerUrl))
+          || (String(candidate.sourceId) === String(item.sourceId) && String(candidate.kind) === String(item.kind) && String(candidate.id) === String(item.id || "")));
+        if (match) { cached = match; break; }
+      }
+    }
+  } catch { cached = null; }
+  if (!cached) return item;
+  return {
+    ...cached,
+    ...item,
+    title: item.title || cached.title,
+    logo: item.logo || cached.logo,
+    poster: item.poster || cached.poster || cached.logo,
+    thumbnail: item.thumbnail || cached.thumbnail || cached.logo,
+    category: item.category && item.category !== "Other" ? item.category : (cached.category || item.category),
+    categoryId: item.categoryId || cached.categoryId,
+    language: item.language || cached.language,
+    extension: item.extension || cached.extension,
+    providerUrl: item.providerUrl || cached.providerUrl,
+  };
+}
+
 function rememberItems(entries = []) {
   const next = { ...knownItems.value };
-  for (const item of entries) if (item?.key) next[item.key] = item;
+  for (const item of entries) if (item?.key) {
+    next[item.key] = item;
+    const cacheKey = catalogItemCacheKey(item);
+    if (cacheKey) {
+      try { window.localStorage.setItem(cacheKey, JSON.stringify(item)); } catch { /* cache is optional */ }
+    }
+  }
   knownItems.value = next;
 }
 
 function applyManagedLibrary(data) {
-  managedLibraryCategories.value = (Array.isArray(data?.categories) ? data.categories : []).filter(Boolean).map(category => ({ ...category, items: Array.isArray(category.items) ? category.items.filter(Boolean) : [] }));
-  managedLibraryItems.value = (Array.isArray(data?.items) ? data.items : []).filter(Boolean);
+  managedLibraryCategories.value = (Array.isArray(data?.categories) ? data.categories : []).filter(Boolean).map(category => ({ ...category, items: Array.isArray(category.items) ? category.items.filter(Boolean).map(hydrateCachedItem) : [] }));
+  managedLibraryItems.value = (Array.isArray(data?.items) ? data.items : []).filter(Boolean).map(hydrateCachedItem);
   categoryNameDrafts.value = Object.fromEntries(managedLibraryCategories.value.map(category => [category.id, category.name]));
   if (categoryEditorId.value && !managedLibraryCategories.value.some(category => category.id === categoryEditorId.value)) {
     categoryEditorId.value = "";
@@ -2036,7 +2107,7 @@ async function loadManagedLibrary() {
   // Library categories/assignments were removed. The profile library is the
   // saved provider-URL list exposed by the provider source response.
   const data = await request("/api/xtream/sources", { cache: "no-store" });
-  const items = (data.items || []).flatMap(source => (source.enabledItems || []).map(item => ({ ...item, sourceId: item.sourceId || source.id })));
+  const items = (data.items || []).flatMap(source => (source.enabledItems || []).map(item => hydrateCachedItem({ ...item, sourceId: item.sourceId || source.id })));
   applyManagedLibrary({ categories: [], items });
 }
 
@@ -2235,6 +2306,7 @@ const homeRails = computed(() => {
   }
   return rails;
 });
+const homeHeroItem = computed(() => homeRails.value.flatMap(rail => rail.items || [])[0] || null);
 
 async function loadHomeData(force = false) {
   if (!deviceToken.value) return;
@@ -2527,8 +2599,8 @@ async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPa
   sourceId.value = sources.value.some(item => item.id === preferred) ? preferred : (sources.value[0]?.id || "");
   const source = sources.value.find(item => item.id === sourceId.value);
   selectedKeys.value = [];
-  savedItems.value = [...(source?.enabledItems || [])];
-  archivedItems.value = [...(source?.archivedItems || [])];
+  savedItems.value = (source?.enabledItems || []).map(hydrateCachedItem);
+  archivedItems.value = (source?.archivedItems || []).map(hydrateCachedItem);
   rememberItems([...savedItems.value, ...archivedItems.value]);
   // Provider catalogs can contain tens of thousands of rows and may take up
   // to a minute to arrive. Only request one while the Playlist page is open;
@@ -2681,7 +2753,19 @@ async function loadCatalog(reset = true) {
   message.value = "";
   try {
   const params = new URLSearchParams({ sourceId: requestedSourceId, kind: requestedKind, category: category.value, titleLanguage: titleLanguage.value, q: normalizedQuery, page: String(requestedPage), limit: String(playlistRequestSize) });
-    const data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
+    // Keep catalog pages across reloads and reopened tabs. The account/source
+    // identity is part of the key, so one account cannot reuse another one's
+    // catalog entries.
+    const browserCacheKey = `rh-catalog:v4:${requestedSourceId}:${requestedKind}:${category.value}:${titleLanguage.value}:${normalizedQuery}:${requestedPage}`;
+    let data;
+    try {
+      const cached = window.localStorage.getItem(browserCacheKey);
+      data = cached ? JSON.parse(cached) : null;
+    } catch { data = null; }
+    if (!data || !Array.isArray(data.items)) {
+      data = await request(`/api/xtream/catalog?${params}`, { signal: catalogController.signal });
+      try { window.localStorage.setItem(browserCacheKey, JSON.stringify(data)); } catch { /* cache is optional */ }
+    }
     if (requestId !== catalogRequestId || requestedSourceId !== sourceId.value || requestedKind !== kind.value) return;
     const nextItems = data.items || [];
     if (data.stale) {
@@ -2783,6 +2867,7 @@ watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
   document.addEventListener("keydown", handleNavigationKeydown);
+  document.addEventListener("click", closeCardActionsOnOutsideClick);
   window.addEventListener("popstate", enforceProfileSelection);
   window.addEventListener("pageshow", blurRestoredLoginFocus);
   window.addEventListener("message", onWwpCallMessage);
@@ -2988,11 +3073,10 @@ onMounted(async () => {
       <video v-if="homeBackdropUrl && safariPage === 'welcome'" class="home-backdrop-video" :src="homeBackdropUrl" autoplay muted loop playsinline preload="auto" aria-hidden="true" @error="homeBackdropUrl = ''"></video>
       <div class="home-aurora home-aurora-one" aria-hidden="true"></div>
       <div class="home-aurora home-aurora-two" aria-hidden="true"></div>
-      <div class="home-overlay" aria-hidden="true"></div>
     </template>
     <section v-if="browserApp" class="browser-app-shell" :class="{ 'nav-open': navOpen }">
       <aside class="browser-sidebar">
-        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-login-mark.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></button>
+        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-snow-logo.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></button>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span class="browser-sidebar-label">{{ item.label }}</span></button></nav>
         <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><LockKeyholeOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
       </aside>
@@ -3068,7 +3152,7 @@ onMounted(async () => {
             <div class="playlist-tabs" role="tablist">
               <button v-for="option in [{v:'series',l:'Series'},{v:'movie',l:'Movies'},{v:'channel',l:'Live TV'}]" :key="option.v" type="button" role="tab" :aria-selected="kind === option.v" :class="{active:kind === option.v}" @click="chooseKind(option.v)">
                 <span>{{ option.l }}</span>
-                <em class="playlist-tab-count">{{ welcomeProviderLoading ? '·' : (welcomeProviderCounts[option.v] || 0).toLocaleString() }}</em>
+                <em class="playlist-tab-count">{{ kind === option.v ? total.toLocaleString() : (welcomeProviderCounts[option.v] ? welcomeProviderCounts[option.v].toLocaleString() : '—') }}</em>
               </button>
             </div>
             <select class="playlist-category-select" :value="category" aria-label="Playlist category" @change="chooseCategory($event.target.value)">
@@ -3129,8 +3213,8 @@ onMounted(async () => {
         <p v-else class="web-empty">No episodes are available for this series.</p>
       </article>
 
-      <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedTypeCounts[safariLibraryTab] || 0 }} items</span></div></div>
+      <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page" :class="{ 'safari-browse-page': safariPage !== 'channels' }" :style="browseSelectedItem?.logo ? { '--browse-art': `url(${JSON.stringify(imageUrl(browseSelectedItem.logo))})` } : null">
+        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedItemsForTab.length }} items</span></div></div>
         <section v-if="categoryManagerOpen" class="library-category-manager">
           <header><div><p class="eyebrow">LIBRARY RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control what appears in your Library.</span></header>
           <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
@@ -3155,13 +3239,15 @@ onMounted(async () => {
             </div>
           </section>
         </div>
-        <div v-else-if="safariLibraryTab !== 'channel' && libraryRails.length" class="safari-library-rails">
-          <section v-for="rail in libraryRails" :key="rail.id" class="safari-library-rail">
-            <header><h2>{{ rail.name }}</h2><span>{{ rail.items.length }}</span></header>
-            <div class="safari-library-rail-track">
-              <button v-for="item in rail.items" :key="item.libraryKey" type="button" class="is-add-item is-playable" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><span class="safari-library-fallback"></span><b>{{ typeIcon(safariLibraryTab) }}</b></template><span v-if="safariLibraryTab === 'movie' && streamFormatLabel(item)" class="safari-library-format">{{ streamFormatLabel(item) }}</span></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
-            </div>
-          </section>
+        <div v-else-if="safariLibraryTab !== 'channel' && browseItems.length" class="safari-media-browser">
+          <nav class="browse-category-nav" aria-label="Browse categories">
+            <button v-for="entry in browseCategories" :key="entry.id" type="button" :class="{active:browseCategoryId === entry.id}" @click="selectBrowseCategory(entry.id)">{{ entry.name }}</button>
+          </nav>
+          <div class="browse-carousel" tabindex="0" :aria-label="`${typeLabel(safariLibraryTab)} posters`">
+            <button v-for="(item,index) in browseItems" :key="item.libraryKey || `${item.sourceId}:${item.kind}:${item.id}`" type="button" class="browse-poster" :class="{focused:index === browseFocusIndex}" :aria-label="item.title" @focus="focusBrowseItem($event,index)" @mouseenter="browseFocusIndex = index" @click="playLibraryItem(item)">
+              <span class="browse-poster-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy"><span v-else class="safari-library-fallback"><b>{{ typeIcon(safariLibraryTab) }}</b></span></span><strong>{{ item.title }}</strong><small>{{ item.category || typeLabel(safariLibraryTab) }}</small>
+            </button>
+          </div>
         </div>
         <p v-else class="web-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>

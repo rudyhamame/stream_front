@@ -120,7 +120,6 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  .home-backdrop-video { position:fixed; z-index:0; inset:0; width:100vw; height:100dvh; min-width:100%; min-height:100%; object-fit:cover; object-position:center; opacity:0; pointer-events:none; animation:home-backdrop-in 1.6s ease forwards; }
  @keyframes home-backdrop-in { from { opacity:0; } to { opacity:.6; } }
  @media (prefers-reduced-motion:reduce) { .home-backdrop-video { display:none; } }
- .home-overlay { position:fixed; z-index:1; inset:0; pointer-events:none; background:radial-gradient(120% 95% at 50% 8%,transparent 48%,rgba(0,0,0,.42) 100%),rgba(0,0,0,.18); }
  .home-aurora { display:none; }
  .home-aurora-two { display:none; }
  @keyframes home-aurora-drift { from { transform:translate3d(20vw,8vh,0) scale(1); opacity:.24; } to { transform:translate3d(28vw,13vh,0) scale(1.12); opacity:.42; } }
@@ -184,7 +183,7 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  @keyframes browser-playlist-spin { to { transform:rotate(360deg); } }
 
  /* Toolbar: tabs + search + delete, no boxes */
- .playlist-toolbar { display:flex; align-items:center; flex-wrap:nowrap; gap:10px 16px; flex:0 0 auto; margin-bottom:18px; white-space:nowrap; }
+ .playlist-toolbar { display:flex; align-items:center; justify-content:center; flex-wrap:nowrap; gap:10px 16px; flex:0 0 auto; margin-bottom:18px; white-space:nowrap; }
  .playlist-toolbar .playlist-tabs button,.playlist-toolbar .playlist-provider-select,.playlist-toolbar .playlist-category-select { white-space:nowrap; }
  @media (orientation:portrait) {
    .playlist-toolbar { flex-wrap:wrap; }
@@ -192,7 +191,23 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  }
  .playlist-provider-select,.playlist-category-select { height:40px; padding:0 14px; border:0; border-radius:11px; background:rgba(255,255,255,.05); color:#e7ebdf; font:600 13px 'Space Grotesk'; cursor:pointer; max-width:220px; }
  .playlist-provider-select:hover,.playlist-category-select:hover { background:rgba(255,255,255,.09); }
- .playlist-category-select { flex:0 1 auto; min-width:150px; }
+.playlist-category-select { flex:0 1 auto; min-width:150px; }
+.browser-app-shell select {
+  appearance:none;
+  -webkit-appearance:none;
+  border:1px solid rgba(193,217,255,.18);
+  background-color:rgba(7,16,29,.72);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23c1d9ff' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 12px center;
+  color:#f4f7fb;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 24px rgba(0,0,0,.16);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.browser-app-shell select:hover { border-color:rgba(193,217,255,.42); background-color:rgba(15,31,51,.86); }
+.browser-app-shell select:focus-visible { outline:none; border-color:#c1d9ff; box-shadow:0 0 0 3px rgba(193,217,255,.14),inset 0 1px 0 rgba(255,255,255,.08); }
+.browser-app-shell select option { background:#0d1b2d; color:#f4f7fb; }
  .playlist-tabs { display:inline-flex; padding:3px; border-radius:11px; background:rgba(255,255,255,.05); }
  .playlist-tabs button { padding:8px 16px; border:0; border-radius:8px; background:transparent; color:#9aa694; font:600 13px/1 'Space Grotesk'; letter-spacing:.01em; cursor:pointer; transition:color .15s,background .15s; }
  .playlist-tabs button:hover { color:#e7ebdf; }
@@ -202,7 +217,7 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  .playlist-tabs button.active .playlist-tab-count { background:rgba(16,21,13,.22); color:#0f1626; }
  .playlist-result-count { margin:-6px 0 16px; font:500 12px/1 'Space Grotesk'; color:#8b9683; }
  .playlist-result-count strong { color:#e7ebdf; font-weight:700; }
- .playlist-search { display:flex; align-items:center; gap:9px; flex:1 1 240px; min-width:180px; max-width:420px; height:40px; padding:0 13px; border-radius:11px; background:rgba(255,255,255,.05); color:#8d9588; }
+ .playlist-search { display:flex; align-items:center; gap:9px; flex:0 1 420px; min-width:180px; max-width:420px; height:40px; padding:0 13px; border-radius:11px; background:rgba(255,255,255,.05); color:#8d9588; }
  .playlist-search:focus-within { background:rgba(255,255,255,.08); box-shadow:inset 0 0 0 1px rgba(184,255,57,.5); }
  .playlist-search svg { flex:0 0 auto; }
  .playlist-search input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:#f3f4ef; font:14px 'DM Sans'; }
@@ -222,7 +237,7 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  /* Designed placeholder for items with no artwork */
  .playlist-card-fallback { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; padding:14px; text-align:center; background:radial-gradient(120% 90% at 78% 12%,rgba(184,255,57,.14),transparent 52%),linear-gradient(150deg,#2b3a24 0%,#161d13 60%,#0f140d 100%); }
  .playlist-card-fallback::after { content:''; position:absolute; inset:9px; border:1px solid rgba(184,255,57,.16); border-radius:9px; pointer-events:none; }
- .playlist-card-fallback .fallback-mark { display:grid; place-items:center; width:44px; height:44px; border-radius:12px; background:#ffc107; color:#0f1626; font:800 15px/1 'Space Grotesk'; box-shadow:0 6px 18px rgba(184,255,57,.28); }
+ .playlist-card-fallback .fallback-mark { display:grid; place-items:center; width:44px; height:44px; border-radius:12px; background:#c1d9ff; color:#102039; font:800 15px/1 'Space Grotesk'; box-shadow:0 6px 18px rgba(115,165,232,.28); }
  .playlist-card-fallback .fallback-name { max-width:100%; color:#e7ebdf; font:600 11px/1.3 'Space Grotesk'; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
  .playlist-card-fallback .fallback-kind { color:#9aa694; font:700 8.5px/1 'DM Sans'; letter-spacing:.16em; text-transform:uppercase; }
  .playlist-card-fallback[data-kind="channel"] .fallback-name { -webkit-line-clamp:3; font-size:12px; }
@@ -231,7 +246,7 @@ body::before{position:fixed;z-index:-1;inset:-12%;content:"";pointer-events:none
  .is-channel-grid .playlist-card-art { background:#161c13; }
  .playlist-card-art img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; display:block; }
  .is-channel-grid .playlist-card-art img { object-fit:contain; padding:14px; }
- .playlist-card.enabled .playlist-card-art { border-color:rgba(184,255,57,.6); box-shadow:0 0 0 1px rgba(184,255,57,.4),0 12px 30px rgba(184,255,57,.16); }
+ .playlist-card.enabled .playlist-card-art { border-color:rgba(193,217,255,.82); box-shadow:0 0 0 1px rgba(193,217,255,.55),0 12px 30px rgba(115,165,232,.22); }
  /* Centered vertical Play + Add/Delete buttons over the poster art. Shared by
     the Welcome rails and the Manage-playlist grid. */
  .card-actions { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); display:flex; flex-direction:column; gap:8px; z-index:2; }
@@ -344,7 +359,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .safari-library-art { position:relative; display:grid; place-items:center; width:48px; height:48px; overflow:hidden; border-radius:8px; background:rgba(255,255,255,.06); color:#ffc107; }
  .safari-library-art img { width:100%; height:100%; object-fit:cover; }
  .safari-library-art .safari-library-fallback { opacity:.58; filter:saturate(.8); }
- .safari-library-art b { position:absolute; display:grid; place-items:center; width:27px; height:27px; border:1px solid rgba(212,240,106,.65); border-radius:50%; background:rgba(8,12,8,.78); color:#ffc107; font-size:13px; }
+.safari-library-art b { position:absolute; display:grid; place-items:center; width:27px; height:27px; border:1px solid rgba(193,217,255,.65); border-radius:50%; background:rgba(8,12,8,.78); color:#c1d9ff; font-size:13px; }
  .safari-library-format { position:absolute; top:7px; right:7px; z-index:1; padding:3px 6px; border:1px solid rgba(212,240,106,.5); border-radius:4px; background:rgba(8,12,8,.82); color:#ffc107; font:700 9px/1 'DM Sans'; letter-spacing:.08em; }
  .safari-library-list strong,.safari-library-list small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
  .safari-library-list strong { font-size:14px; }
@@ -403,18 +418,19 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  /* Keep keyboard focus from drawing the old yellow border box around items. */
  button:focus-visible { outline:none !important; border-color:transparent !important; box-shadow:none !important; }
  html:has(.safari-app-mode:not(.login-shell)),body:has(.safari-app-mode:not(.login-shell)) { width:100%; height:100%; overflow:hidden!important; overscroll-behavior:none; }
- .profile-chooser-page { position:relative; z-index:2; display:grid; width:100%; min-height:calc(100svh - 64px); height:calc(100svh - 64px); place-items:center; padding:42px 24px 64px; overflow-x:hidden; overflow-y:auto; scroll-padding-bottom:45vh; background:linear-gradient(rgba(0,0,0,.48),rgba(0,0,0,.48)),url('/login/login-background.png') center center/cover fixed no-repeat; }
+ .profile-chooser-page { position:relative; z-index:2; display:grid; width:100%; min-height:100dvh; height:auto; place-items:center; padding:42px 24px 64px; overflow-x:hidden; overflow-y:auto; scroll-padding-bottom:45vh; background:linear-gradient(rgba(5,7,8,.22),rgba(5,7,8,.22)),url('/login/login-profile-background.jpg') center/cover fixed no-repeat; }
  .profile-chooser-inner { width:min(760px,100%); text-align:center; }
  .profile-chooser-inner .eyebrow { margin-bottom:12px; color:#ffc107; }
  .profile-chooser-inner h1 { margin:0; color:#f5f2ea; font:600 clamp(36px,6vw,62px)/.98 'Space Grotesk'; letter-spacing:-.06em; }
  .profile-chooser-copy { margin:15px auto 30px; color:#aeb7a0; font-size:15px; }
- .profile-chooser-logout { margin-top:30px; min-width:110px; }
+ .profile-chooser-logout { margin-top:30px; min-width:110px; border-color:rgba(193,217,255,.34); background:rgba(193,217,255,.10); color:#e8f6ff; box-shadow:0 10px 24px rgba(0,0,0,.18); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px); }
+ .profile-chooser-logout:hover,.profile-chooser-logout:focus-visible { border-color:#c9f2ff; background:rgba(193,217,255,.18); color:#fff; outline:none; }
  .profile-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); justify-content:center; gap:22px; }
  .profile-option { display:grid; justify-items:center; gap:9px; min-height:150px; padding:8px 12px; border:0; border-radius:0; background:transparent; color:#f5f2ea; cursor:pointer; font:inherit; transition:transform .18s ease,opacity .18s ease; }
  .profile-option:hover,.profile-option:focus-visible { outline:none; transform:translateY(-3px); }
  .profile-option:disabled { cursor:wait; opacity:.65; }
  .profile-avatar { display:grid; width:112px; height:112px; place-items:center; border:3px solid rgba(255,255,255,.42); border-radius:50%; color:#0f1626; font:700 42px 'Space Grotesk'; text-shadow:0 1px 1px rgba(255,255,255,.28); box-shadow:0 10px 26px rgba(0,0,0,.3); }
- .profile-avatar-lime { background:linear-gradient(145deg,#efff91,#9bd52d); }
+ .profile-avatar-lime { background:linear-gradient(145deg,#e9f8ff,#84b9d8); border-color:#c9f2ff; color:#071522; box-shadow:0 0 0 4px rgba(201,242,255,.14),0 10px 26px rgba(0,0,0,.3); }
  .profile-avatar-teal { background:linear-gradient(145deg,#b8fff0,#2dbb9f); color:#06241d; }
  .profile-avatar-amber { background:linear-gradient(145deg,#ffe8a3,#e39b21); color:#2b1b05; }
  .profile-avatar-violet { background:linear-gradient(145deg,#e2ccff,#8f5bd1); color:#160b2a; }
@@ -485,7 +501,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .profile-picture-option:hover,.profile-picture-option:focus-visible { transform:scale(1.08); outline:none; }
  .profile-picture-option.selected { border-color:#f5f2ea; box-shadow:0 0 0 3px #ffc107,0 7px 16px rgba(0,0,0,.26); }
  .profile-picture-option:disabled { cursor:wait; opacity:.65; }
- @media(max-width:600px){ .profile-chooser-page { min-height:calc(100svh - 58px); height:calc(100svh - 58px); padding:30px 16px 92px; } .profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .profile-option { min-height:130px; padding:8px; } .profile-avatar { width:82px; height:82px; font-size:30px; } .profile-create-form { align-items:stretch; flex-direction:column; gap:10px; } .profile-create-form .primary-action { width:100%; } }
+ @media(max-width:600px){ .profile-chooser-page { min-height:100dvh; height:auto; padding:30px 16px 92px; } .profile-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; } .profile-option { min-height:130px; padding:8px; } .profile-avatar { width:82px; height:82px; font-size:30px; } .profile-create-form { align-items:stretch; flex-direction:column; gap:10px; } .profile-create-form .primary-action { width:100%; } }
  @media(max-width:700px){
    .safari-app-mode .topbar{display:flex;height:58px;padding:0 16px}.safari-app-mode .brand{font-size:15px}.browser-sidebar{display:none}.browser-app-shell{height:calc(100dvh - 58px)}.browser-main{margin-left:0}.safari-page-shell{height:100%;padding:0}.browser-main .safari-page{padding:14px 14px 0}.browser-main .safari-bottom-menu{display:grid}.safari-welcome-page{display:flex;align-items:stretch;justify-content:center;flex-direction:column;gap:24px}.safari-welcome-page .safari-backend-status{top:14px;right:14px}.safari-library-stats{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}.safari-library-stats button{align-items:center;flex-direction:column;min-width:0;padding:12px 5px;text-align:center}.safari-library-stats strong{font-size:28px}.safari-library-stats span{width:100%;font-size:13px;line-height:1.15;overflow-wrap:anywhere}.safari-playlist-page{padding-bottom:84px}.safari-settings-page{padding-bottom:calc(84px + env(safe-area-inset-bottom))}.safari-playlist-page .web-playlist-source{gap:8px}.safari-playlist-page .web-playlist-source select{width:auto;min-width:180px}.safari-playlist-page .web-playlist-source .web-playlist-save{min-width:0;white-space:nowrap}.safari-playlist-page .web-playlist-source-form{grid-template-columns:1fr}.safari-playlist-page .safari-playlist-tabs{width:calc(100% + 28px);margin-left:-14px}.safari-library-tabs button{font-size:11px}.safari-library-art{width:44px;height:44px}.safari-library-rails{gap:18px}.safari-library-rail-track{gap:9px}.safari-library-rail-track>button{flex-basis:140px;padding:7px}.safari-library-rail-track .safari-library-art{height:185px;flex-basis:185px}.browser-playlist-header,.browser-playlist-row{min-width:560px}.live-tv-browser{grid-template-columns:1fr;overflow:auto;padding-bottom:90px}.live-tv-preview{align-self:stretch}.live-tv-channel-list{min-height:420px}
   }
@@ -551,15 +567,26 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
 .series-episode { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:16px; min-height:98px; width:100%; border:1px solid rgba(255,255,255,.13); border-radius:20px; padding:18px 20px; background:rgba(255,255,255,.07); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 16px 38px rgba(0,0,0,.24); color:#f3f4ef; text-align:left; cursor:pointer; overflow:hidden; transition:background .18s ease,transform .18s ease,box-shadow .18s ease; }
 .series-episode::before { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(150deg,rgba(255,255,255,.09),transparent 46%); pointer-events:none; }
 .series-episode:hover,.series-episode:focus-visible { background:rgba(255,255,255,.12); transform:translateY(-4px); box-shadow:0 26px 52px rgba(0,0,0,.32); outline:none; }
-.series-episode:focus-visible { box-shadow:0 0 0 2px #ffc107,0 26px 52px rgba(0,0,0,.32); }
+.series-episode:focus-visible { box-shadow:0 0 0 2px #c1d9ff,0 26px 52px rgba(0,0,0,.32); }
 .series-episode-copy { position:relative; min-width:0; }
 .series-episode-copy small,.series-episode-copy strong,.series-episode-copy em { display:block; }
-.series-episode-copy small { margin-bottom:6px; color:#ffc107; font:700 10px/1 'Space Grotesk'; letter-spacing:.12em; text-transform:uppercase; }
+.series-episode-copy small { margin-bottom:6px; color:#c1d9ff; font:700 10px/1 'Space Grotesk'; letter-spacing:.12em; text-transform:uppercase; }
 .series-episode-copy strong { overflow:hidden; color:#f5f7f2; font:600 15px/1.3 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
 .series-episode-copy em { margin-top:6px; color:#9aa694; font:11px 'DM Sans'; font-style:normal; }
-.series-episode-format { position:relative; padding:5px 10px; border:1px solid rgba(184,255,57,.28); border-radius:999px; background:rgba(184,255,57,.12); color:#ffc107; font:700 9px/1 'DM Sans'; letter-spacing:.1em; }
-.series-episode-play { position:relative; display:grid; place-items:center; width:44px; height:44px; border-radius:50%; background:#ffc107; color:#16233a; box-shadow:0 8px 22px rgba(184,255,57,.28); transition:transform .16s ease,box-shadow .16s ease; }
-.series-episode:hover .series-episode-play { transform:scale(1.08); box-shadow:0 10px 28px rgba(184,255,57,.42); }
+.series-episode-format { position:relative; padding:5px 10px; border:1px solid rgba(193,217,255,.28); border-radius:999px; background:rgba(193,217,255,.12); color:#c1d9ff; font:700 9px/1 'DM Sans'; letter-spacing:.1em; }
+.series-episode-play { position:relative; display:grid; place-items:center; width:44px; height:44px; border-radius:50%; background:#c1d9ff; color:#16233a; box-shadow:0 8px 22px rgba(115,165,232,.28); transition:transform .16s ease,box-shadow .16s ease; }
+
+/* Episodes are a document-length page: let the browser own the scroll instead
+   of trapping the season list inside the viewport shell. */
+html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; min-height:100%; overflow:auto !important; overscroll-behavior:auto; }
+.safari-app-mode:has(.safari-episodes-page),
+.safari-app-mode:has(.safari-episodes-page) .browser-app-shell,
+.safari-app-mode:has(.safari-episodes-page) .browser-main,
+.safari-app-mode:has(.safari-episodes-page) .safari-page-shell { height:auto; min-height:100dvh; overflow:visible; }
+.safari-app-mode:has(.safari-episodes-page) .safari-episodes-page,
+.safari-app-mode:has(.safari-episodes-page) .series-episodes-content,
+.safari-app-mode:has(.safari-episodes-page) .series-seasons { height:auto; min-height:0; overflow:visible; }
+.series-episode:hover .series-episode-play { transform:scale(1.08); box-shadow:0 10px 28px rgba(115,165,232,.42); }
 .series-episode-play svg { display:block; width:22px; height:22px; }
 @media(max-width:600px) { .series-episode-list { grid-template-columns:1fr; } .series-episode { grid-template-columns:minmax(0,1fr) auto auto; min-height:96px; gap:10px; padding:15px 16px; border-radius:16px; } .series-episode-play { width:38px; height:38px; } .series-episode-play svg { width:20px; height:20px; } }
  .web-video-frame { position:absolute; inset:0; z-index:0; display:grid; place-items:center; width:100%; height:100%; overflow:hidden; border:0; border-radius:0; outline:0; background:#000; }
@@ -632,8 +659,9 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  /* The framed, margin'd layout is ONLY for the big in-app overlay. Fullscreen
     and the mini-player must run edge to edge (padding:0 from the base rule). */
  .web-player:not(.is-fullscreen):not(.is-mini) { padding:2rem; }
- .web-player:not(.is-fullscreen):not(.is-mini) .web-video-frame { width:min(1200px,calc(100% - 24px)); justify-self:center; }
- .web-player:not(.is-fullscreen):not(.is-mini) .web-player-controls { width:min(1200px,100%); justify-self:center; }
+ .web-player:not(.is-fullscreen):not(.is-mini) { width:100vw; min-width:100vw; }
+ .web-player:not(.is-fullscreen):not(.is-mini) .web-video-frame { width:100%; max-width:none; justify-self:stretch; }
+ .web-player:not(.is-fullscreen):not(.is-mini) .web-player-controls { width:100%; max-width:none; justify-self:stretch; }
  @media(max-width:700px){.web-player:not(.is-fullscreen):not(.is-mini){padding:10px 12px}.web-player .web-player-control-row{flex-wrap:wrap}.web-player .web-player-control-row span{width:100%;margin:0 0 4px}.web-player .web-player-control-row button{flex:1}}
  /* The topbar has no separator; keep this override after all responsive rules. */
  .topbar,.safari-app-mode .topbar { border-bottom:0; }
@@ -694,6 +722,7 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 
 /* Home dashboard: the same content-first rhythm as the Roku welcome screen. */
 .safari-welcome-page { display:block; width:100%; max-width:none; padding-top:clamp(16px,3vw,30px) !important; padding-bottom:40px !important; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
+.browser-main > .safari-page-shell .safari-page:not(.safari-welcome-page) { padding-top:clamp(16px,3vw,30px); padding-bottom:40px; }
 .welcome-provider-box { margin:0 0 28px; }
 .welcome-provider-box h1 { margin:0 0 5px; color:#f5f2ea; font:600 clamp(24px,3vw,32px)/1.05 'Space Grotesk'; letter-spacing:-.04em; }
 .welcome-provider-select { margin:0 0 5px; max-width:100%; padding:2px 30px 2px 10px; border:1px solid rgba(255,255,255,.16); border-radius:12px; background:rgba(255,255,255,.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23d4f06a' stroke-width='2.5'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 9px center; color:#f5f2ea; font:600 clamp(22px,2.7vw,30px)/1.1 'Space Grotesk'; letter-spacing:-.03em; cursor:pointer; -webkit-appearance:none; appearance:none; transition:background-color .15s ease,border-color .15s ease; }
@@ -807,9 +836,8 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 /* Android app parity: the browser uses the same deep-space shell, yellow
    navigation, rounded navy surfaces, and poster-led rails as the native app. */
 .safari-app-mode { background:#071522; color:#f5f8ff; }
-.home-background { background:#071522 url('/home-background.png') center/cover no-repeat; opacity:.72; }
-.home-overlay { background:linear-gradient(90deg,rgba(5,16,28,.18),rgba(5,16,28,.48)),linear-gradient(180deg,rgba(7,21,34,.08),rgba(7,21,34,.5)); }
-.browser-sidebar { top:0; bottom:0; left:0; width:280px; max-height:none; padding:28px 18px 24px; align-items:stretch; border:0; border-right:1px solid rgba(145,181,217,.08); border-radius:0; background:rgba(8,24,39,.94); box-shadow:14px 0 42px rgba(0,0,0,.18); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
+.home-background { background:#071522 url('/login/login-background.png') center/cover no-repeat; opacity:.72; }
+.browser-sidebar { top:0; bottom:0; left:0; width:280px; max-height:none; padding:28px 18px 24px; align-items:stretch; border:0; border-right:1px solid rgba(255,255,255,.12); border-radius:0; background:rgba(0,0,0,.42); box-shadow:14px 0 42px rgba(0,0,0,.24); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); }
 .browser-sidebar-brand { justify-content:flex-start; width:100%; height:62px; margin:0 0 34px; padding:0 22px; gap:10px; border-radius:0; background:transparent; box-shadow:none; cursor:default; }
 .browser-sidebar-brand:hover { background:transparent; }
 .browser-sidebar-brand .app-brand-mark { width:42px; height:42px; flex-basis:42px; }
@@ -837,10 +865,10 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .welcome-page-heading { margin-bottom:34px; }
 .welcome-page-heading .eyebrow,.welcome-provider-head-text .eyebrow,.home-rail .eyebrow { color:#9eb0c7; letter-spacing:.16em; }
 .welcome-provider-box { margin-bottom:34px; }
-.welcome-provider-head { padding:22px 28px; border:1px solid rgba(145,181,217,.1); border-radius:25px; background:rgba(14,34,53,.82); box-shadow:0 14px 34px rgba(0,0,0,.2); }
+.welcome-provider-head { padding:22px 28px; border:1px solid rgba(255,255,255,.12); border-radius:25px; background:rgba(0,0,0,.34); box-shadow:0 14px 34px rgba(0,0,0,.24); }
 .welcome-provider-head-text { order:0; align-items:flex-start; text-align:left; }
 .welcome-provider-select { border-color:rgba(145,181,217,.16); background-color:#12283b; color:#f5f8ff; }
-.welcome-provider-stats { order:1; flex:1 1 100%; justify-content:space-around; gap:0; margin-top:16px; padding:20px 12px; border-radius:21px; background:#0b1d2e; }
+.welcome-provider-stats { order:1; flex:1 1 100%; justify-content:space-around; gap:0; margin-top:16px; padding:20px 12px; border-radius:21px; background:rgba(0,0,0,.34); }
 .welcome-provider-stats div { flex:1 1 0; min-width:0; padding:0 18px; border-right:1px solid rgba(145,181,217,.18); }
 .welcome-provider-stats div:last-child { border-right:0; }
 .welcome-provider-stats strong { color:#ffc233; font-size:38px; }
@@ -848,21 +876,21 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .home-rail { margin-bottom:38px; }
 .home-rail h2 { color:#f5f8ff; font-size:24px; text-transform:uppercase; letter-spacing:.04em; }
 .home-rail-track { grid-auto-columns:220px; grid-template-rows:auto; gap:18px; padding:10px 2px 16px; background:transparent; box-shadow:none; }
-.home-content-card { padding:8px; border:1px solid rgba(145,181,217,.14); border-radius:18px; background:rgba(16,37,57,.86); box-shadow:0 12px 28px rgba(0,0,0,.24); }
-.home-content-card:hover,.home-content-card:focus-visible { background:#16334e; box-shadow:0 18px 36px rgba(0,0,0,.36); }
-.home-card-art { aspect-ratio:16/10; border-radius:14px; background:#132a40; }
+.home-content-card { padding:8px; border:1px solid rgba(255,255,255,.14); border-radius:18px; background:rgba(0,0,0,.34); box-shadow:0 12px 28px rgba(0,0,0,.28); }
+.home-content-card:hover,.home-content-card:focus-visible { background:rgba(0,0,0,.52); box-shadow:0 18px 36px rgba(0,0,0,.42); }
+.home-card-art { aspect-ratio:16/10; border-radius:14px; background:rgba(0,0,0,.32); }
 .home-content-card > strong { color:#f5f8ff; font-size:15px; }
 .home-content-card > small { color:#98abc1; }
-.home-card-fallback { background:linear-gradient(145deg,#183a54,#0b1a2a); }
-.home-card-fallback b { color:#ffc233; }
+.home-card-fallback { background:linear-gradient(145deg,#252525,#0b0b0b); }
+.home-card-fallback b { color:#c1d9ff; }
 .home-fav-action { background:rgba(7,21,34,.9); }
 .home-fav-action.on { color:#ffc233; }
 .safari-compact-heading h1 { color:#f5f8ff; }
 .playlist-toolbar,.playlist-tabs,.playlist-search,.playlist-provider-select,.playlist-category-select { color:#eaf2ff; }
-.playlist-tabs { background:rgba(14,34,53,.88); }
+.playlist-tabs { background:rgba(0,0,0,.34); }
 .playlist-tabs button.active { background:#ffc233; color:#071522; }
-.playlist-search,.playlist-provider-select,.playlist-category-select { background:#10263a; }
-.playlist-card-art { border-color:rgba(145,181,217,.16); background:#10263a; }
+.playlist-search,.playlist-provider-select,.playlist-category-select { background:rgba(0,0,0,.34); }
+.playlist-card-art { border-color:rgba(255,255,255,.14); background:rgba(0,0,0,.34); }
 .playlist-card-copy strong { color:#f5f8ff; }
 .playlist-card-copy small { color:#98abc1; }
 
@@ -873,6 +901,89 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
   .welcome-provider-stats strong { font-size:25px; }
   .welcome-provider-stats span { font-size:10px; }
   .home-rail-track { grid-auto-columns:48vw; }
+}
+
+/* Cinematic browser theme: keep the existing RH data and playback actions,
+   but present them with the restrained glass language of the TV reference. */
+.safari-app-mode:not(.login-shell) { background:#07101b; color:#f4f7fb; }
+.home-background { background:#07101b url('/login/login-background.png') center/cover no-repeat; opacity:.56; filter:blur(1px) saturate(.78); transform:scale(1.02); }
+.safari-app-mode:not(.login-shell)::after { position:fixed; z-index:1; inset:0; content:""; pointer-events:none; background:radial-gradient(circle at 68% 22%,rgba(157,194,255,.12),transparent 38%),linear-gradient(180deg,rgba(4,10,18,.26),rgba(4,10,18,.72)); }
+.browser-app-shell { position:relative; z-index:2; }
+.browser-sidebar { background:rgba(7,15,27,.66); border-right-color:rgba(255,255,255,.07); box-shadow:14px 0 42px rgba(0,0,0,.28); backdrop-filter:blur(28px) saturate(110%); -webkit-backdrop-filter:blur(28px) saturate(110%); }
+.browser-sidebar nav button,.browser-sidebar-logout { color:rgba(244,247,251,.58); }
+.browser-sidebar nav button:hover,.browser-sidebar nav button:focus-visible,.browser-sidebar-logout:hover,.browser-sidebar-logout:focus-visible { background:rgba(255,255,255,.07); color:#fff; }
+.browser-sidebar nav button.active { background:rgba(255,255,255,.09); color:#fff; box-shadow:inset 3px 0 0 rgba(193,217,255,.92),0 8px 22px rgba(0,0,0,.18); }
+.browser-sidebar nav button.active .browser-sidebar-icon img { filter:brightness(0) invert(1); }
+.browser-sidebar-brand-name em { color:#f4f7fb; }
+.safari-page h1 em,.welcome-page-heading h1 em { color:#c1d9ff; }
+.safari-page .eyebrow,.welcome-page-heading .eyebrow,.welcome-provider-head-text .eyebrow,.home-rail .eyebrow { color:rgba(193,217,255,.72); }
+.welcome-provider-head,.welcome-provider-stats,.home-content-card,.playlist-tabs,.playlist-search,.playlist-provider-select,.playlist-category-select,.playlist-card-art { border-color:rgba(255,255,255,.08); background:rgba(0,0,0,.34); box-shadow:0 16px 38px rgba(0,0,0,.24); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); }
+.welcome-provider-stats strong,.home-rail h2,.home-content-card > strong,.playlist-card-copy strong { color:#f4f7fb; }
+.home-content-card:hover,.home-content-card:focus-visible,.playlist-card:hover .playlist-card-art,.playlist-card:focus-visible .playlist-card-art { background:rgba(255,255,255,.09); box-shadow:0 18px 38px rgba(0,0,0,.42); }
+.home-cinematic-hero { position:relative; display:flex; min-height:clamp(250px,32vw,390px); margin:0 0 34px; overflow:hidden; border:1px solid rgba(255,255,255,.10); border-radius:18px; background:rgba(12,22,36,.55); box-shadow:0 22px 60px rgba(0,0,0,.34); isolation:isolate; }
+.home-cinematic-hero::before { position:absolute; z-index:-2; inset:-8%; content:""; background-image:var(--hero-art); background-position:center; background-size:cover; filter:blur(28px) saturate(.72); opacity:.42; transform:scale(1.08); }
+.home-cinematic-hero::after { position:absolute; z-index:-1; inset:0; content:""; background:linear-gradient(90deg,rgba(4,10,18,.92),rgba(4,10,18,.52) 46%,rgba(4,10,18,.18)),linear-gradient(0deg,rgba(4,10,18,.72),transparent 62%); }
+.home-cinematic-hero-art { position:absolute; inset:0 0 0 38%; z-index:-1; overflow:hidden; }
+.home-cinematic-hero-art img { width:100%; height:100%; object-fit:cover; object-position:center; opacity:.72; mix-blend-mode:screen; }
+.home-cinematic-hero-content { display:flex; max-width:620px; flex-direction:column; justify-content:flex-end; padding:clamp(26px,4vw,52px); }
+.home-cinematic-hero-content h2 { max-width:620px; margin:0; color:#fff; font:600 clamp(32px,5vw,62px)/.98 'Space Grotesk'; letter-spacing:-.05em; text-wrap:balance; }
+.home-cinematic-hero-meta { display:flex; align-items:center; gap:10px; margin:16px 0 0; color:rgba(244,247,251,.70); font-size:14px; }
+.home-cinematic-hero-actions { display:flex; gap:10px; margin-top:24px; }
+.hero-play-action,.hero-info-action { min-height:44px; padding:0 18px; border:1px solid rgba(255,255,255,.18); border-radius:10px; cursor:pointer; font:600 14px 'DM Sans'; transition:background .18s,color .18s,transform .18s; }
+.hero-play-action { background:rgba(255,255,255,.92); color:#07101b; }
+.hero-info-action { background:rgba(255,255,255,.08); color:#f4f7fb; backdrop-filter:blur(12px); }
+.hero-play-action:hover,.hero-info-action:hover,.hero-play-action:focus-visible,.hero-info-action:focus-visible { transform:translateY(-2px); outline:none; }
+.hero-info-action:hover,.hero-info-action:focus-visible { background:rgba(255,255,255,.16); }
+.home-fav-action,.card-action-btn { background:rgba(4,10,18,.76); color:#f4f7fb; }
+.playlist-tabs button.active { background:rgba(255,255,255,.90); color:#07101b; }
+
+@media (max-width:700px) {
+  .home-cinematic-hero { min-height:300px; }
+  .home-cinematic-hero-art { inset:0; }
+  .home-cinematic-hero-content { position:relative; z-index:1; min-height:300px; padding:24px; }
+  .home-cinematic-hero-meta { font-size:12px; }
+}
+
+/* Shared Movies / Series TV browser. */
+.safari-browse-page { position:relative; isolation:isolate; }
+.safari-browse-page::before { position:absolute; z-index:-2; inset:0 -8vw; content:""; background-image:var(--browse-art); background-position:center; background-size:cover; filter:blur(42px) saturate(.72); opacity:.18; transform:scale(1.08); pointer-events:none; transition:opacity .4s ease,background-image .4s ease; }
+.safari-browse-page::after { position:absolute; z-index:-1; inset:0 -8vw; content:""; background:linear-gradient(90deg,rgba(4,10,18,.85),rgba(4,10,18,.48) 55%,rgba(4,10,18,.78)),linear-gradient(180deg,rgba(4,10,18,.18),rgba(4,10,18,.78)); pointer-events:none; }
+.safari-app-mode:has(.safari-browse-page) .home-background { opacity:.56; filter:blur(1px) saturate(.78); transform:scale(1.02); }
+.safari-app-mode:has(.safari-browse-page)::after { background:radial-gradient(circle at 68% 22%,rgba(157,194,255,.12),transparent 38%),linear-gradient(180deg,rgba(4,10,18,.26),rgba(4,10,18,.72)); }
+.safari-app-mode:has(.safari-browse-page) .safari-browse-page::before,
+.safari-app-mode:has(.safari-browse-page) .safari-browse-page::after { display:none; }
+.safari-media-browser { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; gap:18px; }
+.browse-category-nav { display:flex; flex:0 0 auto; gap:clamp(20px,2.8vw,40px); width:100%; overflow-x:auto; padding:2px 4px 10px; border-bottom:1px solid rgba(255,255,255,.07); scrollbar-width:none; }
+.browse-category-nav::-webkit-scrollbar { display:none; }
+.browse-category-nav button { position:relative; flex:0 0 auto; padding:5px 0 10px; border:0; background:none; color:rgba(244,247,251,.48); cursor:pointer; font:500 clamp(14px,1.4vw,18px) 'DM Sans'; white-space:nowrap; transition:color .18s ease; }
+.browse-category-nav button:hover,.browse-category-nav button:focus-visible,.browse-category-nav button.active { color:#f4f7fb; outline:none; }
+.browse-category-nav button.active::after { position:absolute; right:0; bottom:-11px; left:0; height:2px; content:""; border-radius:2px; background:#c1d9ff; box-shadow:0 0 14px rgba(193,217,255,.6); }
+.browse-selected-info { display:flex; flex:0 0 auto; min-height:0; align-items:center; padding:18px 22px; border:1px solid rgba(193,217,255,.12); border-radius:18px; background:rgba(7,16,29,.48); box-shadow:0 14px 34px rgba(0,0,0,.18); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); }
+.browse-selected-copy { max-width:650px; }
+.browse-selected-copy h2 { min-height:1.1em; margin:0; color:#fff; font:600 clamp(24px,3vw,38px)/1 'Space Grotesk'; letter-spacing:-.04em; }
+.browse-selected-meta { display:flex; align-items:center; gap:10px; margin:12px 0 0; color:rgba(244,247,251,.66); font-size:14px; }
+.browse-actions { display:flex; gap:10px; margin-top:18px; }
+.browse-play,.browse-secondary { min-height:40px; padding:0 16px; border:1px solid rgba(255,255,255,.16); border-radius:9px; cursor:pointer; font:600 13px 'DM Sans'; }
+.browse-play { background:rgba(255,255,255,.92); color:#07101b; }
+.browse-secondary { background:rgba(255,255,255,.08); color:#f4f7fb; backdrop-filter:blur(12px); }
+.browse-secondary.active { color:#c1d9ff; }
+.browse-play:hover,.browse-secondary:hover,.browse-play:focus-visible,.browse-secondary:focus-visible { transform:translateY(-2px); outline:none; }
+.browse-carousel { display:grid; grid-template-columns:repeat(auto-fill,minmax(165px,1fr)); flex:1 1 auto; min-height:0; align-items:start; gap:24px 18px; overflow:visible; padding:8px 0 50px; }
+.browse-carousel::-webkit-scrollbar { display:none; }
+.browse-poster { display:flex; min-width:0; flex-direction:column; gap:9px; padding:0; border:0; background:none; color:#f4f7fb; cursor:pointer; font:inherit; text-align:left; transition:transform .22s cubic-bezier(.2,.8,.2,1),opacity .22s ease; }
+.browse-poster-art { position:relative; display:grid; place-items:center; width:100%; aspect-ratio:2/3; overflow:hidden; border:1px solid rgba(255,255,255,.08); border-radius:13px; background:rgba(0,0,0,.38); box-shadow:0 12px 28px rgba(0,0,0,.34); transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .22s,border-color .22s; }
+.browse-poster-art img { width:100%; height:100%; object-fit:cover; }
+.browse-poster-art .safari-library-fallback { display:grid; place-items:center; width:100%; height:100%; background:radial-gradient(circle at 30% 15%,rgba(193,217,255,.18),transparent 45%),linear-gradient(145deg,#14263d,#07101b 72%); }
+.browse-poster-art .safari-library-fallback b { display:grid; place-items:center; width:52px; height:52px; border:1px solid rgba(193,217,255,.5); border-radius:16px; background:rgba(193,217,255,.12); color:#c1d9ff; font:700 22px 'Space Grotesk'; }
+.browse-poster strong { overflow:hidden; color:#f4f7fb; font:600 14px/1.2 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
+.browse-poster small { overflow:hidden; color:rgba(244,247,251,.46); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.browse-poster:not(.focused) { opacity:.78; }
+.browse-poster:hover,.browse-poster:focus-visible,.browse-poster.focused { position:relative; z-index:3; opacity:1; outline:none; transform:translateY(-6px); }
+.browse-poster:hover .browse-poster-art,.browse-poster:focus-visible .browse-poster-art,.browse-poster.focused .browse-poster-art { border-color:rgba(255,255,255,.72); box-shadow:0 18px 45px rgba(0,0,0,.52),0 0 0 1px rgba(255,255,255,.38); transform:scale(1.08); }
+@media (max-width:700px) {
+  .browse-selected-info { padding:16px; }
+  .browse-carousel { grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px 12px; }
+  .browse-poster strong { font-size:12px; }
 }
 
 /* Android sign-in parity. */
