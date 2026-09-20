@@ -1359,7 +1359,7 @@ function unmuteWebPlayback() {
 // A plain independent fetch is the simplest way to read them without hooking
 // hls.js's own loader - the manifest is tiny, so the extra request is cheap.
 function describeEncodeStrategy(strategy, videoMode) {
-  if (strategy === "HLS_REMUX") return "Copy";
+  if (strategy === "HLS_REMUX") return "Remux → MPEG-TS";
   if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
   if (strategy === "HLS_PARTIAL_TRANSCODE") return videoMode === "transcode" ? "Video transcode" : "Audio transcode";
   return "";
