@@ -794,16 +794,11 @@ const webPlayerSrc = computed(() => {
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
-  // Original quality always tries the raw file first, whatever its container -
-  // handleWebVideoError/the startup watchdog in configureMoviePlayback fall
-  // back to HLS the moment that attempt fails or stalls, so a container the
-  // browser cannot actually play costs one quick failed attempt, not a stuck
-  // player.
-  // Normal AUTO is one policy for Movies, Series episodes and Live channels:
-  // resolve this route to the real provider URL first, then fall back to the
-  // server's HLS Full Transcode pipeline if the client rejects or stalls.
+  // Direct is only useful when the browser can decode the source container.
+  // Known unsupported VOD containers enter HLS immediately; compatible or
+  // unknown containers still try Direct and fall back on error/stall.
   // Watch-with-Partner must remain on its shared HLS generation.
-  const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value;
+  const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value && browserDirectCandidate(item);
   const generated = playableSourceId && item.id
     ? (shouldUseDirect
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
@@ -835,6 +830,12 @@ const webPlayerSrc = computed(() => {
   if (webWwpSessionId.value) target.searchParams.set("wwpSessionId", webWwpSessionId.value);
   return target.toString();
 });
+
+function browserDirectCandidate(item) {
+  if (item?.kind === 'channel') return true;
+  const extension = String(item?.extension || '').replace(/^\./, '').toLowerCase();
+  return !['mkv', 'avi', 'wmv', 'flv', 'ts', 'm2ts', 'mpg', 'mpeg'].includes(extension);
+}
 const webStreamFormatLabel = computed(() => {
   const item = webNowPlaying.value;
   if (!item) return "";
@@ -1487,8 +1488,7 @@ async function playWebMovie(item) {
   webIsWwpGuest.value = false;
   webMuted.value = false;
   webAutoplayBlocked.value = false;
-  // Original attempts the real provider URL first. Only rejection/stall or
-  // Watch-with-Partner selects HLS Full Transcode.
+  // Browser-incompatible containers start with HLS; other VOD tries Direct.
   webForceHls.value = false;
   webNowPlaying.value = item;
   webMini.value = false;
@@ -1508,16 +1508,15 @@ async function playWebMovie(item) {
   webWedgeRestarts = 0;
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
+  webForceHls.value = !browserDirectCandidate(webNowPlaying.value);
   // VOD startup is gated on the bounded provider-duration lookup. The Direct
   // request is attached only after this finishes, so the provider's one stream
   // slot cannot be taken by playback before ffprobe gets the real runtime.
   if (webNowPlaying.value?.kind !== "channel") {
     const durationResolved = await loadMovieDuration(webNowPlaying.value);
-    if (!durationResolved || webDuration.value <= 0) {
-      webPlayerError.value = "Could not determine the video duration from the provider. Please try again.";
-      webBuffering.value = false;
-      return;
-    }
+    // A duration lookup can fail when the provider is busy. It must not make
+    // an otherwise playable stream impossible to start.
+    if (!durationResolved) webDuration.value = parseDuration(webNowPlaying.value?.duration);
   }
   await loadStreamTicket(webNowPlaying.value);
   await configureMoviePlayback(0);
