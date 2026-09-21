@@ -129,6 +129,9 @@ const webStartupHint = ref("Preparing playback…");
 const webControlsVisible = ref(true);
 const webPlayerError = ref("");
 const webEncodeStrategy = ref("");
+// A strategy is selected before it is proven playable. Keep that selection
+// private until the media element emits `playing` for this exact attempt.
+const webPendingEncodeStrategy = ref("");
 const webStreamTicket = ref("");
 const webForceHls = ref(false);
 const webWwpSessionId = ref("");
@@ -911,6 +914,9 @@ async function decideWebPlayback(item) {
   if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
   webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
   webForceHls.value = decision.directCompatible !== true;
+  webPendingEncodeStrategy.value = decision.directCompatible
+    ? 'DIRECT'
+    : describeEncodeStrategy(decision.playbackStrategy || '', decision.videoMode || '');
   if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
   return decision;
 }
@@ -1233,10 +1239,9 @@ function fallBackToHlsFromDirect(resumeAt) {
   clearTimeout(webDirectStartupTimer);
   const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
   webForceHls.value = true;
-  // The browser fallback chooses a server strategy only after the HLS
-  // manifest response arrives. Do not claim a full transcode before then:
-  // compatible sources can be remuxed with their original codecs.
-  webEncodeStrategy.value = "HLS STARTING";
+  // HLS is a transport transition, not a final strategy badge.
+  webEncodeStrategy.value = "";
+  webPendingEncodeStrategy.value = "";
   webPlaybackRetryCount.value = 0;
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
@@ -1266,7 +1271,10 @@ function onWebReady(event) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  if (event?.type === "playing") webPlaying.value = true;
+  if (event?.type === "playing") {
+    webPlaying.value = true;
+    if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
+  }
   webBuffering.value = false;
   setWebStartupProgress(100, "Playback ready");
   webPlaybackRetryCount.value = 0;
@@ -1413,8 +1421,9 @@ function describeEncodeStrategy(strategy, videoMode) {
 async function fetchWebEncodeStrategy(url) {
   try {
     const response = await fetch(url, { cache: "no-store" });
-    webEncodeStrategy.value = describeEncodeStrategy(response.headers.get("X-RH-Strategy") || "", response.headers.get("X-RH-Video-Mode") || "") || "HLS FULL TRANSCODE";
-  } catch { webEncodeStrategy.value = "HLS FULL TRANSCODE"; }
+    const label = describeEncodeStrategy(response.headers.get("X-RH-Strategy") || "", response.headers.get("X-RH-Video-Mode") || "");
+    if (label) webPendingEncodeStrategy.value = label;
+  } catch { /* Keep the final badge hidden until a strategy is confirmed. */ }
 }
 
 async function configureMoviePlayback(startSeconds = 0) {
@@ -1448,7 +1457,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   try {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
-      webEncodeStrategy.value = "DIRECT";
+      webPendingEncodeStrategy.value = "DIRECT";
       setWebStartupProgress(45, "Connecting directly to provider…");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
@@ -1491,7 +1500,6 @@ async function configureMoviePlayback(startSeconds = 0) {
         await startWebPlayback(video);
       }
     } else {
-      webEncodeStrategy.value = "HLS STARTING";
       setWebStartupProgress(60, "Waiting for HLS segments…");
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
@@ -1532,7 +1540,8 @@ async function configureMoviePlayback(startSeconds = 0) {
           if (playbackToken !== webPlaybackToken) return;
           const response = data.networkDetails;
           const header = name => response?.getResponseHeader?.(name) || response?.headers?.get?.(name) || '';
-          webEncodeStrategy.value = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode')) || 'HLS STARTING';
+          const label = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode'));
+          if (label) webPendingEncodeStrategy.value = label;
           const duration = Number(header('X-RH-Duration'));
           if (duration > 0) webDuration.value = duration;
         });
@@ -1562,6 +1571,8 @@ async function playWebMovie(item) {
   // A bounded server probe selects Direct or the exact HLS codec matrix before
   // assigning a source to the browser media element.
   webForceHls.value = false;
+  webEncodeStrategy.value = "";
+  webPendingEncodeStrategy.value = "";
   webNowPlaying.value = item;
   webMini.value = false;
   webPlaying.value = false;
