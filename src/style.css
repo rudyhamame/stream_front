@@ -419,6 +419,11 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
 .settings-playlist-status.is-checking>i { background:#a4c7ee; box-shadow:0 0 10px rgba(164,199,238,.58); animation:playlist-status-pulse 1s ease-in-out infinite alternate; }
 @keyframes playlist-status-pulse { to { opacity:.38; } }
 .settings-playlist-actions { display:flex; gap:7px; }
+.settings-icon-action { display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px; padding:0; border:1px solid rgba(193,217,255,.35); border-radius:9px; background:rgba(193,217,255,.10); color:#c1d9ff; cursor:pointer; }
+.settings-icon-action:hover:not(:disabled) { border-color:#e5efff; background:#d7e6ff; color:#102039; }
+.settings-icon-action.is-delete { border-color:rgba(239,157,145,.40); background:rgba(239,157,145,.08); color:#efb0a6; }
+.settings-icon-action.is-delete:hover:not(:disabled) { border-color:#efb0a6; background:rgba(239,157,145,.17); color:#ffd0c9; }
+.settings-icon-action:disabled { opacity:.5; cursor:wait; }
  .safari-settings-page .primary-action { border-color:#c1d9ff; background:#c1d9ff; color:#102039; }
  .safari-settings-page .source-action { border-color:rgba(193,217,255,.55); background:rgba(193,217,255,.10); color:#c1d9ff; }
  .safari-settings-page .primary-action:hover:not(:disabled),.safari-settings-page .source-action:hover:not(:disabled) { border-color:#e5efff; background:#d7e6ff; color:#102039; }

@@ -13,6 +13,8 @@ import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 import LockKeyholeIcon from "./components/icons/LockKeyholeIcon.vue";
 import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vue";
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
+import EditIcon from "./components/icons/EditIcon.vue";
+import TrashIcon from "./components/icons/TrashIcon.vue";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -3432,7 +3434,7 @@ onMounted(async () => {
             <div class="settings-playlist-form-actions"><button type="submit" class="primary-action" :disabled="busy">{{ busy ? 'Saving…' : (editing ? 'Save changes' : 'Add playlist') }}</button><button v-if="editing" type="button" class="source-action" @click="cancelEdit">Cancel</button></div>
           </form>
           <p v-if="message" :class="['settings-playlist-message', `is-${messageType}`]">{{ message }}</p>
-          <div v-if="sources.length" class="settings-playlist-table-wrap"><table class="settings-playlist-table"><thead><tr><th>Type</th><th>Playlist</th><th>Endpoint</th><th>Status</th><th>Actions</th></tr></thead><tbody><tr v-for="source in sources" :key="source.id"><td><span class="settings-playlist-type">{{ (source.type || 'xtream').replace('_', ' ').toUpperCase() }}</span></td><td class="settings-playlist-name">{{ source.name }}</td><td class="settings-playlist-endpoint" :title="source.endpoint">{{ source.endpoint }}</td><td><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span></td><td><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></td></tr></tbody></table></div>
+          <div v-if="sources.length" class="settings-playlist-table-wrap"><table class="settings-playlist-table"><thead><tr><th>Type</th><th>Playlist</th><th>Endpoint</th><th>Status</th><th>Actions</th></tr></thead><tbody><tr v-for="source in sources" :key="source.id"><td><span class="settings-playlist-type">{{ (source.type || 'xtream').replace('_', ' ').toUpperCase() }}</span></td><td class="settings-playlist-name">{{ source.name }}</td><td class="settings-playlist-endpoint" :title="source.endpoint">{{ source.endpoint }}</td><td><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span></td><td><div class="settings-playlist-actions"><button type="button" class="settings-icon-action" :disabled="busy" aria-label="Edit playlist" title="Edit playlist" @click="editSource(source)"><EditIcon /></button><button type="button" class="settings-icon-action is-delete" :disabled="busy" aria-label="Delete playlist" title="Delete playlist" @click="deleteSource(source)"><TrashIcon /></button></div></td></tr></tbody></table></div>
           <p v-else class="web-empty">No playlists added yet.</p>
         </section>
         <section v-if="settingsTab === 'appearance'" class="settings-profile-card">
