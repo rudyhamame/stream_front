@@ -187,6 +187,19 @@ async function loadHlsConstructor() {
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const profileSelectionKey = "rh-profile-selection-pending";
 const deviceToken = ref(storedToken());
+function tokenRealm(token) {
+  try {
+    const encoded = String(token || '').split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = encoded + "=".repeat((4 - encoded.length % 4) % 4);
+    return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(padded), char => char.charCodeAt(0)))).realm === 'roku' ? 'roku' : 'general';
+  } catch { return 'general'; }
+}
+const browserRealm = ref(window.localStorage.getItem("rh-browser-realm") === "roku" ? "roku" : tokenRealm(deviceToken.value));
+function chooseBrowserRealm(realm) {
+  browserRealm.value = realm === "roku" ? "roku" : "general";
+  window.localStorage.setItem("rh-browser-realm", browserRealm.value);
+  message.value = "";
+}
 const appReady = ref(!deviceToken.value);
 const pairing = ref(!deviceToken.value);
 const pairingMode = ref("login");
@@ -444,7 +457,7 @@ async function signIn(event) {
   try {
     if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
     if (!pairingPassword.value) throw new Error("Enter your password");
-    const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value }) });
+    const data = await request("/api/account/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, realm: browserRealm.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     profiles.value = (await request("/api/account/profiles")).items || [];
@@ -466,7 +479,7 @@ async function signUp(event) {
     if (!signupVerificationCode.value.trim()) throw new Error("Enter the verification code");
     if (!pairingPassword.value) throw new Error("Enter a password");
     if (pairingPassword.value !== pairingPasswordConfirmation.value) throw new Error("Passwords do not match");
-    const data = await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, verificationId: signupVerificationId.value, verificationCode: signupVerificationCode.value }) });
+    const data = await request("/api/account/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, password: pairingPassword.value, verificationId: signupVerificationId.value, verificationCode: signupVerificationCode.value, realm: browserRealm.value }) });
     deviceToken.value = data.token;
     window.localStorage.setItem("rh-device-token", data.token);
     profiles.value = (await request("/api/account/profiles")).items || [];
@@ -487,7 +500,7 @@ async function requestSignupCode(event) {
   message.value = "";
   try {
     if (!pairingEmail.value.trim()) throw new Error("Enter your email address");
-    const data = await request("/api/account/signup/request-verification", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value }) });
+    const data = await request("/api/account/signup/request-verification", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: pairingEmail.value, realm: browserRealm.value }) });
     if (data.verificationNotRequired) throw new Error("This email is already verified. Sign in instead.");
     signupVerificationId.value = data.verificationId || "";
     if (!signupVerificationId.value) throw new Error("Verification code was not created");
@@ -3037,6 +3050,8 @@ onMounted(async () => {
           if (claim?.token) {
             window.localStorage.setItem("rh-device-token", claim.token);
             deviceToken.value = claim.token;
+            browserRealm.value = tokenRealm(claim.token);
+            window.localStorage.setItem("rh-browser-realm", browserRealm.value);
             pairing.value = false;
           }
         } catch (error) {
@@ -3147,6 +3162,10 @@ onMounted(async () => {
     <section v-if="pairing" :class="['pairing-gate', 'login-gate', { 'auth-layout': loginStarted || isPairingSignup }]">
       <div class="login-art"><div class="login-brand-lockup" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div><p class="login-brand-subtitle">Sign in to access your content</p></div>
       <div class="pairing-card login-card login-card-plain">
+        <div class="browser-realm-tabs" role="tablist" aria-label="Account type">
+          <button type="button" :class="{ active: browserRealm === 'general' }" @click="chooseBrowserRealm('general')">GENERAL</button>
+          <button type="button" :class="{ active: browserRealm === 'roku' }" @click="chooseBrowserRealm('roku')">ROKU</button>
+        </div>
         <h1 v-if="!isPairingSignup">Sign in to your library</h1>
         <h1 v-else>Create your account</h1>
         <template v-if="!isPairingSignup">
