@@ -943,8 +943,10 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
   .browser-sidebar { display:none; }
   .browser-main,.browser-app-shell:not(.nav-open) .browser-main { margin-left:0; }
   .welcome-provider-head { padding:18px; }
-  .welcome-provider-stats strong { font-size:25px; }
-  .welcome-provider-stats span { font-size:10px; }
+  .welcome-provider-stats { padding:16px 4px; }
+  .welcome-provider-stats div { padding:0 6px; }
+  .welcome-provider-stats strong { font-size:clamp(18px,6.4vw,25px); }
+  .welcome-provider-stats span { font-size:10px; text-align:center; }
   .home-rail-track { grid-auto-columns:48vw; }
 }
 
