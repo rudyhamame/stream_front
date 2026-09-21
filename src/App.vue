@@ -2326,13 +2326,21 @@ function homeExtraItem(raw) {
     ? raw.sourceId
     : (sources.value.length === 1 ? sources.value[0].id : (sourceId.value || raw.sourceId || ""));
   if (!resolvedSourceId) return null;
+  const seriesTitle = kind === "series"
+    ? String(raw.seriesName || raw.seriesTitle || raw.title || "").trim()
+    : String(raw.title || "").trim();
+  const episodeParts = kind === "series" ? [
+    Number(raw.seasonNumber) > 0 ? `Season ${Number(raw.seasonNumber)}` : "",
+    Number(raw.episodeNumber) > 0 ? `Episode ${Number(raw.episodeNumber)}` : "",
+  ].filter(Boolean) : [];
   return homeItem({
     ...raw,
     id: String(id),
     kind,
     sourceId: resolvedSourceId,
+    title: seriesTitle || raw.title,
     logo: raw.logo || raw.poster || "",
-    category: raw.category || raw.categoryId || "",
+    category: episodeParts.join(" · ") || raw.category || raw.categoryId || "",
   }, kind);
 }
 
