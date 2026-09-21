@@ -392,8 +392,20 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .settings-playlist-message { margin:12px 0 0; color:#a9bed7; font-size:12px; }
  .settings-playlist-message.is-success { color:#c1d9ff; }
  .settings-playlist-message.is-error { color:#ef9d91; }
- .settings-playlist-list { display:grid; gap:8px; margin-top:16px; }
- .settings-playlist-list article { display:flex; align-items:center; gap:12px; padding:11px; border:1px solid rgba(193,217,255,.14); border-radius:11px; background:rgba(7,16,27,.36); }
+.settings-playlist-list { display:grid; gap:8px; margin-top:16px; }
+.settings-playlist-table-wrap { margin-top:16px; overflow-x:auto; border:1px solid rgba(193,217,255,.14); border-radius:12px; }
+.settings-playlist-table { width:100%; min-width:650px; border-collapse:collapse; table-layout:fixed; }
+.settings-playlist-table th,.settings-playlist-table td { padding:12px 10px; border-bottom:1px solid rgba(193,217,255,.10); text-align:left; vertical-align:middle; }
+.settings-playlist-table th { color:#98abc1; font-size:10px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }
+.settings-playlist-table tr:last-child td { border-bottom:0; }
+.settings-playlist-table th:nth-child(1),.settings-playlist-table td:nth-child(1) { width:92px; }
+.settings-playlist-table th:nth-child(2),.settings-playlist-table td:nth-child(2) { width:24%; }
+.settings-playlist-table th:nth-child(4),.settings-playlist-table td:nth-child(4) { width:110px; }
+.settings-playlist-table th:nth-child(5),.settings-playlist-table td:nth-child(5) { width:150px; }
+.settings-playlist-type { display:inline-block; padding:4px 7px; border-radius:5px; background:rgba(193,217,255,.16); color:#c1d9ff; font-size:9px; font-weight:700; letter-spacing:.06em; white-space:nowrap; }
+.settings-playlist-name { overflow:hidden; color:#f3f4f1; font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.settings-playlist-endpoint { overflow:hidden; color:#98abc1; font:11px monospace; text-overflow:ellipsis; white-space:nowrap; }
+.settings-playlist-list article { display:flex; align-items:center; gap:12px; padding:11px; border:1px solid rgba(193,217,255,.14); border-radius:11px; background:rgba(7,16,27,.36); }
  .settings-playlist-copy { display:grid; min-width:0; flex:1; gap:3px; }
  .settings-playlist-copy>span { width:max-content; padding:3px 6px; border-radius:5px; background:rgba(193,217,255,.16); color:#c1d9ff; font-size:9px; font-weight:700; letter-spacing:.08em; }
  .settings-playlist-copy strong { color:#f3f4f1; font-size:13px; }
