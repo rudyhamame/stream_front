@@ -1273,7 +1273,6 @@ function onWebReady(event) {
   webStallTimer = null;
   if (event?.type === "playing") {
     webPlaying.value = true;
-    if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   }
   webBuffering.value = false;
   setWebStartupProgress(100, "Playback ready");
@@ -1283,16 +1282,22 @@ function onWebReady(event) {
   webPlayerError.value = "";
   if (event?.type === "playing" && !webMediaReady.value) {
     const video = event.target;
+    const readyPlaybackToken = webPlaybackToken;
     const reveal = () => {
-      if (video !== webVideo.value || webMediaReady.value) return;
+      if (video !== webVideo.value || readyPlaybackToken !== webPlaybackToken || webMediaReady.value) return;
       video.style.opacity = "1";
       webMediaReady.value = true;
+      // A strategy badge is a final playback state. Commit it only after a
+      // decoded video frame is available, never on `playing`/`canplay` alone.
+      if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
     };
     if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(reveal);
     // rVFC never fires while the decoder is wedged (audio plays, frame is
-    // black) - reveal on a hard timeout too so a recovered stream is not left
-    // invisible, and start the "video wedged" watchdog.
-    setTimeout(reveal, 1200);
+    // black). A timeout may reveal a frame only when the element reports real
+    // video dimensions; otherwise the badge and frame remain unconfirmed.
+    setTimeout(() => {
+      if (video.videoWidth > 0 && video.videoHeight > 0) reveal();
+    }, 1200);
     startWebVideoWedgeWatchdog(video);
   }
   scheduleWebControlsHide();
@@ -1338,6 +1343,7 @@ function startWebVideoWedgeWatchdog(video) {
 
 function onWebFirstFrame() {
   webMediaReady.value = true;
+  if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   onWebReady();
 }
 
@@ -1422,7 +1428,10 @@ async function fetchWebEncodeStrategy(url) {
   try {
     const response = await fetch(url, { cache: "no-store" });
     const label = describeEncodeStrategy(response.headers.get("X-RH-Strategy") || "", response.headers.get("X-RH-Video-Mode") || "");
-    if (label) webPendingEncodeStrategy.value = label;
+    if (label) {
+      webPendingEncodeStrategy.value = label;
+      if (webMediaReady.value && webVideo.value && !webVideo.value.paused) webEncodeStrategy.value = label;
+    }
   } catch { /* Keep the final badge hidden until a strategy is confirmed. */ }
 }
 
@@ -1541,7 +1550,12 @@ async function configureMoviePlayback(startSeconds = 0) {
           const response = data.networkDetails;
           const header = name => response?.getResponseHeader?.(name) || response?.headers?.get?.(name) || '';
           const label = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode'));
-          if (label) webPendingEncodeStrategy.value = label;
+          if (label) {
+            webPendingEncodeStrategy.value = label;
+            // Headers can arrive just after the first decoded frame. In that
+            // ordering, commit now because playback has already been proven.
+            if (webMediaReady.value && !video.paused) webEncodeStrategy.value = label;
+          }
           const duration = Number(header('X-RH-Duration'));
           if (duration > 0) webDuration.value = duration;
         });

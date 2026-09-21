@@ -580,7 +580,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .partner-invite-banner div { display:flex; gap:8px; flex:0 0 auto; }
  .partner-invite-banner button { border:1px solid #2a3752; border-radius:8px; padding:7px 14px; background:#10182a; color:#e7ece0; cursor:pointer; font:600 12px 'DM Sans'; }
  .partner-invite-banner button.primary-action { border-color:#ffc107; background:#ffc107; color:#0d1420; }
- .web-strategy-badge { display:flex; align-items:center; border:1px solid #2a3752; border-radius:8px; padding:5px 8px; color:#9aa192; font:600 11px 'DM Sans'; letter-spacing:.06em; text-transform:uppercase; opacity:.85; }
+ .web-strategy-badge { display:inline-flex; flex:0 0 auto; width:max-content; align-items:center; border:1px solid #fff; border-radius:8px; padding:5px 8px; color:#9aa192; font:600 11px 'DM Sans'; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; opacity:.85; }
  .web-quality-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:8; margin:0; padding:6px; list-style:none; min-width:132px; border:1px solid #2a3752; border-radius:12px; background:#10182a; box-shadow:0 14px 34px #000a; }
  .web-quality-menu li { margin:0; }
  .web-quality-menu button { display:flex; width:100%; align-items:baseline; justify-content:space-between; gap:10px; border:0; border-radius:8px; padding:9px 10px; background:transparent; color:#e7ece0; cursor:pointer; font:600 13px 'DM Sans'; text-align:left; }
