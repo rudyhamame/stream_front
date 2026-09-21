@@ -1118,3 +1118,13 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .safari-app-mode.login-shell .login-gate:not(.auth-layout) .login-brand-lockup img { width:clamp(260px,24vw,360px); height:clamp(260px,24vw,360px); }
 .safari-app-mode.login-shell .login-gate:not(.auth-layout) .login-card { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; width:min(500px,100%); padding:0; }
 .safari-app-mode.login-shell .login-gate:not(.auth-layout) .login-card > button { width:100%; margin:0; }
+
+/* Phones: the fixed bottom tab bar (76px + safe area) must never cover the end of a page.
+   The desktop rule `.safari-page:not(.safari-welcome-page) { padding-bottom:40px }` out-specifies
+   every earlier mobile override, so it is repeated here. Series/Movies also clipped their poster
+   grid (overflow:hidden), so rows past the first screen could not be reached. */
+@media (max-width:700px) {
+  .browser-main > .safari-page-shell .safari-page:not(.safari-welcome-page) { padding-bottom:calc(92px + env(safe-area-inset-bottom)); }
+  .browser-main .safari-library-page { overflow-y:auto; overscroll-behavior:contain; }
+  .safari-media-browser,.browse-carousel { flex:0 0 auto; min-height:auto; }
+}
