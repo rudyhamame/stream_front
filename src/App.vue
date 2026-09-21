@@ -3302,7 +3302,12 @@ onMounted(async () => {
 
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
-        <section v-for="rail in homeRails" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
+        <div v-if="welcomeProviderLoading" class="welcome-catalog-loading" role="status" aria-live="polite" aria-label="Loading catalog">
+          <span class="welcome-catalog-spinner" aria-hidden="true"></span>
+          <span>Loading catalog…</span>
+        </div>
+
+        <section v-for="rail in (welcomeProviderLoading ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div></header>
           <div class="home-rail-track">
             <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">

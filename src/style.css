@@ -786,6 +786,9 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .welcome-provider-clear:disabled { opacity:.5; cursor:default; }
 .welcome-provider-empty,.welcome-provider-loading { display:flex; align-items:center; justify-content:center; min-height:72px; color:#8e9988; font-size:13px; text-align:center; }
 .welcome-provider-loading { gap:10px; }
+.welcome-catalog-loading { display:flex; min-height:clamp(180px,38vh,360px); align-items:center; justify-content:center; flex-direction:column; gap:14px; color:rgba(193,217,255,.82); font:600 13px 'DM Sans'; letter-spacing:.04em; text-align:center; }
+.welcome-catalog-spinner { width:44px; height:44px; border:3px solid rgba(193,217,255,.2); border-top-color:#fff; border-right-color:#c1d9ff; border-radius:50%; box-shadow:0 0 24px rgba(193,217,255,.18); animation:browser-playlist-spin .8s linear infinite; }
+@media (prefers-reduced-motion:reduce) { .welcome-catalog-spinner { animation-duration:1.8s; } }
 .welcome-page-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin:0 0 28px; }
 .welcome-page-heading h1 { margin:0; color:#f5f2ea; font:600 clamp(30px,4vw,48px)/1.02 'Space Grotesk'; letter-spacing:-.055em; }
 .welcome-page-heading h1 em { color:#baff3f; font-style:normal; }
