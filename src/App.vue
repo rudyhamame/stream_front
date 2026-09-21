@@ -124,6 +124,8 @@ const webBufferRecoveryPosition = ref(-1);
 const webMediaReady = ref(false);
 const webPlaybackRetryCount = ref(0);
 const webBuffering = ref(false);
+const webStartupPercent = ref(0);
+const webStartupHint = ref("Preparing playback…");
 const webControlsVisible = ref(true);
 const webPlayerError = ref("");
 const webEncodeStrategy = ref("");
@@ -174,6 +176,10 @@ let playlistPreviewRecoveryTimer = null;
 let playlistPreviewRecoveryAttempts = 0;
 let webSeekTimer = null;
 let webControlsTimer = null;
+function setWebStartupProgress(percent, hint) {
+  webStartupPercent.value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  webStartupHint.value = String(hint || "Preparing playback…");
+}
 async function loadHlsConstructor() {
   if (!hlsConstructorPromise) hlsConstructorPromise = import("hls.js").then(module => module.default);
   return hlsConstructorPromise;
@@ -1222,6 +1228,7 @@ function fallBackToHlsFromDirect(resumeAt) {
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
   webBuffering.value = true;
+  setWebStartupProgress(55, "Direct playback failed — preparing HLS…");
   webMediaReady.value = false;
   showWebControls();
   configureMoviePlayback(target);
@@ -1248,6 +1255,7 @@ function onWebReady(event) {
   webStallTimer = null;
   if (event?.type === "playing") webPlaying.value = true;
   webBuffering.value = false;
+  setWebStartupProgress(100, "Playback ready");
   webPlaybackRetryCount.value = 0;
   // A "playing"/"canplay"/first-frame signal means the stream is viable again;
   // drop any stale playback error so it does not block the auto-hide.
@@ -1428,6 +1436,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webEncodeStrategy.value = "DIRECT";
+      setWebStartupProgress(45, "Connecting directly to provider…");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
       const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
@@ -1470,6 +1479,7 @@ async function configureMoviePlayback(startSeconds = 0) {
       }
     } else {
       webEncodeStrategy.value = "HLS STARTING";
+      setWebStartupProgress(60, "Waiting for HLS segments…");
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
@@ -1509,7 +1519,7 @@ async function configureMoviePlayback(startSeconds = 0) {
           if (playbackToken !== webPlaybackToken) return;
           const response = data.networkDetails;
           const header = name => response?.getResponseHeader?.(name) || response?.headers?.get?.(name) || '';
-          webEncodeStrategy.value = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode')) || 'HLS';
+          webEncodeStrategy.value = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode')) || 'HLS STARTING';
           const duration = Number(header('X-RH-Duration'));
           if (duration > 0) webDuration.value = duration;
         });
@@ -1551,6 +1561,7 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
+  setWebStartupProgress(8, "Checking container and codec compatibility…");
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
@@ -1566,6 +1577,7 @@ async function playWebMovie(item) {
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
+  setWebStartupProgress(28, "Selecting the safest playback path…");
   await decideWebPlayback(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
@@ -3470,7 +3482,7 @@ onMounted(async () => {
               </div>
             </div>
           </header>
-          <button v-if="!webPlaying || (webBuffering && !webPlayerError)" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-center-spinner"></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button>
+          <button v-if="!webPlaying || (webBuffering && !webPlayerError)" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-startup-status"><strong>{{ webStartupPercent }}%</strong><small>{{ webStartupHint }}</small></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button>
           <footer class="web-player-bottombar">
             <button type="button" class="web-pl-btn web-pl-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
             <span class="web-player-time">{{ formatTime(webCurrentTime) }} <i>/ {{ formatTime(webDuration) }}</i></span>
