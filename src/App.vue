@@ -3140,20 +3140,31 @@ onMounted(async () => {
       const url = new URL(window.location.href);
       url.searchParams.delete("pair");
       window.history.replaceState({}, "", url);
-      if (!deviceToken.value) {
-        try {
-          const claim = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
-          if (claim?.token) {
-            window.localStorage.setItem("rh-device-token", claim.token);
-            deviceToken.value = claim.token;
-            browserRealm.value = tokenRealm(claim.token);
-            window.localStorage.setItem("rh-browser-realm", browserRealm.value);
-            pairing.value = false;
-          }
-        } catch (error) {
-          messageType.value = "error";
-          message.value = error.message;
+      // Always claim, even when this browser is already signed in or waiting on
+      // a profile choice: scanning must switch it to the Roku's account and
+      // profile. A failed claim (expired code) leaves the existing session alone.
+      try {
+        const claim = await request("/api/device-session/claim", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ code: pairCode }) });
+        if (claim?.token) {
+          window.localStorage.setItem("rh-device-token", claim.token);
+          deviceToken.value = claim.token;
+          browserRealm.value = tokenRealm(claim.token);
+          window.localStorage.setItem("rh-browser-realm", browserRealm.value);
+          pairing.value = false;
+          // The claim token is already scoped to the Roku's profile. Adopt it so
+          // the "Who's watching?" chooser is skipped and the active profile
+          // matches the token instead of a stale rh-profile-id.
+          window.sessionStorage.removeItem(profileSelectionKey);
+          const paired = await request("/api/account/profile").catch(() => null);
+          if (paired?.item?.id) window.localStorage.setItem("rh-profile-id", paired.item.id);
+          else window.localStorage.removeItem("rh-profile-id");
+          activeProfileId.value = paired?.item?.id || "";
+          safariPage.value = "settings";
+          window.history.replaceState({ appPage: "settings" }, "", "/settings");
         }
+      } catch (error) {
+        messageType.value = "error";
+        message.value = error.message;
       }
     }
     if (!deviceToken.value) return;
