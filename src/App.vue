@@ -679,6 +679,8 @@ onBeforeUnmount(() => {
 });
 
 const online = ref(false), sources = ref([]), sourceId = ref("");
+const sourceListLoading = ref(Boolean(deviceToken.value));
+let sourceListRequestCount = 0;
 // A browser tab has no paired deviceId like a Roku does. Generate one once
 // and keep it in localStorage so Connected Devices can tell this browser
 // apart from others (and from itself across reloads) instead of treating
@@ -733,6 +735,7 @@ function setBackdropEnabled(on) {
 }
 const welcomeProviderCounts = ref({ series: 0, movie: 0, channel: 0 });
 const welcomeProviderLoading = ref(false);
+const welcomeCatalogBusy = computed(() => sourceListLoading.value || welcomeProviderLoading.value);
 const welcomeProviderError = ref("");
 let welcomeProviderRequestId = 0;
 let homeRequestId = 0;
@@ -2767,24 +2770,31 @@ async function deleteManagedCategory(category) {
 }
 
 async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPage.value === "playlist" } = {}) {
-  const data = await request("/api/xtream/sources");
-  sources.value = data.items || [];
-  sourceId.value = sources.value.some(item => item.id === preferred) ? preferred : (sources.value[0]?.id || "");
-  const source = sources.value.find(item => item.id === sourceId.value);
-  selectedKeys.value = [];
-  savedItems.value = (source?.enabledItems || []).map(hydrateCachedItem);
-  archivedItems.value = (source?.archivedItems || []).map(hydrateCachedItem);
-  rememberItems([...savedItems.value, ...archivedItems.value]);
-  // Provider catalogs can contain tens of thousands of rows and may take up
-  // to a minute to arrive. Only request one while the Playlist page is open;
-  // the Welcome and Library pages use the persisted account library instead.
-  if (source) {
-    if (loadPlaylist) await loadCatalog();
-  } else { items.value = []; savedItems.value = []; archivedItems.value = []; }
-  // Playlist only needs the provider catalog. The managed-library payload is
-  // required by Series/Movies/Live TV pages and can be loaded lazily there.
-  if (safariPage.value !== "playlist") await loadManagedLibrary();
-  if (safariPage.value === "welcome") await loadWelcomeProvider(source);
+  sourceListRequestCount += 1;
+  sourceListLoading.value = true;
+  try {
+    const data = await request("/api/xtream/sources");
+    sources.value = data.items || [];
+    sourceId.value = sources.value.some(item => item.id === preferred) ? preferred : (sources.value[0]?.id || "");
+    const source = sources.value.find(item => item.id === sourceId.value);
+    selectedKeys.value = [];
+    savedItems.value = (source?.enabledItems || []).map(hydrateCachedItem);
+    archivedItems.value = (source?.archivedItems || []).map(hydrateCachedItem);
+    rememberItems([...savedItems.value, ...archivedItems.value]);
+    // Provider catalogs can contain tens of thousands of rows and may take up
+    // to a minute to arrive. Only request one while the Playlist page is open;
+    // the Welcome and Library pages use the persisted account library instead.
+    if (source) {
+      if (loadPlaylist) await loadCatalog();
+    } else { items.value = []; savedItems.value = []; archivedItems.value = []; }
+    // Playlist only needs the provider catalog. The managed-library payload is
+    // required by Series/Movies/Live TV pages and can be loaded lazily there.
+    if (safariPage.value !== "playlist") await loadManagedLibrary();
+    if (safariPage.value === "welcome") await loadWelcomeProvider(source);
+  } finally {
+    sourceListRequestCount = Math.max(0, sourceListRequestCount - 1);
+    sourceListLoading.value = sourceListRequestCount > 0;
+  }
 }
 
 async function saveSource() {
@@ -3350,26 +3360,26 @@ onMounted(async () => {
               <select v-if="sources.length > 1" class="welcome-provider-select" aria-label="Choose playlist provider" :value="sourceId" @change="chooseSource($event.target.value)">
                 <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
               </select>
-              <h1 v-else>{{ sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') : 'No provider connected' }}</h1>
+              <h1 v-else>{{ sourceListLoading ? 'Loading playlists…' : (sources.length ? (sources.find(source => source.id === sourceId)?.name || 'Provider') : 'No provider connected') }}</h1>
             </div>
             <div v-if="sources.length" class="welcome-provider-stats" aria-label="Provider catalog totals">
-              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
-              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.movie.toLocaleString() }}</strong><span>MOVIES</span></div>
-              <div><strong>{{ welcomeProviderLoading ? '—' : welcomeProviderCounts.channel.toLocaleString() }}</strong><span>LIVE CHANNELS</span></div>
+              <div><strong>{{ welcomeCatalogBusy ? '—' : welcomeProviderCounts.series.toLocaleString() }}</strong><span>SERIES</span></div>
+              <div><strong>{{ welcomeCatalogBusy ? '—' : welcomeProviderCounts.movie.toLocaleString() }}</strong><span>MOVIES</span></div>
+              <div><strong>{{ welcomeCatalogBusy ? '—' : welcomeProviderCounts.channel.toLocaleString() }}</strong><span>LIVE CHANNELS</span></div>
             </div>
           </div>
-          <div v-if="!sources.length" class="welcome-provider-empty">No playlist providers are connected yet.</div>
+          <div v-if="!sources.length && !sourceListLoading" class="welcome-provider-empty">No playlist providers are connected yet.</div>
         </section>
         <p v-if="welcomeProviderError" class="home-error" role="status">{{ welcomeProviderError }}</p>
 
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
-        <div v-if="welcomeProviderLoading" class="welcome-catalog-loading" role="status" aria-live="polite" aria-label="Loading catalog">
+        <div v-if="welcomeCatalogBusy" class="welcome-catalog-loading" role="status" aria-live="polite" aria-label="Loading catalog">
           <span class="welcome-catalog-spinner" aria-hidden="true"></span>
           <span>Loading catalog…</span>
         </div>
 
-        <section v-for="rail in (welcomeProviderLoading ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
+        <section v-for="rail in (welcomeCatalogBusy ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div></header>
           <div class="home-rail-track">
             <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
@@ -3392,7 +3402,7 @@ onMounted(async () => {
             </div>
           </div>
         </section>
-        <p v-if="!welcomeProviderLoading && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
+        <p v-if="!welcomeCatalogBusy && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
       </article>
 
       <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
