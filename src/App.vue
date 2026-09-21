@@ -3161,11 +3161,11 @@ onMounted(async () => {
     <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
     <section v-if="pairing" :class="['pairing-gate', 'login-gate', { 'auth-layout': loginStarted || isPairingSignup }]">
       <div class="login-art"><div class="login-brand-lockup" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div><p class="login-brand-subtitle">Sign in to access your content</p></div>
+      <div class="browser-realm-tabs" role="tablist" aria-label="Account type">
+        <button type="button" :class="{ active: browserRealm === 'general' }" @click="chooseBrowserRealm('general')">GENERAL</button>
+        <button type="button" :class="{ active: browserRealm === 'roku' }" @click="chooseBrowserRealm('roku')">ROKU</button>
+      </div>
       <div class="pairing-card login-card login-card-plain">
-        <div class="browser-realm-tabs" role="tablist" aria-label="Account type">
-          <button type="button" :class="{ active: browserRealm === 'general' }" @click="chooseBrowserRealm('general')">GENERAL</button>
-          <button type="button" :class="{ active: browserRealm === 'roku' }" @click="chooseBrowserRealm('roku')">ROKU</button>
-        </div>
         <h1 v-if="!isPairingSignup">Sign in to your library</h1>
         <h1 v-else>Create your account</h1>
         <template v-if="!isPairingSignup">
