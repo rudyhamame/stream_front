@@ -1561,6 +1561,8 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
+  setWebStartupProgress(5, "Fetching provider URL from provider identity…");
+  await new Promise(resolve => setTimeout(resolve, 0));
   setWebStartupProgress(8, "Checking container and codec compatibility…");
   webControlsVisible.value = true;
   webPlayerError.value = "";
