@@ -2333,10 +2333,18 @@ function homeExtraItem(raw) {
     Number(raw.seasonNumber) > 0 ? `Season ${Number(raw.seasonNumber)}` : "",
     Number(raw.episodeNumber) > 0 ? `Episode ${Number(raw.episodeNumber)}` : "",
   ].filter(Boolean) : [];
+  // Continue Watching stores the last played episode together with its parent
+  // series identity. Keep the card's series artwork/title, but mark that item
+  // as an episode so clicking it resumes playback directly instead of treating
+  // the episode id as a parent series id and opening an empty episode page.
+  const isSavedEpisode = kind === "series" && Boolean(raw.seriesId) && String(id) !== String(raw.seriesId);
   return homeItem({
     ...raw,
     id: String(id),
     kind,
+    isEpisode: isSavedEpisode,
+    seriesId: isSavedEpisode ? String(raw.seriesId) : raw.seriesId,
+    seriesTitle: isSavedEpisode ? seriesTitle : raw.seriesTitle,
     sourceId: resolvedSourceId,
     title: seriesTitle || raw.title,
     logo: raw.logo || raw.poster || "",
