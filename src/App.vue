@@ -52,8 +52,16 @@ const closeCardActionsOnOutsideClick = event => {
 };
 const pageStorageKey = "rh-safari-page";
 const allowedPages = ["welcome", "playlist", "library", "series", "movies", "channels", "settings"];
-const storedPage = window.localStorage.getItem(pageStorageKey);
-const safariPage = ref(storedPage === "library" ? "series" : (allowedPages.includes(storedPage) ? storedPage : "welcome"));
+const pagePaths = { welcome: "/home", playlist: "/playlist", series: "/series", movies: "/movies", channels: "/live-tv", settings: "/settings" };
+const pathPages = Object.fromEntries(Object.entries(pagePaths).map(([page, path]) => [path, page]));
+function routeFromLocation() {
+  const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  const episodeMatch = path.match(/^\/series\/([^/]+)\/episodes$/);
+  if (episodeMatch) return { page: "episodes", sourceId: new URLSearchParams(window.location.search).get("sourceId") || "", seriesId: decodeURIComponent(episodeMatch[1]) };
+  return { page: pathPages[path] || (path === "/" ? "welcome" : "welcome") };
+}
+const initialRoute = routeFromLocation();
+const safariPage = ref(initialRoute.page === "episodes" ? "episodes" : initialRoute.page);
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
 const safariMenuItems = [
@@ -68,6 +76,8 @@ function openSafariPage(page) {
   const tab = { series: "series", movies: "movie", channels: "channel" }[page];
   if (tab) safariLibraryTab.value = tab;
   safariPage.value = page;
+  const path = pagePaths[page] || pagePaths.welcome;
+  if (window.location.pathname !== path || window.location.search) window.history.pushState({ appPage: page }, "", path);
   navOpen.value = false;
 }
 function openBrowserLibrary(tab) {
@@ -346,6 +356,7 @@ async function chooseProfile(profile) {
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
     safariPage.value = "welcome";
+    window.history.replaceState({ appPage: "welcome" }, "", "/home");
     appReady.value = true;
     // The profile is active as soon as the server returns its token. Show
     // Welcome immediately; provider and weather requests must not hold the
@@ -627,7 +638,33 @@ function enforceProfileSelection() {
   if (deviceToken.value && window.sessionStorage.getItem(profileSelectionKey)) {
     profileChooser.value = true;
     pairing.value = false;
+    return;
   }
+  void syncPageFromLocation();
+}
+
+async function syncPageFromLocation() {
+  const route = routeFromLocation();
+  if (route.page !== "episodes") {
+    safariPage.value = route.page;
+    const tab = { series: "series", movies: "movie", channels: "channel" }[route.page];
+    if (tab) safariLibraryTab.value = tab;
+    return;
+  }
+  const resolvedSourceId = route.sourceId || sourceId.value;
+  if (!resolvedSourceId || !route.seriesId) {
+    safariPage.value = "series";
+    return;
+  }
+  const seriesItem = [
+    ...(welcomeProviderItems.value.series || []),
+    ...managedLibraryItems.value,
+    ...items.value,
+  ].find(item => String(item.id) === route.seriesId && String(item.sourceId || sourceId.value) === resolvedSourceId);
+  await openSeriesEpisodes({
+    ...(seriesItem || {}), id: route.seriesId, sourceId: resolvedSourceId,
+    kind: "series", title: seriesItem?.title || route.seriesId,
+  }, { updateHistory: false });
 }
 
 onBeforeUnmount(() => window.removeEventListener("message", onWwpCallMessage));
@@ -1637,7 +1674,7 @@ async function playLibraryItem(item) {
   }
 }
 
-async function openSeriesEpisodes(item) {
+async function openSeriesEpisodes(item, { updateHistory = true } = {}) {
   const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
   episodesFrom.value = ["welcome", "series", "movies", "channels"].includes(safariPage.value) ? safariPage.value : "series";
   selectedSeries.value = item;
@@ -1646,10 +1683,15 @@ async function openSeriesEpisodes(item) {
   seriesEpisodesError.value = "";
   seriesEpisodesLoading.value = true;
   safariPage.value = "episodes";
+  if (updateHistory && item?.id && item?.sourceId) {
+    const path = `/series/${encodeURIComponent(item.id)}/episodes?sourceId=${encodeURIComponent(item.sourceId)}`;
+    window.history.pushState({ appPage: "episodes", sourceId: item.sourceId, seriesId: String(item.id) }, "", path);
+  }
   try {
     if (!item?.sourceId || !item?.id) throw new Error("This series does not have episode information.");
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     if (`${selectedSeries.value?.sourceId || ""}:${selectedSeries.value?.id || ""}` !== requestSeriesKey) return;
+    selectedSeries.value = { ...selectedSeries.value, title: details.title || item.title };
     seriesEpisodes.value = (Array.isArray(details?.episodes) ? details.episodes : []).map(episode => ({
       ...episode,
       sourceId: item.sourceId,
@@ -3067,6 +3109,9 @@ onMounted(async () => {
   window.addEventListener("popstate", enforceProfileSelection);
   window.addEventListener("pageshow", blurRestoredLoginFocus);
   window.addEventListener("message", onWwpCallMessage);
+  if (!legalPage.value && window.location.pathname === "/") {
+    window.history.replaceState({ appPage: "welcome" }, "", `/home${window.location.search}${window.location.hash}`);
+  }
   if (pairing.value) {
     blurRestoredLoginFocus();
     window.setTimeout(blurRestoredLoginFocus, 0);
@@ -3124,6 +3169,7 @@ onMounted(async () => {
     await Promise.all([request("/api/health"), loadSources(sourceId.value, { loadPlaylist: false })]);
     online.value = true;
     appReady.value = true;
+    if (initialRoute.page === "episodes") void syncPageFromLocation();
     void Promise.all([loadWeatherSettings(), sendBrowserHeartbeat(), loadPartnerSettings()]).catch(() => {});
     void request("/api/account/profiles").then(data => {
       profiles.value = data.items || [];
