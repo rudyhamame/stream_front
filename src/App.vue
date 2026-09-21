@@ -653,6 +653,7 @@ const kind = ref("series"), items = ref([]), categories = ref([]), languages = r
 const selectedKeys = ref([]), savedItems = ref([]), archivedItems = ref([]), knownItems = ref({}), page = ref(1), pages = ref(1), total = ref(0), loadingMore = ref(false);
 const sortBy = ref("name"), selectionFilter = ref("all");
 const managedLibraryCategories = ref([]), managedLibraryItems = ref([]), categoryManagerOpen = ref(false), categoryEditorId = ref("");
+const settingsTab = ref("profile");
 const selectedSeries = ref(null), seriesEpisodes = ref([]), selectedSeasonNumber = ref(null), seriesEpisodesLoading = ref(false), seriesEpisodesError = ref("");
 const episodesFrom = ref("series");
 const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryName = ref(""), categoryBusy = ref(false);
@@ -871,6 +872,26 @@ async function loadStreamTicket(item) {
   const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
   webStreamTicket.value = data.ticket || "";
   if (!webStreamTicket.value) throw new Error("Could not authorize this stream.");
+}
+
+async function decideWebPlayback(item) {
+  const providerURL = item?.providerURL || item?.providerUrl || '';
+  if (!/^https?:\/\//i.test(providerURL)) throw new Error('This item is missing its original provider URL.');
+  const url = new URL(`${browserStreamer}/api/xtream/playback-decision/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || 'movie')}/${encodeURIComponent(item.id)}`);
+  url.searchParams.set('client', 'browser');
+  url.searchParams.set('providerURL', providerURL);
+  if (item.extension) url.searchParams.set('ext', item.extension);
+  if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
+  if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
+  const headers = deviceToken.value ? { 'x-device-token': deviceToken.value } : {};
+  const response = await fetch(url, { cache: 'no-store', headers, signal: AbortSignal.timeout(30_000) });
+  const decision = await response.json().catch(() => ({}));
+  if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
+  if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
+  webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
+  webForceHls.value = decision.directCompatible !== true;
+  if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
+  return decision;
 }
 
 function formatTime(value) {
@@ -1415,12 +1436,12 @@ async function configureMoviePlayback(startSeconds = 0) {
         }, { once: true });
       }
       // A container the browser cannot actually decode often never fires
-      // `error` at all - it just sits there. If metadata has not arrived
-      // within a few seconds, treat that as a failed direct attempt too.
+      // `error` at all - it just sits there. Match Android/Roku's safe Direct
+      // startup window so slow remote files do not switch prematurely.
       webDirectStartupTimer = setTimeout(() => {
         if (playbackToken !== webPlaybackToken || webForceHls.value || webMediaReady.value) return;
         fallBackToHlsFromDirect(webNowPlaying.value?.kind === "channel" ? 0 : Math.max(startSeconds, webAbsolutePosition()));
-      }, 6000);
+      }, 30_000);
       // Chrome/Firefox need hls.js to consume a provider's live m3u8. Loading
       // the /play URL through hls.js still follows the 302 and streams directly
       // from the provider; it does not invoke RH HLS/transcoding.
@@ -1513,7 +1534,8 @@ async function playWebMovie(item) {
   webIsWwpGuest.value = false;
   webMuted.value = false;
   webAutoplayBlocked.value = false;
-  // Try the original provider URL; media errors select the HLS fallback.
+  // A bounded server probe selects Direct or the exact HLS codec matrix before
+  // assigning a source to the browser media element.
   webForceHls.value = false;
   webNowPlaying.value = item;
   webMini.value = false;
@@ -1542,6 +1564,7 @@ async function playWebMovie(item) {
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
+  await decideWebPlayback(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
 
@@ -2093,7 +2116,7 @@ function hydrateCachedItem(item) {
     if (!cached || isWeakCachedTitle(cached.title)) {
       for (let index = 0; index < window.localStorage.length; index += 1) {
         const key = window.localStorage.key(index) || "";
-        if (!key.startsWith("rh-catalog:v3:") && !key.startsWith("rh-catalog:v4:")) continue;
+        if (!key.startsWith("rh-catalog:v3:") && !key.startsWith("rh-catalog:v4:") && !key.startsWith("rh-catalog:v5:")) continue;
         const page = JSON.parse(window.localStorage.getItem(key) || "null");
         const match = (page?.items || []).find(candidate => candidate.key === item.key
           || (String(candidate.sourceId) === String(item.sourceId) && String(candidate.kind) === String(item.kind) && String(candidate.id) === String(item.id))
@@ -2859,7 +2882,7 @@ async function loadCatalog(reset = true) {
     // Keep catalog pages across reloads and reopened tabs. The account/source
     // identity is part of the key, so one account cannot reuse another one's
     // catalog entries.
-    const browserCacheKey = `rh-catalog:v4:${requestedSourceId}:${requestedKind}:${category.value}:${titleLanguage.value}:${normalizedQuery}:${requestedPage}`;
+    const browserCacheKey = `rh-catalog:v5:${requestedSourceId}:${requestedKind}:${category.value}:${titleLanguage.value}:${normalizedQuery}:${requestedPage}`;
     let data;
     try {
       const cached = window.localStorage.getItem(browserCacheKey);
@@ -3373,7 +3396,12 @@ onMounted(async () => {
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
-        <section v-if="activeProfile" class="settings-profile-card">
+        <nav class="settings-tabs" aria-label="Settings sections">
+          <button type="button" :class="{ active: settingsTab === 'profile' }" :aria-selected="settingsTab === 'profile'" @click="settingsTab = 'profile'">PROFILE</button>
+          <button type="button" :class="{ active: settingsTab === 'playlists' }" :aria-selected="settingsTab === 'playlists'" @click="settingsTab = 'playlists'">PLAYLISTS</button>
+          <button type="button" :class="{ active: settingsTab === 'appearance' }" :aria-selected="settingsTab === 'appearance'" @click="settingsTab = 'appearance'">APPEARANCE</button>
+        </nav>
+        <section v-if="activeProfile && settingsTab === 'profile'" class="settings-profile-card">
           <div class="settings-section-heading"><div><p class="eyebrow">PROFILE</p><h2>Profile picture</h2></div><span>{{ activeProfile.name }} <code class="profile-code-badge" title="Your profile code - share it so a partner can add this exact profile">{{ activeProfile.code }}</code></span></div>
           <div class="profile-picture-editor"><button type="button" class="profile-picture-preview" :disabled="profileBusy" @click="openProfileImagePicker"><img v-if="activeProfile.avatarImage" :src="activeProfile.avatarImage" alt="Current profile picture"><span v-else>{{ activeProfileFirstName.slice(0, 1).toUpperCase() }}</span></button><div><p class="profile-picture-help">Set a real profile picture for your account.</p><button type="button" class="source-action" :disabled="profileBusy" @click="openProfileImagePicker">{{ activeProfile.avatarImage ? 'Change picture' : 'Upload picture' }}</button><input ref="profileImageInput" class="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" @change="loadProfileImage"></div></div>
           <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
@@ -3391,7 +3419,7 @@ onMounted(async () => {
           <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? `${partnerEmail} (${partnerProfileCode})` : 'No partner set' }}</h3><p class="profile-picture-help">Your profile code is <code class="profile-code-badge">{{ activeProfile.code }}</code> - give it to whoever adds you as their partner.</p></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail; partnerProfileCodeInput = partnerProfileCode">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
           <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><label>Partner's profile code<input v-model="partnerProfileCodeInput" type="text" placeholder="e.g. R1" maxlength="6" autocomplete="off" style="text-transform:uppercase"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
         </section>
-        <section class="settings-playlists">
+        <section v-if="settingsTab === 'playlists'" class="settings-playlists">
           <div class="settings-section-heading"><div><p class="eyebrow">PLAYLISTS</p><h2>Manage playlists</h2></div><span>{{ sources.length }} total</span></div>
           <form class="settings-playlist-form" @submit.prevent="saveSource">
             <label>Playlist type<select v-model="sourceType"><option value="m3u">M3U</option><option value="xtream">Xtream</option></select></label>
@@ -3407,7 +3435,7 @@ onMounted(async () => {
           <div v-if="sources.length" class="settings-playlist-list"><article v-for="source in sources" :key="source.id"><div class="settings-playlist-copy"><span>{{ (source.type || 'xtream').toUpperCase() }}</span><strong>{{ source.name }}</strong><small>{{ source.endpoint }}</small></div><span :class="['settings-playlist-status', `is-${playlistConnectionStatus(source)}`]" role="status" :aria-label="playlistConnectionTitle(source)" :title="playlistConnectionTitle(source)"><i aria-hidden="true"></i><span>{{ playlistConnectionLabel(source) }}</span></span><div class="settings-playlist-actions"><button type="button" class="source-action" :disabled="busy" @click="editSource(source)">Edit</button><button type="button" class="source-delete" :disabled="busy" @click="deleteSource(source)">Delete</button></div></article></div>
           <p v-else class="web-empty">No playlists added yet.</p>
         </section>
-        <section class="settings-profile-card">
+        <section v-if="settingsTab === 'appearance'" class="settings-profile-card">
           <div class="settings-section-heading"><div><p class="eyebrow">APPEARANCE</p><h2>Preferences</h2></div></div>
           <div class="settings-toggle-row">
             <div><strong>Welcome page video backdrop</strong><small>Looping montage of clips from your newest titles behind the Welcome page.</small></div>
@@ -3455,7 +3483,7 @@ onMounted(async () => {
           <div class="web-player-error-card">
             <span class="web-player-error-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
             <strong>Playback unavailable</strong>
-            <p>The provider dropped this stream. It usually clears in a few seconds.</p>
+              <p>{{ webPlayerError }}</p>
             <button type="button" class="primary-action" @click.stop="playWebMovie(webNowPlaying)">Try again</button>
           </div>
         </div>
