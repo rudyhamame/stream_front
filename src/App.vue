@@ -3616,7 +3616,8 @@ onMounted(async () => {
               </div>
             </div>
           </header>
-          <button v-if="!webPlaying || (webBuffering && !webPlayerError)" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><span v-if="webBuffering && !webPlayerError" class="web-startup-status"><strong>{{ webStartupPercent }}%</strong><small>{{ webStartupHint }}</small></span><PauseIcon v-else-if="webPlaying" /><PlayIcon v-else /></button>
+          <div v-if="webBuffering && !webPlayerError" class="web-startup-status web-startup-status-centered"><strong>{{ webStartupPercent }}%</strong><small>{{ webStartupHint }}</small></div>
+          <button v-else-if="!webPlaying" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <footer class="web-player-bottombar">
             <button type="button" class="web-pl-btn web-pl-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
             <span class="web-player-time">{{ formatTime(webCurrentTime) }} <i>/ {{ formatTime(webDuration) }}</i></span>

@@ -430,6 +430,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
 .web-startup-status { display:flex; min-width:150px; max-width:220px; align-items:center; flex-direction:column; gap:4px; padding:8px 14px; color:#f3f6ef; }
 .web-startup-status strong { color:#c1d9ff; font:700 24px/1 'Space Grotesk'; }
 .web-startup-status small { color:#d7e6f8; font:600 10px/1.25 'DM Sans'; text-align:center; }
+.web-startup-status-centered { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); pointer-events:none; }
  .safari-settings-page .primary-action { border-color:#c1d9ff; background:#c1d9ff; color:#102039; }
  .safari-settings-page .source-action { border-color:rgba(193,217,255,.55); background:rgba(193,217,255,.10); color:#c1d9ff; }
  .safari-settings-page .primary-action:hover:not(:disabled),.safari-settings-page .source-action:hover:not(:disabled) { border-color:#e5efff; background:#d7e6ff; color:#102039; }
