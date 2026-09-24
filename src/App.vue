@@ -216,7 +216,7 @@ function chooseBrowserRealm(realm) {
 const appReady = ref(!deviceToken.value);
 const pairing = ref(!deviceToken.value);
 const pairingMode = ref("login");
-const loginStarted = ref(false);
+const loginStarted = ref(true);
 const pairingEmail = ref("");
 const pairingPassword = ref("");
 const pairingPasswordConfirmation = ref("");
@@ -631,7 +631,7 @@ async function savePartnerEmail() {
 function blurRestoredLoginFocus() {
   if (!pairing.value) return;
   const active = document.activeElement;
-  if (active?.matches?.(".login-card input, .login-card select")) active.blur();
+  if (active?.matches?.(".rh-auth input")) active.blur();
 }
 
 function enforceProfileSelection() {
@@ -3267,51 +3267,40 @@ onMounted(async () => {
     </section>
     <div v-if="!legalPage" class="app-content">
     <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
-    <section v-if="pairing" :class="['pairing-gate', 'login-gate', { 'auth-layout': loginStarted || isPairingSignup }]">
-      <div class="login-art"><div class="login-brand-lockup" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div><p class="login-brand-subtitle">Sign in to access your content</p></div>
-      <div class="browser-realm-tabs" role="tablist" aria-label="Account type">
-        <button type="button" :class="{ active: browserRealm === 'general' }" @click="chooseBrowserRealm('general')">GENERAL</button>
-        <button type="button" :class="{ active: browserRealm === 'roku' }" @click="chooseBrowserRealm('roku')">ROKU</button>
-      </div>
-      <div class="pairing-card login-card login-card-plain">
-        <h1 v-if="!isPairingSignup">Sign in to your library</h1>
-        <h1 v-else>Create your account</h1>
-        <template v-if="!isPairingSignup">
-          <template v-if="loginStarted">
-            <form novalidate @submit.prevent="signIn">
-              <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
-              <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
-              <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
-            </form>
-            <button type="button" class="source-action login-signup-action" @click="beginSignup">Sign up</button>
-          </template>
-          <template v-else>
-            <button type="button" class="primary-action login-submit" @click="beginLogin">Sign in</button>
-            <button type="button" class="source-action login-signup-action" @click="beginSignup">Sign up</button>
-          </template>
-        </template>
-        <template v-else>
-          <p>{{ signupVerificationId ? 'Enter the code from your email, then choose a password.' : 'Enter your email to receive a verification code.' }}</p>
-          <form novalidate @submit.prevent="signupVerificationId ? signUp($event) : requestSignupCode($event)">
+    <section v-if="pairing" class="rh-auth">
+      <div class="rh-auth-inner">
+        <div class="rh-auth-brand" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div>
+        <div class="rh-auth-card">
+          <div v-if="!isPairingSignup" class="rh-auth-tabs" role="tablist" aria-label="Account type">
+            <button type="button" role="tab" :aria-selected="browserRealm === 'general'" :class="{ active: browserRealm === 'general' }" @click="chooseBrowserRealm('general')">General</button>
+            <button type="button" role="tab" :aria-selected="browserRealm === 'roku'" :class="{ active: browserRealm === 'roku' }" @click="chooseBrowserRealm('roku')">Roku</button>
+          </div>
+          <h1>{{ isPairingSignup ? 'Create your account' : 'Welcome back' }}</h1>
+          <p class="rh-auth-sub">{{ isPairingSignup ? (signupVerificationId ? 'Enter the code from your email, then choose a password.' : 'Enter your email to receive a verification code.') : (browserRealm === 'roku' ? 'Sign in with the account you created on your Roku.' : 'Sign in to access your library.') }}</p>
+          <form v-if="!isPairingSignup" novalidate @submit.prevent="signIn">
+            <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+            <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="current-password" placeholder="Your password"></label>
+            <button type="submit" class="rh-auth-primary" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>Sign in</span></button>
+          </form>
+          <form v-else novalidate @submit.prevent="signupVerificationId ? signUp($event) : requestSignupCode($event)">
             <label>Email address<input v-model="pairingEmail" type="email" required autocomplete="email" placeholder="you@example.com"></label>
             <template v-if="signupVerificationId">
-              <label>Verification code<input v-model="signupVerificationCode" type="text" inputmode="numeric" autocomplete="one-time-code" required placeholder="Enter the code from your email"></label>
+              <label>Verification code<input v-model="signupVerificationCode" class="rh-auth-code" type="text" inputmode="numeric" autocomplete="one-time-code" required placeholder="000000"></label>
               <label>Password<input v-model="pairingPassword" type="password" minlength="8" required autocomplete="new-password" placeholder="At least 8 characters"></label>
               <label>Confirm password<input v-model="pairingPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password" placeholder="Repeat password"></label>
             </template>
-            <button type="submit" class="primary-action login-submit" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ signupVerificationId ? 'Create account' : 'Send verification code' }}</span></button>
-            <button type="button" class="source-action" @click="pairingMode = 'login'">I already have an account</button>
+            <button type="submit" class="rh-auth-primary" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ signupVerificationId ? 'Create account' : 'Send verification code' }}</span></button>
           </form>
-        </template>
-        <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
-      </div>
-      <div v-if="!loginStarted && !isPairingSignup" class="login-platform-badges">
-        <a class="android-app-banner" href="https://play.google.com/store/apps/details?id=com.rhstream.library" @click.prevent="showPlatformDevelopment('Android')" aria-label="Android app still in development">
-          <img src="/login/android-play-banner.png" alt="Also on Android — Get it on Google Play">
-        </a>
-        <a class="android-app-banner" href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development">
-          <img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store">
-        </a>
+          <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
+          <p class="rh-auth-switch">
+            <template v-if="!isPairingSignup">New here? <button type="button" @click="beginSignup">Create an account</button></template>
+            <template v-else>Already have an account? <button type="button" @click="beginLogin">Sign in</button></template>
+          </p>
+        </div>
+        <div v-if="!isPairingSignup" class="rh-auth-badges">
+          <a href="https://play.google.com/store/apps/details?id=com.rhstream.library" @click.prevent="showPlatformDevelopment('Android')" aria-label="Android app still in development"><img src="/login/android-play-banner.png" alt="Also on Android — Get it on Google Play"></a>
+          <a href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development"><img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store"></a>
+        </div>
       </div>
     </section>
     <section v-else-if="profileChooser" class="profile-chooser-page">
