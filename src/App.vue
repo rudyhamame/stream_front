@@ -3291,7 +3291,6 @@ onMounted(async () => {
             </template>
             <button type="submit" class="rh-auth-primary" :disabled="authBusy"><span v-if="authBusy" class="login-spinner" aria-hidden="true"></span><span>{{ signupVerificationId ? 'Create account' : 'Send verification code' }}</span></button>
           </form>
-          <p v-if="message" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
           <p class="rh-auth-switch">
             <template v-if="!isPairingSignup">New here? <button type="button" @click="beginSignup">Create an account</button></template>
             <template v-else>Already have an account? <button type="button" @click="beginLogin">Sign in</button></template>
@@ -3302,6 +3301,7 @@ onMounted(async () => {
           <a href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development"><img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store"></a>
         </div>
       </div>
+      <p v-if="message" role="status" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
     </section>
     <section v-else-if="profileChooser" class="profile-chooser-page">
       <div class="profile-chooser-inner">

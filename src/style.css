@@ -1130,3 +1130,39 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
   .browser-main .safari-library-page { overflow-y:auto; overscroll-behavior:contain; }
   .safari-media-browser,.browse-carousel { flex:0 0 auto; min-height:auto; }
 }
+
+/* ---- Auth (sign in / sign up): single centered card ---- */
+.rh-auth { position:relative; z-index:1; width:100%; height:100dvh; overflow-y:auto; display:flex; padding:32px 20px; }
+.rh-auth-inner { display:flex; flex-direction:column; align-items:center; gap:22px; width:min(420px,100%); margin:auto; }
+.rh-auth-brand { display:flex; flex-direction:column; align-items:center; gap:0; }
+.rh-auth-brand img { display:block; width:clamp(120px,22vh,168px); height:clamp(120px,22vh,168px); object-fit:contain; }
+.rh-auth-brand span { margin-top:-14px; color:#f5f8ff; font:700 22px/1 'Space Grotesk','DM Sans',sans-serif; letter-spacing:.32em; text-indent:.32em; }
+.rh-auth-card { width:100%; padding:28px; border:1px solid rgba(255,255,255,.12); border-radius:24px; background:rgba(12,16,22,.72); backdrop-filter:blur(18px); -webkit-backdrop-filter:blur(18px); box-shadow:0 24px 70px rgba(0,0,0,.45); }
+.rh-auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; margin-bottom:22px; border-radius:14px; background:rgba(255,255,255,.06); }
+.rh-auth-tabs button { min-height:38px; border:0; border-radius:10px; background:transparent; color:#9fb0c8; font:600 14px 'DM Sans',sans-serif; cursor:pointer; transition:background .15s,color .15s; }
+.rh-auth-tabs button.active { background:#c1d9ff; color:#0f1a2e; }
+.rh-auth-tabs button:not(.active):hover { color:#f5f8ff; }
+.rh-auth-card h1 { margin:0 0 6px; color:#f5f8ff; font:600 28px/1.1 'Space Grotesk','DM Sans',sans-serif; letter-spacing:-.02em; text-align:left; }
+.rh-auth-sub { margin:0 0 20px; color:#9fb0c8; font-size:14px; line-height:1.45; }
+.rh-auth-card form { display:grid; gap:14px; }
+.rh-auth-card label { display:grid; gap:6px; margin:0; color:#b7c4d8; font-size:13px; font-weight:500; }
+.rh-auth-card input { width:100%; height:48px; padding:0 14px; border:1px solid rgba(255,255,255,.14); border-radius:12px; outline:0; background:rgba(255,255,255,.05); color:#f5f8ff; font:400 15px 'DM Sans',sans-serif; letter-spacing:normal; transition:border-color .15s,box-shadow .15s; }
+.rh-auth-card input::placeholder { color:#6f8099; }
+.rh-auth-card input:focus { border-color:#c1d9ff; box-shadow:0 0 0 3px rgba(193,217,255,.18); }
+.rh-auth-card input:-webkit-autofill { -webkit-text-fill-color:#f5f8ff; -webkit-box-shadow:0 0 0 1000px #18212e inset; caret-color:#f5f8ff; }
+.rh-auth-card input.rh-auth-code { font-size:22px; letter-spacing:.4em; text-align:center; }
+.rh-auth-primary { display:flex; align-items:center; justify-content:center; gap:9px; width:100%; min-height:50px; margin-top:6px; border:0; border-radius:14px; background:#c1d9ff; color:#0f1a2e; font:700 15px 'DM Sans',sans-serif; cursor:pointer; transition:filter .15s,transform .15s; }
+.rh-auth-primary:hover:not(:disabled) { filter:brightness(1.06); transform:translateY(-1px); }
+.rh-auth-primary:disabled { cursor:wait; opacity:.75; }
+.rh-auth > .xtream-message { position:fixed; z-index:20; left:20px; bottom:20px; max-width:min(360px,calc(100vw - 40px)); margin:0; box-shadow:0 12px 34px rgba(0,0,0,.45); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); }
+.rh-auth .xtream-message { padding:10px 14px; border:1px solid rgba(255,255,255,.16); border-radius:12px; background:rgba(16,22,30,.9); color:#dfe9f7; font-size:13px; line-height:1.4; }
+.rh-auth .xtream-message.is-error { border-color:rgba(255,140,140,.45); background:rgba(120,30,40,.3); color:#ffd4d4; }
+.rh-auth .xtream-message.is-success { border-color:rgba(140,230,180,.4); background:rgba(30,90,60,.3); color:#d8fbe8; }
+.rh-auth-switch { margin:20px 0 0; color:#9fb0c8; font-size:14px; text-align:center; }
+.rh-auth-switch button { padding:0; border:0; background:none; color:#c1d9ff; font:600 14px 'DM Sans',sans-serif; cursor:pointer; }
+.rh-auth-switch button:hover { text-decoration:underline; }
+.rh-auth-badges { display:flex; justify-content:center; gap:14px; width:100%; }
+.rh-auth-badges a { display:block; flex:0 1 190px; border-radius:10px; overflow:hidden; opacity:.9; transition:opacity .15s,transform .15s; }
+.rh-auth-badges a:hover { opacity:1; transform:translateY(-2px); }
+.rh-auth-badges img { display:block; width:100%; height:auto; }
+@media (max-width:480px) { .rh-auth { padding:20px 14px; } .rh-auth-card { padding:22px 18px; border-radius:20px; } .rh-auth-badges a { flex-basis:150px; } }
