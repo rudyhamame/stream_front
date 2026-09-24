@@ -596,7 +596,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
 .safari-episodes-heading h1 { margin:0; color:#f5f7f2; font:600 clamp(26px,4vw,40px)/1.12 'Space Grotesk'; letter-spacing:-.02em; }
 .safari-episodes-heading span { display:block; margin-top:9px; color:#9fb09a; font:500 12px 'DM Sans'; letter-spacing:.04em; }
 .series-episodes-content { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; }
-.series-season-selector { display:inline-flex; align-self:center; flex:0 0 auto; gap:4px; margin:0 auto 30px; padding:5px; border:1px solid rgba(255,255,255,.12); border-radius:999px; background:rgba(255,255,255,.06); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); max-width:100%; overflow-x:auto; }
+.series-season-selector { display:inline-flex; align-self:center; flex:0 0 auto; gap:4px; margin:0 auto 30px; padding:5px; border:1px solid rgba(255,255,255,.12); border-radius:999px; background:rgba(255,255,255,.07); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); max-width:100%; overflow-x:auto; }
 .series-season-selector button { flex:0 0 auto; border:0; border-radius:999px; padding:9px 20px; background:transparent; color:#b6c4b0; font:600 13px 'Space Grotesk'; letter-spacing:.01em; cursor:pointer; transition:color .15s,background .15s; }
 .series-season-selector button:hover { color:#f2f6ef; }
 .series-season-selector button.active { background:#fff; color:#16233a; box-shadow:0 6px 16px rgba(0,0,0,.22); }
