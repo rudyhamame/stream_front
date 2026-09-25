@@ -1366,7 +1366,7 @@ function handleWebVideoError() {
 function onWebReady(event) {
   // A Direct -> HLS (or fallback-rung) switch reloads the element, which leaves
   // it paused; resume unless the viewer paused on purpose.
-  if (event?.type === "canplay" && webNowPlaying.value && !wwpUserPaused && event.target?.paused) startWebPlayback(event.target);
+  if ((event?.type === "canplay" || event?.type === "loadeddata") && webNowPlaying.value && !wwpUserPaused && event.target?.paused) startWebPlayback(event.target);
   if (!webForceHls.value && event?.type === 'playing') clearTimeout(webDirectStartupTimer);
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
@@ -1476,8 +1476,9 @@ function isHlsPlaybackUrl(source) {
 // A Direct -> HLS switch happens after the original click has expired. When
 // autoplay blocks that delayed play(), start muted and let the viewer restore
 // sound with an explicit tap. Keep genuine media errors on the recovery path.
-async function startWebPlayback(video) {
+async function startWebPlayback(video, retries = 3) {
   if (!video) return false;
+  const playbackToken = webPlaybackToken;
   try {
     await video.play();
     webPlaying.value = true;
@@ -1485,6 +1486,13 @@ async function startWebPlayback(video) {
     return true;
   } catch (error) {
     if (error?.name !== "NotAllowedError") {
+      // play() is aborted when the source is (re)attached right after it, e.g.
+      // hls.js finishing MSE setup. Playback must still start on its own after
+      // preflight, so retry a few times while this attempt is still current.
+      if (retries > 0 && playbackToken === webPlaybackToken && !wwpUserPaused) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        if (playbackToken === webPlaybackToken && !wwpUserPaused) return startWebPlayback(video, retries - 1);
+      }
       webPlaying.value = false;
       return false;
     }
@@ -2390,7 +2398,7 @@ async function loadWelcomeProvider(provider = sources.value.find(source => sourc
 }
 
 function scrollHomeRail(event, direction) {
-  const track = event.currentTarget.closest(".home-rail")?.querySelector(".home-rail-track");
+  const track = event.currentTarget.closest(".home-rail-body")?.querySelector(".home-rail-track");
   if (track) track.scrollBy({ left: direction * track.clientWidth * 0.85, behavior: "smooth" });
 }
 
@@ -3407,7 +3415,7 @@ onMounted(async () => {
     </template>
     <section v-if="browserApp" class="browser-app-shell" :class="{ 'nav-open': navOpen }">
       <aside class="browser-sidebar">
-        <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-snow-logo.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></button>
+        <div class="browser-sidebar-brand"><img class="app-brand-mark" src="/login/rh-snow-logo.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></div>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span class="browser-sidebar-label">{{ item.label }}</span></button></nav>
         <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><DoorOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
       </aside>
@@ -3452,10 +3460,12 @@ onMounted(async () => {
           <span>Loading catalog…</span>
         </div>
 
-        <section v-for="rail in (welcomeCatalogBusy ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
+        <section v-for="(rail, railIndex) in (welcomeCatalogBusy ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`" :style="{ '--tier': railIndex }"><div class="home-rail-inner">
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div>
-            <div class="home-rail-nav"><button type="button" aria-label="Scroll left" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button><button type="button" class="is-next" aria-label="Scroll right" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button></div>
           </header>
+          <div class="home-rail-body">
+          <button type="button" class="home-rail-arrow is-prev" aria-label="Scroll left" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button>
+          <button type="button" class="home-rail-arrow is-next" aria-label="Scroll right" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button>
           <div class="home-rail-track">
             <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
               <span class="home-card-art">
@@ -3476,7 +3486,8 @@ onMounted(async () => {
               <strong>{{ item.title }}</strong><small>{{ item.category || typeLabel(item.kind) }}</small>
             </div>
           </div>
-        </section>
+          </div>
+        </div></section>
         <p v-if="!welcomeCatalogBusy && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
       </article>
 
@@ -3670,7 +3681,7 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>
