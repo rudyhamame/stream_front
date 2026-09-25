@@ -138,7 +138,7 @@ const webMediaReady = ref(false);
 const webPlaybackRetryCount = ref(0);
 const webBuffering = ref(false);
 const webStartupPercent = ref(0);
-const webStartupHint = ref("Preparing playback…");
+const webStartupHint = ref("Starting");
 const webControlsVisible = ref(true);
 const webPlayerError = ref("");
 const webEncodeStrategy = ref("");
@@ -194,7 +194,7 @@ let webSeekTimer = null;
 let webControlsTimer = null;
 function setWebStartupProgress(percent, hint) {
   webStartupPercent.value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
-  webStartupHint.value = String(hint || "Preparing playback…");
+  webStartupHint.value = String(hint || "Starting");
 }
 async function loadHlsConstructor() {
   if (!hlsConstructorPromise) hlsConstructorPromise = import("hls.js").then(module => module.default);
@@ -957,10 +957,14 @@ async function decideWebPlayback(item) {
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
   if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
   webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
-  webForceHls.value = decision.directCompatible !== true;
-  webPendingEncodeStrategy.value = decision.directCompatible
+  // An http:// provider URL cannot be loaded by an https page (mixed content),
+  // so skip Direct and start at the compatibility-selected HLS strategy.
+  const directBlocked = window.location.protocol === 'https:' && /^http:/i.test(providerURL);
+  const useDirect = decision.directCompatible === true && !directBlocked;
+  webForceHls.value = !useDirect;
+  webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
-    : describeEncodeStrategy(decision.playbackStrategy || '', decision.videoMode || '');
+    : (decision.directCompatible ? '' : describeEncodeStrategy(decision.playbackStrategy || '', decision.videoMode || ''));
   if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
   return decision;
 }
@@ -1257,6 +1261,24 @@ function clearWebRecoveryTimer() {
 
 function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   if (!webNowPlaying.value) return;
+  const vodLadder = webForceHls.value && !webWwpSessionId.value && webNowPlaying.value.kind !== "channel";
+  if (vodLadder) {
+    // A long healthy stretch since the last recovery starts a fresh budget.
+    if (webHlsRecoveryAt >= 0 && Math.abs(resumeAt - webHlsRecoveryAt) > 120) { webHlsAttempts = 0; webHlsRecoveries = 0; }
+    webHlsRecoveryAt = resumeAt;
+    const exhausted = webHlsRecoveries >= WEB_HLS_RECOVERY_LIMIT;
+    if (exhausted || webHlsAttempts >= WEB_HLS_REINIT_LIMIT) {
+      if (!exhausted && advanceWebHlsFallback(resumeAt)) return;
+      clearWebRecoveryTimer();
+      clearTimeout(webStallTimer);
+      webStallTimer = null;
+      webBuffering.value = false;
+      webPlayerError.value = "This title could not be played on this browser.";
+      return;
+    }
+    webHlsAttempts += 1;
+    webHlsRecoveries += 1;
+  }
   webPlaybackRetryCount.value += 1;
   webBuffering.value = true;
   webPlayerError.value = "";
@@ -1275,6 +1297,36 @@ function webAbsolutePosition() {
   return Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
 }
 
+// HLS recovery ladder, same order as the Roku client: reinitialise the current
+// strategy a bounded number of times at the last confirmed position, then step
+// REMUX -> AUDIO transcode -> FULL transcode. FULL is terminal (never endless).
+const webHlsFallback = ref("");
+let webHlsStrategy = "", webHlsAttempts = 0, webHlsRecoveries = 0, webHlsRecoveryAt = -1;
+const WEB_HLS_REINIT_LIMIT = 2, WEB_HLS_RECOVERY_LIMIT = 12;
+function resetWebHlsLadder() {
+  webHlsFallback.value = "";
+  webHlsStrategy = ""; webHlsAttempts = 0; webHlsRecoveries = 0; webHlsRecoveryAt = -1;
+}
+function nextWebHlsFallback() {
+  if (webHlsFallback.value === "full" || webHlsStrategy === "HLS_FULL_TRANSCODE") return "";
+  if (webHlsFallback.value === "audio" || /^HLS_(AUDIO|VIDEO|PARTIAL)_TRANSCODE$/.test(webHlsStrategy)) return "full";
+  return "audio";
+}
+function advanceWebHlsFallback(resumeAt) {
+  const next = nextWebHlsFallback();
+  if (!next) return false;
+  webHlsFallback.value = next;
+  webHlsStrategy = ""; webHlsAttempts = 0;
+  webEncodeStrategy.value = ""; webPendingEncodeStrategy.value = "";
+  webPlaybackRetryCount.value = 0;
+  webPlaybackOffset.value = resumeAt; webCurrentTime.value = resumeAt;
+  webBuffering.value = true; webMediaReady.value = false;
+  setWebStartupProgress(55, next === "full" ? "Full transcode" : "Audio transcode");
+  showWebControls();
+  configureMoviePlayback(resumeAt);
+  return true;
+}
+
 // Original quality always tries the direct file first (no HLS at all - the
 // cheapest, most seek-friendly path when the browser can just play the source
 // natively) and falls back to the HLS pipeline (Copy, then the server's own
@@ -1290,7 +1342,8 @@ function fallBackToHlsFromDirect(resumeAt) {
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
   webBuffering.value = true;
-  setWebStartupProgress(55, "Direct playback failed — preparing HLS…");
+  resetWebHlsLadder();
+  setWebStartupProgress(55, "Switching to HLS");
   webMediaReady.value = false;
   showWebControls();
   configureMoviePlayback(target);
@@ -1319,7 +1372,7 @@ function onWebReady(event) {
     webPlaying.value = true;
   }
   webBuffering.value = false;
-  setWebStartupProgress(100, "Playback ready");
+  setWebStartupProgress(100, "Ready");
   webPlaybackRetryCount.value = 0;
   // A "playing"/"canplay"/first-frame signal means the stream is viable again;
   // drop any stale playback error so it does not block the auto-hide.
@@ -1405,6 +1458,7 @@ function movieStreamUrl(startSeconds = 0) {
   if (hls && providerURL) target.searchParams.set('providerURL', providerURL);
   if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
   if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
+  if (hls && webHlsFallback.value && !webWwpSessionId.value) target.searchParams.set("hlsFallback", webHlsFallback.value);
   wwpSeekIntent = false;
   return target.toString();
 }
@@ -1461,11 +1515,12 @@ function unmuteWebPlayback() {
 // A plain independent fetch is the simplest way to read them without hooking
 // hls.js's own loader - the manifest is tiny, so the extra request is cheap.
 function describeEncodeStrategy(strategy, videoMode) {
-  if (strategy === "HLS_REMUX") return "Remux → MPEG-TS";
-  if (strategy === "HLS_AUDIO_TRANSCODE") return "Audio transcode → MPEG-TS";
-  if (strategy === "HLS_VIDEO_TRANSCODE") return "Video transcode → MPEG-TS";
+  if (strategy === "DIRECT") return "DIRECT";
+  if (strategy === "HLS_REMUX") return "HLS REMUX";
+  if (strategy === "HLS_AUDIO_TRANSCODE") return "HLS AUDIO TRANSCODE";
+  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
   if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
-  if (strategy === "HLS_PARTIAL_TRANSCODE") return videoMode === "transcode" ? "Video transcode" : "Audio transcode";
+  if (strategy === "HLS_PARTIAL_TRANSCODE") return videoMode === "transcode" ? "HLS VIDEO TRANSCODE" : "HLS AUDIO TRANSCODE";
   return "";
 }
 async function fetchWebEncodeStrategy(url) {
@@ -1511,7 +1566,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webPendingEncodeStrategy.value = "DIRECT";
-      setWebStartupProgress(45, "Connecting directly to provider…");
+      setWebStartupProgress(45, "Direct");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
       const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
@@ -1553,7 +1608,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         await startWebPlayback(video);
       }
     } else {
-      setWebStartupProgress(60, "Waiting for HLS segments…");
+      setWebStartupProgress(60, webPendingEncodeStrategy.value.replace(/^HLS /, "") || "Preparing stream");
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
@@ -1593,7 +1648,8 @@ async function configureMoviePlayback(startSeconds = 0) {
           if (playbackToken !== webPlaybackToken) return;
           const response = data.networkDetails;
           const header = name => response?.getResponseHeader?.(name) || response?.headers?.get?.(name) || '';
-          const label = describeEncodeStrategy(header('X-RH-Strategy'), header('X-RH-Video-Mode'));
+          webHlsStrategy = header('X-RH-Strategy');
+          const label = describeEncodeStrategy(webHlsStrategy, header('X-RH-Video-Mode'));
           if (label) {
             webPendingEncodeStrategy.value = label;
             // Headers can arrive just after the first decoded frame. In that
@@ -1607,7 +1663,9 @@ async function configureMoviePlayback(startSeconds = 0) {
         // MEDIA_ATTACHED only means MSE is connected; FFmpeg may still be
         // creating its first segments. Ignore callbacks from a retired source.
         webHls.on(Hls.Events.MANIFEST_PARSED, () => {
-          if (playbackToken === webPlaybackToken) startWebPlayback(video);
+          if (playbackToken !== webPlaybackToken) return;
+          setWebStartupProgress(80, webPendingEncodeStrategy.value.replace(/^HLS /, "") || "Buffering");
+          startWebPlayback(video);
         });
         webHls.loadSource(source);
         webHls.attachMedia(video);
@@ -1629,6 +1687,7 @@ async function playWebMovie(item) {
   // A bounded server probe selects Direct or the exact HLS codec matrix before
   // assigning a source to the browser media element.
   webForceHls.value = false;
+  resetWebHlsLadder();
   webEncodeStrategy.value = "";
   webPendingEncodeStrategy.value = "";
   webNowPlaying.value = item;
@@ -1643,9 +1702,9 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
-  setWebStartupProgress(5, "Fetching provider URL from provider identity…");
+  setWebStartupProgress(5, "Starting");
   await new Promise(resolve => setTimeout(resolve, 0));
-  setWebStartupProgress(8, "Checking container and codec compatibility…");
+  setWebStartupProgress(12, "Checking media");
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
@@ -1661,7 +1720,7 @@ async function playWebMovie(item) {
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
-  setWebStartupProgress(28, "Selecting the safest playback path…");
+  setWebStartupProgress(30, "Choosing path");
   await decideWebPlayback(webNowPlaying.value);
   await configureMoviePlayback(0);
 }
@@ -3470,11 +3529,11 @@ onMounted(async () => {
           </button>
           <img v-if="selectedSeries?.logo && !failedLogoUrls.has(selectedSeries.logo)" class="ep-poster" :src="imageUrl(selectedSeries.logo)" alt="" @error="markLogoFailed(selectedSeries.logo)">
           <div class="ep-hero-copy">
-            <p class="eyebrow">SERIES</p>
             <h1>{{ selectedSeries?.title || 'Series' }}</h1>
             <p v-if="seriesEpisodes.length" class="ep-meta">{{ seriesEpisodeSeasons.length }} {{ seriesEpisodeSeasons.length === 1 ? 'season' : 'seasons' }} · {{ seriesEpisodes.length }} episodes</p>
-            <button v-if="firstDisplayedEpisode" type="button" class="ep-play-first" @click="playSeriesEpisode(firstDisplayedEpisode)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.52.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5Z"/></svg>Play {{ selectedSeasonNumber != null ? `S${selectedSeasonNumber} · ` : '' }}E{{ firstDisplayedEpisode.episodeNumber }}</button>
+
           </div>
+          <button v-if="firstDisplayedEpisode" type="button" class="ep-play-first" @click="playSeriesEpisode(firstDisplayedEpisode)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.52.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5Z"/></svg>Play {{ selectedSeasonNumber != null ? `S${selectedSeasonNumber} · ` : '' }}E{{ firstDisplayedEpisode.episodeNumber }}</button>
         </header>
         <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }} <button type="button" @click="openSeriesEpisodes(selectedSeries)">Retry</button></p>

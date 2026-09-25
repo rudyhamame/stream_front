@@ -1222,3 +1222,26 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .home-rail-nav svg { width:26px; height:26px; }
 .home-rail-nav .is-next svg { transform:scaleX(-1); }
 @media (hover:none) { .home-rail-nav { display:none; } }
+
+/* Episodes card is exactly one screen tall; only the episode list scrolls */
+.safari-app-mode:has(.safari-episodes-page) .browser-app-shell,
+.safari-app-mode:has(.safari-episodes-page) .browser-main,
+.safari-app-mode:has(.safari-episodes-page) .safari-page-shell { height:100dvh; min-height:0; overflow:hidden; }
+.browser-main > .safari-page-shell > .safari-page.safari-episodes-page { display:flex; flex-direction:column; height:calc(100dvh - clamp(16px,3vw,36px) - 28px); min-height:0; margin-bottom:28px; padding-bottom:0; overflow:hidden; }
+.browser-main > .safari-page-shell > .safari-episodes-page .series-episodes-content { flex:1 1 auto; min-height:0; overflow:hidden; }
+.browser-main > .safari-page-shell > .safari-episodes-page .series-seasons { flex:1 1 auto; min-height:0; height:auto; overflow-y:auto; overscroll-behavior:contain; padding:0 6px 32px 0; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.25) transparent; }
+.safari-episodes-page .ep-hero,.safari-episodes-page .series-season-selector { flex:0 0 auto; }
+
+/* Compact episodes header: one row */
+.safari-episodes-page .ep-hero { position:static; align-items:center; gap:14px; margin:0 0 14px; padding:0; }
+.safari-episodes-page .episodes-back { position:static; flex:0 0 auto; width:40px; height:40px; border-radius:12px; }
+.safari-episodes-page .ep-poster { width:40px; border-radius:8px; box-shadow:none; }
+.safari-episodes-page .ep-hero-copy { flex:1 1 auto; padding:0; }
+.safari-episodes-page .ep-hero-copy h1 { margin:0; font-size:clamp(18px,2.2vw,24px); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.safari-episodes-page .ep-meta { margin:3px 0 0; font-size:12px; }
+.safari-episodes-page .ep-play-first { flex:0 0 auto; min-height:40px; padding:0 18px 0 14px; font-size:14px; box-shadow:none; }
+.safari-episodes-page .series-season-selector { margin:0 0 12px; padding:3px; }
+.safari-episodes-page .series-season-selector button { padding:7px 16px; }
+@media (max-width:600px) { .safari-episodes-page .ep-poster { display:none; } .safari-episodes-page .ep-play-first span,.safari-episodes-page .ep-play-first { padding:0 14px; } }
+.browser-main > .safari-page-shell > .safari-episodes-page .series-seasons { scrollbar-width:none; padding-right:0; }
+.browser-main > .safari-page-shell > .safari-episodes-page .series-seasons::-webkit-scrollbar { display:none; }
