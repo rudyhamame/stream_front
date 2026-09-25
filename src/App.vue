@@ -4,6 +4,7 @@ import HomeIcon from "./components/icons/HomeIcon.vue";
 import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
 import MovieIcon from "./components/icons/MovieIcon.vue";
 import GlobeAlt2Icon from "./components/icons/GlobeAlt2Icon.vue";
+import RadioTowerIcon from "./components/icons/RadioTowerIcon.vue";
 import CogIcon from "./components/icons/CogIcon.vue";
 import MaximizeIcon from "./components/icons/MaximizeIcon.vue";
 import PauseIcon from "./components/icons/PauseIcon.vue";
@@ -69,7 +70,7 @@ const safariMenuItems = [
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
   { id: "series", label: "Series", icon: FilmRollAltIcon },
   { id: "movies", label: "Movies", icon: MovieIcon },
-  { id: "channels", label: "Live TV", icon: GlobeAlt2Icon },
+  { id: "channels", label: "Live TV", icon: RadioTowerIcon },
   { id: "settings", label: "Settings", icon: CogIcon }
 ];
 function openSafariPage(page) {
@@ -863,6 +864,7 @@ const seriesEpisodeSeasons = computed(() => {
     .map(season => ({ ...season, episodes: season.episodes.sort((a, b) => (Number(a.episodeNumber) || 0) - (Number(b.episodeNumber) || 0)) }));
 });
 const displayedSeriesEpisodeSeasons = computed(() => seriesEpisodeSeasons.value.filter(season => season.number === selectedSeasonNumber.value));
+const firstDisplayedEpisode = computed(() => displayedSeriesEpisodeSeasons.value[0]?.episodes[0] || null);
 
 const webPlayerSrc = computed(() => {
   const item = webNowPlaying.value;
@@ -3449,13 +3451,19 @@ onMounted(async () => {
       </article>
 
       <article v-if="safariPage === 'episodes'" class="safari-page safari-episodes-page">
-        <div class="safari-episodes-heading">
+        <header class="ep-hero">
           <button type="button" class="episodes-back" :aria-label="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" :title="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" @click="openSafariPage(episodesFrom)">
             <svg v-if="episodesFrom === 'welcome'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
             <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
-          <div><p class="eyebrow">EPISODES</p><h1>{{ selectedSeries?.title || 'Series' }}</h1></div>
-        </div>
+          <img v-if="selectedSeries?.logo && !failedLogoUrls.has(selectedSeries.logo)" class="ep-poster" :src="imageUrl(selectedSeries.logo)" alt="" @error="markLogoFailed(selectedSeries.logo)">
+          <div class="ep-hero-copy">
+            <p class="eyebrow">SERIES</p>
+            <h1>{{ selectedSeries?.title || 'Series' }}</h1>
+            <p v-if="seriesEpisodes.length" class="ep-meta">{{ seriesEpisodeSeasons.length }} {{ seriesEpisodeSeasons.length === 1 ? 'season' : 'seasons' }} · {{ seriesEpisodes.length }} episodes</p>
+            <button v-if="firstDisplayedEpisode" type="button" class="ep-play-first" @click="playSeriesEpisode(firstDisplayedEpisode)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.52.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5Z"/></svg>Play {{ selectedSeasonNumber != null ? `S${selectedSeasonNumber} · ` : '' }}E{{ firstDisplayedEpisode.episodeNumber }}</button>
+          </div>
+        </header>
         <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }} <button type="button" @click="openSeriesEpisodes(selectedSeries)">Retry</button></p>
         <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
@@ -3464,10 +3472,11 @@ onMounted(async () => {
           </nav>
           <div class="series-seasons">
             <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season">
-              <header><span>{{ season.episodes.length }} / {{ seriesEpisodes.length }} episodes</span></header>
-              <div class="series-episode-list">
-                <button v-for="episode in season.episodes" :key="episode.key" type="button" class="series-episode" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
-                  <span class="series-episode-copy"><small>Episode {{ episode.episodeNumber }}</small><strong>{{ episode.title }}</strong><em v-if="episode.duration">{{ episode.duration }}</em></span><span v-if="episode.extension || episode.streamFormat" class="series-episode-format">{{ streamFormatLabel(episode) }}</span><span class="series-episode-play" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M6.51 18.87a1 1 0 0 0 1-.01l10-6c.3-.18.49-.51.49-.86s-.18-.68-.49-.86l-10-6a.99.99 0 0 0-1.01-.01c-.31.18-.51.51-.51.87v12c0 .36.19.69.51.87ZM8 7.77 15.06 12 8 16.23z"></path></svg></span>
+              <div class="ep-list">
+                <button v-for="episode in season.episodes" :key="episode.key" type="button" class="ep-row" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
+                  <span class="ep-thumb"><img v-if="episode.logo && !failedLogoUrls.has(episode.logo)" :src="imageUrl(episode.logo)" alt="" loading="lazy" @error="markLogoFailed(episode.logo)"><b v-else>{{ episode.episodeNumber }}</b><span class="ep-thumb-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.52.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5Z"/></svg></span></span>
+                  <span class="ep-copy"><strong>{{ episode.title }}</strong><small>Episode {{ episode.episodeNumber }}<template v-if="episode.duration"> · {{ episode.duration }}</template></small></span>
+                  <span v-if="episode.extension || episode.streamFormat" class="ep-format">{{ streamFormatLabel(episode) }}</span>
                 </button>
               </div>
             </section>
@@ -3586,7 +3595,7 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"><img src="/login/rh-snow-logo.png" alt="RH IPTV Player" class="web-video-placeholder-logo"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>

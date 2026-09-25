@@ -586,37 +586,41 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .web-quality-menu li { margin:0; }
  .web-quality-menu button { display:flex; width:100%; align-items:baseline; justify-content:space-between; gap:10px; border:0; border-radius:8px; padding:9px 10px; background:transparent; color:#e7ece0; cursor:pointer; font:600 13px 'DM Sans'; text-align:left; }
  .web-quality-menu button:hover { background:#1d211a; }
-.safari-episodes-page { display:flex; flex-direction:column; width:100%; max-width:1180px; margin:0 auto; }
-.safari-episodes-heading { position:relative; display:flex; flex:0 0 auto; flex-direction:column; align-items:center; gap:2px; margin-bottom:26px; padding:0 64px; text-align:center; }
-.episodes-back { position:absolute; left:0; top:0; display:grid; place-items:center; width:46px; height:46px; padding:0; border:1px solid rgba(255,255,255,.16); border-radius:16px; background:rgba(255,255,255,.08); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 10px 26px rgba(0,0,0,.22); color:#eef4e6; cursor:pointer; transition:background .16s ease,transform .12s ease,box-shadow .16s ease; }
-.episodes-back:hover,.episodes-back:focus-visible { background:rgba(255,255,255,.16); box-shadow:0 14px 32px rgba(0,0,0,.3); outline:none; transform:translateY(-2px); }
-.episodes-back:active { transform:scale(.94); }
-.episodes-back svg { width:21px; height:21px; }
-.safari-episodes-heading .eyebrow { margin:2px 0 6px; letter-spacing:.24em; }
-.safari-episodes-heading h1 { margin:0; color:#f5f7f2; font:600 clamp(26px,4vw,40px)/1.12 'Space Grotesk'; letter-spacing:-.02em; }
-.safari-episodes-heading span { display:block; margin-top:9px; color:#9fb09a; font:500 12px 'DM Sans'; letter-spacing:.04em; }
+.safari-episodes-page { display:flex; flex-direction:column; width:100%; max-width:960px; margin:0 auto; }
+.ep-hero { position:relative; display:flex; align-items:flex-end; gap:24px; margin-bottom:26px; padding:56px 0 0; }
+.episodes-back { position:absolute; left:0; top:0; display:grid; place-items:center; width:42px; height:42px; padding:0; border:1px solid rgba(255,255,255,.16); border-radius:14px; background:rgba(255,255,255,.08); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); color:#eef4e6; cursor:pointer; transition:background .16s ease,transform .12s ease; }
+.episodes-back:hover,.episodes-back:focus-visible { background:rgba(255,255,255,.16); outline:none; transform:translateY(-2px); }
+.episodes-back svg { width:20px; height:20px; }
+.ep-poster { flex:0 0 auto; width:120px; aspect-ratio:2/3; border-radius:14px; object-fit:cover; background:rgba(255,255,255,.06); box-shadow:0 16px 38px rgba(0,0,0,.4); }
+.ep-hero-copy { min-width:0; padding-bottom:4px; }
+.ep-hero-copy .eyebrow { margin:0 0 6px; letter-spacing:.24em; }
+.ep-hero-copy h1 { margin:0; color:#f5f7f2; font:600 clamp(26px,4vw,38px)/1.1 'Space Grotesk'; letter-spacing:-.02em; }
+.ep-meta { margin:8px 0 16px; color:#9fb0c8; font:500 14px 'DM Sans'; }
+.ep-play-first { display:inline-flex; align-items:center; gap:10px; min-height:46px; padding:0 22px 0 18px; border:0; border-radius:999px; background:#c1d9ff; color:#0f1a2e; font:700 15px 'DM Sans'; cursor:pointer; box-shadow:0 8px 22px rgba(115,165,232,.28); transition:transform .15s,filter .15s; }
+.ep-play-first:hover { transform:translateY(-1px); filter:brightness(1.06); }
+.ep-play-first svg { width:18px; height:18px; }
 .series-episodes-content { display:flex; flex:1 1 auto; min-height:0; flex-direction:column; }
 .series-season-selector { display:inline-flex; align-self:center; flex:0 0 auto; gap:4px; margin:0 auto 30px; padding:5px; border:1px solid rgba(255,255,255,.12); border-radius:999px; background:rgba(255,255,255,.07); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); max-width:100%; overflow-x:auto; }
 .series-season-selector button { flex:0 0 auto; border:0; border-radius:999px; padding:9px 20px; background:transparent; color:#b6c4b0; font:600 13px 'Space Grotesk'; letter-spacing:.01em; cursor:pointer; transition:color .15s,background .15s; }
 .series-season-selector button:hover { color:#f2f6ef; }
 .series-season-selector button.active { background:#fff; color:#16233a; box-shadow:0 6px 16px rgba(0,0,0,.22); }
 .series-seasons { display:grid; flex:1 1 auto; min-height:0; gap:34px; padding:14px 28px 90px; overflow-y:auto; overscroll-behavior:contain; }
-.series-season > header { display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:22px; }
-.series-season > header h2 { margin:0; color:#f3f6ef; font:600 clamp(19px,2.4vw,24px) 'Space Grotesk'; letter-spacing:-.01em; }
-.series-season > header span { padding:5px 12px; border-radius:999px; background:rgba(255,255,255,.08); color:#a9b8a4; font:600 10px 'DM Sans'; text-transform:uppercase; letter-spacing:.1em; }
-.series-episode-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:24px 22px; }
-.series-episode { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:16px; min-height:98px; width:100%; border:1px solid rgba(255,255,255,.13); border-radius:20px; padding:18px 20px; background:rgba(255,255,255,.07); backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px); box-shadow:0 16px 38px rgba(0,0,0,.24); color:#f3f4ef; text-align:left; cursor:pointer; overflow:hidden; transition:background .18s ease,transform .18s ease,box-shadow .18s ease; }
-.series-episode::before { content:""; position:absolute; inset:0; border-radius:inherit; background:linear-gradient(150deg,rgba(255,255,255,.09),transparent 46%); pointer-events:none; }
-.series-episode:hover,.series-episode:focus-visible { background:rgba(255,255,255,.12); transform:translateY(-4px); box-shadow:0 26px 52px rgba(0,0,0,.32); outline:none; }
-.series-episode:focus-visible { box-shadow:0 0 0 2px #c1d9ff,0 26px 52px rgba(0,0,0,.32); }
-.series-episode-copy { position:relative; min-width:0; }
-.series-episode-copy small,.series-episode-copy strong,.series-episode-copy em { display:block; }
-.series-episode-copy small { margin-bottom:6px; color:#c1d9ff; font:700 10px/1 'Space Grotesk'; letter-spacing:.12em; text-transform:uppercase; }
-.series-episode-copy strong { overflow:hidden; color:#f5f7f2; font:600 15px/1.3 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
-.series-episode-copy em { margin-top:6px; color:#9aa694; font:11px 'DM Sans'; font-style:normal; }
-.series-episode-format { position:relative; padding:5px 10px; border:1px solid rgba(193,217,255,.28); border-radius:999px; background:rgba(193,217,255,.12); color:#c1d9ff; font:700 9px/1 'DM Sans'; letter-spacing:.1em; }
-.series-episode-play { position:relative; display:grid; place-items:center; width:44px; height:44px; border-radius:50%; background:#c1d9ff; color:#16233a; box-shadow:0 8px 22px rgba(115,165,232,.28); transition:transform .16s ease,box-shadow .16s ease; }
-
+.series-season-selector { align-self:flex-start; margin:0 0 18px; }
+.series-seasons { padding:0 0 90px; gap:0; }
+.ep-list { display:grid; gap:8px; }
+.ep-row { display:grid; grid-template-columns:auto minmax(0,1fr) auto; align-items:center; gap:16px; width:100%; padding:10px 16px 10px 10px; border:1px solid rgba(255,255,255,.1); border-radius:16px; background:rgba(255,255,255,.05); color:#f3f4ef; text-align:left; cursor:pointer; transition:background .15s,border-color .15s,transform .12s; }
+.ep-row:hover,.ep-row:focus-visible { background:rgba(255,255,255,.11); border-color:rgba(193,217,255,.4); outline:none; transform:translateX(3px); }
+.ep-thumb { position:relative; display:grid; place-items:center; width:132px; aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:rgba(255,255,255,.07); }
+.ep-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+.ep-thumb b { color:#c1d9ff; font:700 24px 'Space Grotesk'; }
+.ep-thumb-play { position:absolute; inset:0; display:grid; place-items:center; background:rgba(0,0,0,.45); color:#fff; opacity:0; transition:opacity .15s; }
+.ep-row:hover .ep-thumb-play,.ep-row:focus-visible .ep-thumb-play { opacity:1; }
+.ep-thumb-play svg { width:26px; height:26px; }
+.ep-copy { min-width:0; display:grid; gap:5px; }
+.ep-copy strong { overflow:hidden; color:#f5f7f2; font:600 16px/1.3 'Space Grotesk'; text-overflow:ellipsis; white-space:nowrap; }
+.ep-copy small { color:#9fb0c8; font:500 13px 'DM Sans'; }
+.ep-format { padding:5px 10px; border:1px solid rgba(193,217,255,.28); border-radius:999px; background:rgba(193,217,255,.1); color:#c1d9ff; font:700 10px/1 'DM Sans'; letter-spacing:.1em; }
+@media(max-width:600px) { .ep-hero { gap:14px; } .ep-poster { width:88px; } .ep-thumb { width:104px; } .ep-row { gap:12px; } .ep-format { display:none; } .ep-copy strong { font-size:15px; } }
 /* Episodes are a document-length page: let the browser own the scroll instead
    of trapping the season list inside the viewport shell. */
 html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; min-height:100%; overflow:auto !important; overscroll-behavior:auto; }
@@ -627,9 +631,6 @@ html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; 
 .safari-app-mode:has(.safari-episodes-page) .safari-episodes-page,
 .safari-app-mode:has(.safari-episodes-page) .series-episodes-content,
 .safari-app-mode:has(.safari-episodes-page) .series-seasons { height:auto; min-height:0; overflow:visible; }
-.series-episode:hover .series-episode-play { transform:scale(1.08); box-shadow:0 10px 28px rgba(115,165,232,.42); }
-.series-episode-play svg { display:block; width:22px; height:22px; }
-@media(max-width:600px) { .series-episode-list { grid-template-columns:1fr; } .series-episode { grid-template-columns:minmax(0,1fr) auto auto; min-height:96px; gap:10px; padding:15px 16px; border-radius:16px; } .series-episode-play { width:38px; height:38px; } .series-episode-play svg { width:20px; height:20px; } }
  .web-video-frame { position:absolute; inset:0; z-index:0; display:grid; place-items:center; width:100%; height:100%; overflow:hidden; border:0; border-radius:0; outline:0; background:#000; }
  .web-video-frame video { width:100%; height:100%; object-fit:contain; background:#000; }
  .web-video-placeholder { position:absolute; inset:0; z-index:1; display:grid; place-items:center; background:#000; }
@@ -1166,3 +1167,28 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .rh-auth-badges a:hover { opacity:1; transform:translateY(-2px); }
 .rh-auth-badges img { display:block; width:100%; height:auto; }
 @media (max-width:480px) { .rh-auth { padding:20px 14px; } .rh-auth-card { padding:22px 18px; border-radius:20px; } .rh-auth-badges a { flex-basis:150px; } }
+
+/* ---- Icon-only sidebar rail ---- */
+.shell .browser-app-shell .browser-sidebar { width:84px; padding:18px 10px 16px; align-items:center; }
+.shell .browser-app-shell .browser-sidebar .browser-sidebar-brand { width:100%; height:56px; margin:0 0 16px; padding:0; justify-content:center; }
+.shell .browser-app-shell .browser-sidebar .browser-sidebar-brand .app-brand-mark { width:44px; height:44px; flex-basis:44px; }
+.shell .browser-app-shell .browser-sidebar .browser-sidebar-brand-name,.shell .browser-app-shell .browser-sidebar .browser-sidebar-label { display:none; }
+.shell .browser-app-shell .browser-sidebar nav { width:100%; gap:6px; }
+.shell .browser-app-shell .browser-sidebar nav button,.shell .browser-app-shell .browser-sidebar .browser-sidebar-logout { width:100%; height:56px; min-height:56px; padding:0; justify-content:center; border-radius:16px; }
+.shell .browser-app-shell .browser-sidebar .browser-sidebar-icon { width:32px; height:32px; flex-basis:32px; }
+.shell .browser-app-shell .browser-sidebar .browser-sidebar-icon svg,.shell .browser-app-shell .browser-sidebar .browser-sidebar-icon img { width:32px; height:32px; }
+.shell .browser-app-shell .browser-main,.shell .browser-app-shell:not(.nav-open) .browser-main { margin-left:84px; }
+@media (max-width:700px) { .shell .browser-app-shell .browser-main,.shell .browser-app-shell:not(.nav-open) .browser-main { margin-left:0; } }
+
+/* Welcome page uses the full width beside the sidebar rail */
+.safari-page.safari-welcome-page { width:100%; max-width:none; }
+
+/* Welcome: playlist name and catalog counters share one row */
+@media (min-width:641px) {
+  .welcome-provider-head { flex-wrap:nowrap; align-items:center; justify-content:space-between; gap:28px; }
+  .welcome-provider-head-text { flex:1 1 auto; }
+  .welcome-provider-stats { order:2; flex:0 0 auto; margin:0; padding:0; border:0; border-radius:0; background:none; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; }
+  .welcome-provider-stats div { flex:0 0 auto; min-width:96px; padding:0 20px; }
+  .welcome-provider-stats strong { font-size:32px; }
+  .welcome-provider-stats span { font-size:11px; }
+}
