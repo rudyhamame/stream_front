@@ -12,6 +12,7 @@ import PlayIcon from "./components/icons/PlayIcon.vue";
 import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
 import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 import LockKeyholeIcon from "./components/icons/LockKeyholeIcon.vue";
+import DoorOpenAltIcon from "./components/icons/DoorOpenAltIcon.vue";
 import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vue";
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
@@ -2295,7 +2296,7 @@ function welcomeProviderItem(item, source) {
 }
 
 async function loadWelcomeProvider(provider = sources.value.find(source => source.id === sourceId.value)) {
-  if (!provider?.id || safariPage.value !== "welcome") return;
+  if (!provider?.id || !["welcome", "playlist"].includes(safariPage.value)) return;
   const requestId = ++welcomeProviderRequestId;
   welcomeProviderLoading.value = true;
   welcomeProviderError.value = "";
@@ -2793,6 +2794,7 @@ async function loadSources(preferred = sourceId.value, { loadPlaylist = safariPa
     // required by Series/Movies/Live TV pages and can be loaded lazily there.
     if (safariPage.value !== "playlist") await loadManagedLibrary();
     if (safariPage.value === "welcome") await loadWelcomeProvider(source);
+    else if (safariPage.value === "playlist") loadWelcomeProvider(source); // fills the tab counters without delaying the list
   } finally {
     sourceListRequestCount = Math.max(0, sourceListRequestCount - 1);
     sourceListLoading.value = sourceListRequestCount > 0;
@@ -3338,7 +3340,7 @@ onMounted(async () => {
       <aside class="browser-sidebar">
         <button type="button" class="browser-sidebar-brand" :aria-expanded="navOpen ? 'true' : 'false'" aria-label="Toggle menu" @click="navOpen = !navOpen"><img class="app-brand-mark" src="/login/rh-snow-logo.png" alt="RH" :style="{visibility: brandLogoReady ? undefined : 'hidden'}"><span class="browser-sidebar-brand-name"><em>IPTV PLAYER</em></span></button>
         <nav aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" :aria-label="item.label" :title="item.label" @click="openSafariPage(item.id)"><span class="browser-sidebar-icon"><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><span class="browser-sidebar-label">{{ item.label }}</span></button></nav>
-        <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><LockKeyholeOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
+        <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><DoorOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
@@ -3411,19 +3413,21 @@ onMounted(async () => {
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
         <template v-if="sources.length">
           <div class="playlist-toolbar">
+            <div class="playlist-toolbar-left">
             <select v-if="sources.length > 1" class="playlist-provider-select" aria-label="Playlist provider" :value="sourceId" @change="chooseSource($event.target.value)">
               <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
             </select>
+            <select class="playlist-category-select" :value="category" aria-label="Playlist category" @change="chooseCategory($event.target.value)">
+              <option value="all">All categories</option>
+              <option v-for="entry in categories" :key="entry.id" :value="entry.id">{{ entry.name }}{{ entry.count ? ` · ${entry.count}` : '' }}</option>
+            </select>
+            </div>
             <div class="playlist-tabs" role="tablist">
               <button v-for="option in [{v:'series',l:'Series'},{v:'movie',l:'Movies'},{v:'channel',l:'Live TV'}]" :key="option.v" type="button" role="tab" :aria-selected="kind === option.v" :class="{active:kind === option.v}" @click="chooseKind(option.v)">
                 <span>{{ option.l }}</span>
                 <em class="playlist-tab-count">{{ kind === option.v ? total.toLocaleString() : (welcomeProviderCounts[option.v] ? welcomeProviderCounts[option.v].toLocaleString() : '—') }}</em>
               </button>
             </div>
-            <select class="playlist-category-select" :value="category" aria-label="Playlist category" @change="chooseCategory($event.target.value)">
-              <option value="all">All categories</option>
-              <option v-for="entry in categories" :key="entry.id" :value="entry.id">{{ entry.name }}{{ entry.count ? ` · ${entry.count}` : '' }}</option>
-            </select>
             <label class="playlist-search"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><input v-model="query" placeholder="Search this playlist"></label>
           </div>
           <p v-if="!loading && total" class="playlist-result-count">
