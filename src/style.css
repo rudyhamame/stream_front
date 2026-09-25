@@ -1215,14 +1215,14 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 @media (max-width:700px) { .browser-main > .safari-page-shell > .safari-page.safari-episodes-page { width:calc(100% - 24px); padding:18px 14px 20px; border-radius:22px; } }
 
 /* Welcome rails: scroll buttons sit at the start and end of each rail */
-.home-rail-body { position:relative; }
+.home-rail-body { position:relative; padding:0 54px; }
 .home-rail-arrow { position:absolute; top:50%; z-index:3; display:grid; place-items:center; width:42px; height:42px; padding:0; border:1px solid rgba(255,255,255,.18); border-radius:50%; background:rgba(8,12,18,.78); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); color:#eaf2ff; cursor:pointer; transform:translateY(-50%); box-shadow:0 8px 22px rgba(0,0,0,.4); }
 .home-rail-arrow:hover { background:rgba(30,40,55,.92); }
-.home-rail-arrow.is-prev { left:-6px; }
-.home-rail-arrow.is-next { right:-6px; }
+.home-rail-arrow.is-prev { left:0; }
+.home-rail-arrow.is-next { right:0; }
 .home-rail-arrow svg { width:28px; height:28px; }
 .home-rail-arrow.is-next svg { transform:scaleX(-1); }
-@media (hover:none) { .home-rail-arrow { display:none; } }
+@media (hover:none) { .home-rail-arrow { display:none; } .home-rail-body { padding:0; } }
 
 /* Welcome rails stack up tier by tier, growing in height like a layer cake */
 .home-rail { display:grid; grid-template-rows:1fr; animation:rail-tier .7s cubic-bezier(.22,1,.36,1) backwards; animation-delay:calc(var(--tier,0) * .3s); }

@@ -1572,6 +1572,9 @@ async function configureMoviePlayback(startSeconds = 0) {
   // Carry the current mute choice onto the (re)loaded element so a pre-muted
   // auto-play start (WWP joiner) is not fighting an un-muted element.
   video.muted = webMuted.value;
+  // Let the browser itself start playback as soon as data is ready, unless the
+  // viewer paused on purpose; startWebPlayback below is only the backstop.
+  video.autoplay = !wwpUserPaused;
   video.load();
   try {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
