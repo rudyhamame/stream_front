@@ -1233,3 +1233,12 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 /* Keep each rail exactly as wide as the page so the track scrolls between its arrows */
 .home-rail { grid-template-columns:minmax(0,1fr); min-width:0; }
 .home-rail-inner,.home-rail-body { min-width:0; }
+.web-player-live-spacer { flex:1 1 auto; }
+
+/* Streaming badge: glass pill with a tier-coloured status dot */
+.web-player-topbar-actions .web-strategy-badge { display:inline-flex; align-items:center; gap:8px; padding:7px 14px 7px 11px; border:1px solid rgba(255,255,255,.14); border-radius:999px; background:rgba(10,14,20,.62); backdrop-filter:blur(14px); -webkit-backdrop-filter:blur(14px); box-shadow:0 6px 18px rgba(0,0,0,.35); color:#f2f6fb; font:600 11px/1 'DM Sans',sans-serif; letter-spacing:.09em; text-transform:uppercase; white-space:nowrap; }
+.web-strategy-badge i { --tier-color:#7fd6a3; flex:0 0 auto; width:8px; height:8px; border-radius:50%; background:var(--tier-color); box-shadow:0 0 0 3px color-mix(in srgb,var(--tier-color) 25%,transparent),0 0 10px var(--tier-color); }
+.web-strategy-badge[data-tier="remux"] i { --tier-color:#8ec5ff; }
+.web-strategy-badge[data-tier="audio"] i { --tier-color:#ffd166; }
+.web-strategy-badge[data-tier="video"] i { --tier-color:#ffab5e; }
+.web-strategy-badge[data-tier="full"] i { --tier-color:#ff7a7a; }

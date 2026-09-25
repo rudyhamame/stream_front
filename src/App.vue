@@ -911,6 +911,14 @@ const webPlayerSrc = computed(() => {
   return target.toString();
 });
 
+const webStrategyTier = computed(() => {
+  const label = webEncodeStrategy.value;
+  if (label === "DIRECT") return "direct";
+  if (label.includes("FULL")) return "full";
+  if (label.includes("VIDEO")) return "video";
+  if (label.includes("AUDIO")) return "audio";
+  return "remux";
+});
 const webStreamFormatLabel = computed(() => {
   const item = webNowPlaying.value;
   if (!item) return "";
@@ -3705,7 +3713,7 @@ onMounted(async () => {
             <button type="button" class="web-pl-btn web-pl-back" aria-label="Close player" @click.stop="closeWebPlayer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>
             <h2 class="web-player-name">{{ webNowPlaying.title }}</h2>
             <div class="web-player-topbar-actions">
-              <span v-if="webEncodeStrategy" class="web-strategy-badge" :title="'Server encode: ' + webEncodeStrategy">{{ webEncodeStrategy }}</span>
+              <span v-if="webEncodeStrategy" class="web-strategy-badge" :data-tier="webStrategyTier" :title="'Playback: ' + webEncodeStrategy"><i aria-hidden="true"></i>{{ webEncodeStrategy }}</span>
               <div class="web-partner-control">
                 <button type="button" class="web-pl-btn" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-label="Watch with Partner" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.24 4.76c-2.3-2.29-5.87-2.35-8.24-.19-2.37-2.16-5.93-2.09-8.24.2-2.36 2.37-2.36 6.07 0 8.43l7.53 7.52c.2.19.45.29.71.29s.51-.1.71-.29l7.53-7.52c2.36-2.36 2.36-6.06 0-8.43Zm-1.41 7.02-6.82 6.81-6.82-6.81a3.92 3.92 0 0 1 0-5.6C5.98 5.39 6.99 5 8 5s2.02.39 2.8 1.18l.5.5c.39.39 1.02.39 1.41 0l.5-.5c1.57-1.57 4.04-1.57 5.62 0 1.57 1.58 1.57 4.04 0 5.6"/><path d="M13 8.5h-2V11H8.5v2H11v2.5h2V13h2.5v-2H13z"/></svg></button>
                 <div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button><button v-if="webWwpSessionId && !webCallActive" type="button" class="primary-action wwp-call-start" @click.stop="startWebCall">🎙 Start voice call</button><button v-if="webCallActive" type="button" class="primary-action wwp-call-end" @click.stop="endWebCall">End voice call</button></div>
@@ -3716,8 +3724,8 @@ onMounted(async () => {
           <button v-else-if="!webPlaying" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <footer class="web-player-bottombar">
             <button type="button" class="web-pl-btn web-pl-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
-            <span class="web-player-time">{{ formatTime(webCurrentTime) }} <i>/ {{ formatTime(webDuration) }}</i></span>
-            <input type="range" class="web-player-scrub" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Seek" @pointerdown="showWebControls" @input="seekWebMovie">
+            <template v-if="webNowPlaying.kind !== 'channel'"><span class="web-player-time">{{ formatTime(webCurrentTime) }} <i>/ {{ formatTime(webDuration) }}</i></span>
+            <input type="range" class="web-player-scrub" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Seek" @pointerdown="showWebControls" @input="seekWebMovie"></template><span v-else class="web-player-live-spacer"></span>
             <button type="button" class="web-pl-btn" aria-label="Skip to next" :disabled="!webUpNext" @click.stop="webUpNext && playWebMovie(webUpNext)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7zM16 5h2.4v14H16z"/></svg></button>
             <button type="button" class="web-pl-btn" :aria-label="webMuted ? 'Unmute' : 'Mute'" @click.stop="toggleWebMute"><svg v-if="webMuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM23 9l-6 6M17 9l6 6"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg></button>
             <button type="button" class="web-pl-btn" :aria-label="webFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click.stop="fullscreenWebMovie"><svg v-if="webFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a3 3 0 0 1-3 3H3M21 9h-3a3 3 0 0 1-3-3V3M3 15h3a3 3 0 0 1 3 3v3M15 21v-3a3 3 0 0 1 3-3h3"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5"/></svg></button>
