@@ -1126,7 +1126,7 @@ function endMiniDrag() {
   if (webMiniJustDragged) setTimeout(() => { webMiniJustDragged = false; }, 0);
 }
 function webFrameClick(event) {
-  if (webMini.value) { if (!webMiniJustDragged) webMini.value = false; return; }
+  if (webMini.value) return; // the minimized player only expands via its Expand button
   toggleWebControls(event);
 }
 
