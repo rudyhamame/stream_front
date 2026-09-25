@@ -12,6 +12,7 @@ import PlayIcon from "./components/icons/PlayIcon.vue";
 import RotateCcw10Icon from "./components/icons/RotateCcw10Icon.vue";
 import RotateCw10Icon from "./components/icons/RotateCw10Icon.vue";
 import LockKeyholeIcon from "./components/icons/LockKeyholeIcon.vue";
+import CaretLeftIcon from "./components/icons/CaretLeftIcon.vue";
 import DoorOpenAltIcon from "./components/icons/DoorOpenAltIcon.vue";
 import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vue";
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
@@ -2325,6 +2326,11 @@ async function loadWelcomeProvider(provider = sources.value.find(source => sourc
   // The backdrop montage is per playlist provider - refresh it for this one.
 }
 
+function scrollHomeRail(event, direction) {
+  const track = event.currentTarget.closest(".home-rail")?.querySelector(".home-rail-track");
+  if (track) track.scrollBy({ left: direction * track.clientWidth * 0.85, behavior: "smooth" });
+}
+
 function welcomeItemEnabled(item) {
   const source = sources.value.find(candidate => candidate.id === item?.sourceId);
   return (source?.enabledItems || []).some(candidate => candidate?.key === item?.key
@@ -3384,7 +3390,9 @@ onMounted(async () => {
         </div>
 
         <section v-for="rail in (welcomeCatalogBusy ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`">
-          <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div></header>
+          <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div>
+            <div class="home-rail-nav"><button type="button" aria-label="Scroll left" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button><button type="button" class="is-next" aria-label="Scroll right" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button></div>
+          </header>
           <div class="home-rail-track">
             <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
               <span class="home-card-art">
