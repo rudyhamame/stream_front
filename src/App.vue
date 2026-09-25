@@ -1736,7 +1736,16 @@ async function playWebMovie(item) {
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
   setWebStartupProgress(30, "Choosing path");
-  await decideWebPlayback(webNowPlaying.value);
+  if (webNowPlaying.value.kind === "channel") {
+    // Live TV has no codec matrix (the streamer only serves the decision for
+    // movie/series): play the provider stream directly, or RH HLS when the page
+    // is https and the provider URL is plain http (mixed content).
+    const mixedContent = window.location.protocol === "https:" && /^http:/i.test(providerURL);
+    webForceHls.value = mixedContent;
+    webPendingEncodeStrategy.value = mixedContent ? "" : "DIRECT";
+  } else {
+    await decideWebPlayback(webNowPlaying.value);
+  }
   await configureMoviePlayback(0);
 }
 
