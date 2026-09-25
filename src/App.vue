@@ -141,6 +141,10 @@ const webStartupPercent = ref(0);
 const webStartupHint = ref("Starting");
 const webControlsVisible = ref(true);
 const webPlayerError = ref("");
+// Set only after the compatibility probe identifies a format limitation.
+// The player still gets a chance to try the bounded Direct/Remux path before
+// this is shown to the viewer.
+const webFormatUnsupported = ref(false);
 const webEncodeStrategy = ref("");
 // A strategy is selected before it is proven playable. Keep that selection
 // private until the media element emits `playing` for this exact attempt.
@@ -964,6 +968,7 @@ async function decideWebPlayback(item) {
   const decision = await response.json().catch(() => ({}));
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
   if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
+  webFormatUnsupported.value = /codec|container|profile|level|pixel format|frame rate|channel|sample rate|direct-play facts unavailable/i.test(String(decision.reason || ''));
   webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
   // An http:// provider URL cannot be loaded by an https page (mixed content),
   // so skip Direct and start at the compatibility-selected HLS strategy.
@@ -1281,7 +1286,9 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
       clearTimeout(webStallTimer);
       webStallTimer = null;
       webBuffering.value = false;
-      webPlayerError.value = "This title could not be played on this browser.";
+      webPlayerError.value = webFormatUnsupported.value
+        ? "This browser player does not support this item's codecs or container. The server is limited to Direct/Remux playback, so this item cannot be converted for playback."
+        : "This title could not be played on this browser.";
       return;
     }
     webHlsAttempts += 1;
@@ -1346,6 +1353,7 @@ function fallBackToHlsFromDirect(resumeAt) {
   // HLS is a transport transition, not a final strategy badge.
   webEncodeStrategy.value = "";
   webPendingEncodeStrategy.value = "";
+  webFormatUnsupported.value = false;
   webPlaybackRetryCount.value = 0;
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
