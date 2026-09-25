@@ -1364,6 +1364,9 @@ function handleWebVideoError() {
 }
 
 function onWebReady(event) {
+  // A Direct -> HLS (or fallback-rung) switch reloads the element, which leaves
+  // it paused; resume unless the viewer paused on purpose.
+  if (event?.type === "canplay" && webNowPlaying.value && !wwpUserPaused && event.target?.paused) startWebPlayback(event.target);
   if (!webForceHls.value && event?.type === 'playing') clearTimeout(webDirectStartupTimer);
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
@@ -1688,6 +1691,7 @@ async function playWebMovie(item) {
   // assigning a source to the browser media element.
   webForceHls.value = false;
   resetWebHlsLadder();
+  wwpUserPaused = false;
   webEncodeStrategy.value = "";
   webPendingEncodeStrategy.value = "";
   webNowPlaying.value = item;
