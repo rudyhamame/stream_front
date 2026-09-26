@@ -1749,9 +1749,8 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
-  setWebStartupProgress(5, "Starting");
+  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Buffering");
   await new Promise(resolve => setTimeout(resolve, 0));
-  setWebStartupProgress(12, "Checking media");
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
