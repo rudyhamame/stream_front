@@ -18,7 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
-import { browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities } from "./browser-transport.js";
+import { browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -145,7 +145,6 @@ const webPlayerError = ref("");
 // Set only after the compatibility probe identifies a format limitation.
 // The player still gets a chance to try the bounded Direct/Remux path before
 // this is shown to the viewer.
-const webFormatUnsupported = ref(false);
 const webCompatibility = ref(null);
 let webPlaybackSessionId = 0;
 const webEncodeStrategy = ref("");
@@ -191,7 +190,6 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
-let webDirectStartupTimer = null;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
@@ -921,10 +919,27 @@ const webPlayerSrc = computed(() => {
 const webStrategyTier = computed(() => {
   const label = webEncodeStrategy.value;
   if (label === "DIRECT") return "direct";
+  if (label === "UNSUPPORTED") return "unsupported";
   if (label.includes("FULL")) return "full";
   if (label.includes("VIDEO")) return "video";
   if (label.includes("AUDIO")) return "audio";
   return "remux";
+});
+const webTransportDetails = computed(() => {
+  const decision = webCompatibility.value;
+  if (!decision) return "";
+  const { media, browser } = decision;
+  const level = media.video.level ? `@${media.video.level}` : "";
+  return [
+    `Transport: ${decision.transport}`,
+    `Container: ${media.container}`,
+    `Video: ${media.video.codec || "unknown"} ${media.video.profile || ""}${level} ${media.video.width || "?"}×${media.video.height || "?"} ${media.video.frameRate || "?"} fps ${media.video.bitDepth || "?"}-bit ${media.video.pixelFormat || ""}`.trim(),
+    `Audio: ${media.audio.codec || "none"} ${media.audio.profile || ""} ${media.audio.channels || "?"} channels ${media.audio.sampleRate || "?"} Hz`.trim(),
+    `Browser: ${browser.name} ${browser.version || "unknown"}`,
+    `Direct container: ${decision.containerCompatible ? "yes" : "no"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
+    `Remux compatible: ${decision.remuxCompatible ? "yes" : "no"}`,
+    `Decision: ${decision.reason}`,
+  ].join("\n");
 });
 const webStreamFormatLabel = computed(() => {
   const item = webNowPlaying.value;
@@ -939,20 +954,23 @@ const webStreamFormatLabel = computed(() => {
 
 async function resolveWebPlayableItem(item) {
   if (!item?.sourceId || !item?.id) throw new Error("This movie does not have a playable stream.");
+  const sessionId = webPlaybackSessionId;
   let playable = item;
   if (item.kind === "series" && !item.isEpisode) {
     const details = await request(`/api/xtream/series/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.id)}`);
     const episode = details.episodes?.[0];
     if (!episode?.id) throw new Error("This series has no playable episodes.");
     playable = { ...item, id: episode.id, seriesId: item.id, isEpisode: true, providerUrl: episode.providerUrl || episode.providerURL || '', seriesTitle: details.title || item.title, title: `${details.title || item.title} (${episode.episodeNumber || ""})`, extension: episode.extension || item.extension || "mp4", duration: episode.duration || item.duration || "" };
-    webNowPlaying.value = playable;
+    if (sessionId === webPlaybackSessionId) webNowPlaying.value = playable;
   }
   return playable;
 }
 
 async function loadStreamTicket(item) {
+  const sessionId = webPlaybackSessionId;
   const playable = await resolveWebPlayableItem(item);
   const data = await request(`/api/xtream/stream-ticket/${encodeURIComponent(playable.sourceId)}/${encodeURIComponent(playable.kind || "movie")}/${encodeURIComponent(playable.id)}`);
+  if (sessionId !== webPlaybackSessionId) return;
   webStreamTicket.value = data.ticket || "";
   if (!webStreamTicket.value) throw new Error("Could not authorize this stream.");
 }
@@ -992,19 +1010,31 @@ async function decideWebPlayback(item) {
   const capabilities = detectBrowserCapabilities();
   await browserCodecSupportFromMediaCapabilities(capabilities, decision.media || {});
   if (sessionId !== webPlaybackSessionId) return null;
-  const transport = decideBrowserTransport(decision.media || {}, capabilities);
+  const compatibility = decideBrowserTransport(decision.media || {}, capabilities);
+  const directBlocked = window.location.protocol === 'https:' && /^http:/i.test(providerURL);
+  const transport = directBlocked && compatibility.transport === "DIRECT"
+    ? { ...compatibility, transport: "HLS_REMUX", reason: "The page blocks direct HTTP media; compatible streams can be copied into HLS." }
+    : compatibility;
   webCompatibility.value = transport;
-  webFormatUnsupported.value = transport.transport === "UNSUPPORTED";
+  console.info("[BrowserTransport]", {
+    browser: transport.browser.name, version: transport.browser.version,
+    container: transport.media.container, video: transport.media.video.codec || "unknown",
+    audio: transport.media.audio.codec || "none", containerDirect: transport.containerCompatible,
+    videoDirect: transport.videoCompatible, audioDirect: transport.audioCompatible,
+    remuxCompatible: transport.remuxCompatible, decision: transport.transport, reason: transport.reason,
+  });
   webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
   // An http:// provider URL cannot be loaded by an https page (mixed content),
-  // so skip Direct and start at the compatibility-selected HLS strategy.
-  const directBlocked = window.location.protocol === 'https:' && /^http:/i.test(providerURL);
-  const useDirect = transport.transport === "DIRECT" && !directBlocked;
+  // so use the independently confirmed stream-copy path.
+  const useDirect = transport.transport === "DIRECT";
   webForceHls.value = !useDirect && transport.remuxCompatible;
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
     : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
-  if (transport.transport === "UNSUPPORTED") throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });
+  if (transport.transport === "UNSUPPORTED") {
+    webEncodeStrategy.value = "UNSUPPORTED";
+    throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });
+  }
   if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
   return { ...decision, ...transport, transport: transport.transport };
 }
@@ -1249,12 +1279,18 @@ function onWebWaiting() {
   }, 300);
   clearTimeout(webStallTimer);
   const resumeAt = webAbsolutePosition();
+  const sessionId = webPlaybackSessionId;
   webStallTimer = setTimeout(() => {
     webStallTimer = null;
+    if (sessionId !== webPlaybackSessionId) return;
     const video = webVideo.value;
     if (!webNowPlaying.value || !video || video.readyState >= 3) return;
-    if (!webForceHls.value && !webWwpSessionId.value) fallBackToHlsFromDirect(webAbsolutePosition());
-    else scheduleWebReconnect(Math.max(resumeAt, webAbsolutePosition()));
+    if (!webForceHls.value && !webWwpSessionId.value) {
+      // A stalled Direct timeline is not proof of container incompatibility.
+      // The element error path classifies terminal media errors separately.
+      webBuffering.value = true;
+      showWebControls();
+    } else scheduleWebReconnect(Math.max(resumeAt, webAbsolutePosition()));
   }, 20_000);
 }
 
@@ -1301,6 +1337,7 @@ function clearWebRecoveryTimer() {
 
 function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   if (!webNowPlaying.value) return;
+  const sessionId = webPlaybackSessionId;
   const vodLadder = webForceHls.value && !webWwpSessionId.value && webNowPlaying.value.kind !== "channel";
   if (vodLadder) {
     // A long healthy stretch since the last recovery starts a fresh budget.
@@ -1330,7 +1367,7 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   const delay = Math.min(15_000, 750 * (2 ** Math.min(4, webPlaybackRetryCount.value - 1)));
   webRecoveryTimer = setTimeout(() => {
     webRecoveryTimer = null;
-    if (webNowPlaying.value) restartWebAt(resumeAt);
+    if (sessionId === webPlaybackSessionId && webNowPlaying.value) restartWebAt(resumeAt);
   }, delay);
 }
 
@@ -1348,14 +1385,12 @@ function resetWebHlsLadder() { webHlsStrategy = ""; webHlsAttempts = 0; webHlsRe
 // natively) and falls back to HLS only when stream-copy remux was independently
 // confirmed as sufficient by the browser transport decision.
 function fallBackToHlsFromDirect(resumeAt) {
-  clearTimeout(webDirectStartupTimer);
   if (!webNowPlaying.value || !webCompatibility.value?.remuxCompatible || webForceHls.value) return;
   const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
   webForceHls.value = true;
   // HLS is a transport transition, not a final strategy badge.
   webEncodeStrategy.value = "";
   webPendingEncodeStrategy.value = "";
-  webFormatUnsupported.value = false;
   webPlaybackRetryCount.value = 0;
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
@@ -1370,10 +1405,14 @@ function fallBackToHlsFromDirect(resumeAt) {
 function handleWebVideoError() {
   if (!webNowPlaying.value) return;
   if (!webForceHls.value && !webWwpSessionId.value) {
-    // Native transport failed for this item - fall back to the HLS pipeline,
-    // re-based at the exact spot playback stopped.
-    if (webCompatibility.value?.remuxCompatible) fallBackToHlsFromDirect(webAbsolutePosition());
-    else {
+    const mediaErrorCode = Number(webVideo.value?.error?.code) || 0;
+    // A provider/network failure cannot be repaired by changing its container.
+    if (mediaErrorCode === 2) {
+      webBuffering.value = false;
+      webPlayerError.value = "The provider stream could not be reached. Check the provider connection and retry.";
+    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible)) {
+      fallBackToHlsFromDirect(webAbsolutePosition());
+    } else {
       webPlayerError.value = `Unsupported media. ${webCompatibility.value?.reason || "Direct playback failed and remux cannot solve the codec incompatibility."}`;
       webBuffering.value = false;
     }
@@ -1389,7 +1428,6 @@ function onWebReady(event) {
   // A Direct -> HLS (or fallback-rung) switch reloads the element, which leaves
   // it paused; resume unless the viewer paused on purpose.
   if ((event?.type === "canplay" || event?.type === "loadeddata") && webNowPlaying.value && !wwpUserPaused && event.target?.paused) startWebPlayback(event.target);
-  if (!webForceHls.value && event?.type === 'playing') clearTimeout(webDirectStartupTimer);
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
@@ -1553,24 +1591,12 @@ function describeEncodeStrategy(strategy, videoMode) {
   void videoMode;
   return "";
 }
-async function fetchWebEncodeStrategy(url) {
-  try {
-    const response = await fetch(url, { cache: "no-store" });
-    const label = describeEncodeStrategy(response.headers.get("X-RH-Strategy") || "", response.headers.get("X-RH-Video-Mode") || "");
-    if (label) {
-      webPendingEncodeStrategy.value = label;
-      if (webMediaReady.value && webVideo.value && !webVideo.value.paused) webEncodeStrategy.value = label;
-    }
-  } catch { /* Keep the final badge hidden until a strategy is confirmed. */ }
-}
-
 async function configureMoviePlayback(startSeconds = 0) {
   await nextTick();
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
-  clearTimeout(webDirectStartupTimer);
   if (!video || !source) {
     webPlayerError.value = "This movie does not have a playable stream.";
     return;
@@ -1609,13 +1635,6 @@ async function configureMoviePlayback(startSeconds = 0) {
           webPendingSeek.value = -1;
         }, { once: true });
       }
-      // A container the browser cannot actually decode often never fires
-      // `error` at all - it just sits there. Match Android/Roku's safe Direct
-      // startup window so slow remote files do not switch prematurely.
-      webDirectStartupTimer = setTimeout(() => {
-        if (playbackToken !== webPlaybackToken || webForceHls.value || webMediaReady.value) return;
-        fallBackToHlsFromDirect(webNowPlaying.value?.kind === "channel" ? 0 : Math.max(startSeconds, webAbsolutePosition()));
-      }, 30_000);
       // Chrome/Firefox need hls.js to consume a provider's live m3u8. Loading
       // the /play URL through hls.js still follows the 302 and streams directly
       // from the provider; it does not invoke RH HLS/transcoding.
@@ -1625,7 +1644,12 @@ async function configureMoviePlayback(startSeconds = 0) {
         if (Hls.isSupported()) {
           webHls = new Hls({ enableWorker: true, lowLatencyMode: true, liveSyncDurationCount: 3 });
           webHls.on(Hls.Events.ERROR, (_event, data) => {
-            if (data.fatal && playbackToken === webPlaybackToken && !webForceHls.value) fallBackToHlsFromDirect(0);
+            if (data.fatal && playbackToken === webPlaybackToken && !webForceHls.value) {
+              webBuffering.value = false;
+              webPlayerError.value = data.type === Hls.ErrorTypes.NETWORK_ERROR
+                ? "The provider playlist could not be reached. Check the provider connection and retry."
+                : "The provider playlist could not be played directly by this browser.";
+            }
           });
           webHls.on(Hls.Events.MANIFEST_PARSED, () => {
             if (playbackToken === webPlaybackToken) startWebPlayback(video);
@@ -1780,9 +1804,12 @@ async function playLibraryItem(item) {
     await openSeriesEpisodes(item);
     return;
   }
+  const playbackTask = playWebMovie(item);
+  const taskSessionId = webPlaybackSessionId;
   try {
-    await playWebMovie(item);
+    await playbackTask;
   } catch (error) {
+    if (taskSessionId !== webPlaybackSessionId) return;
     if (error?.name === "AbortError" || !webNowPlaying.value) return;
     webBuffering.value = false;
     webPlayerError.value = error?.message || "This item could not be played right now.";
@@ -2041,7 +2068,7 @@ async function closeWebPlayer() {
   clearWebControlsTimer();
   clearWebRecoveryTimer();
   clearTimeout(webStallTimer);
-  clearTimeout(webDirectStartupTimer);
+  webPlaybackSessionId += 1;
   webPlaybackToken += 1;
   webStallTimer = null;
   clearWebVideoWedgeWatchdog();
@@ -3733,6 +3760,10 @@ onMounted(async () => {
             <h2 class="web-player-name">{{ webNowPlaying.title }}</h2>
             <div class="web-player-topbar-actions">
               <span v-if="webEncodeStrategy" class="web-strategy-badge" :data-tier="webStrategyTier" :title="'Playback: ' + webEncodeStrategy"><i aria-hidden="true"></i>{{ webEncodeStrategy }}</span>
+              <details v-if="webCompatibility" class="web-transport-debug">
+                <summary aria-label="Playback compatibility details" title="Playback compatibility details">Info</summary>
+                <pre>{{ webTransportDetails }}</pre>
+              </details>
               <div class="web-partner-control">
                 <button type="button" class="web-pl-btn" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-label="Watch with Partner" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.24 4.76c-2.3-2.29-5.87-2.35-8.24-.19-2.37-2.16-5.93-2.09-8.24.2-2.36 2.37-2.36 6.07 0 8.43l7.53 7.52c.2.19.45.29.71.29s.51-.1.71-.29l7.53-7.52c2.36-2.36 2.36-6.06 0-8.43Zm-1.41 7.02-6.82 6.81-6.82-6.81a3.92 3.92 0 0 1 0-5.6C5.98 5.39 6.99 5 8 5s2.02.39 2.8 1.18l.5.5c.39.39 1.02.39 1.41 0l.5-.5c1.57-1.57 4.04-1.57 5.62 0 1.57 1.58 1.57 4.04 0 5.6"/><path d="M13 8.5h-2V11H8.5v2H11v2.5h2V13h2.5v-2H13z"/></svg></button>
                 <div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button><button v-if="webWwpSessionId && !webCallActive" type="button" class="primary-action wwp-call-start" @click.stop="startWebCall">🎙 Start voice call</button><button v-if="webCallActive" type="button" class="primary-action wwp-call-end" @click.stop="endWebCall">End voice call</button></div>

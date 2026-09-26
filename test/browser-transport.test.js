@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decideBrowserTransport, detectBrowserCapabilities, normalizeMediaMetadata } from '../src/browser-transport.js';
+import { decideBrowserTransport, detectBrowserCapabilities, normalizeMediaMetadata, shouldFallbackFromDirect } from '../src/browser-transport.js';
 
 const supported = { browser: { name: 'chrome', version: 145 }, containers: { mp4: true, webm: true }, mkvVerified: true,
   videoCodecs: { h264: true, hevc: true, vp8: true, vp9: true, av1: true }, audioCodecs: { aac: true, mp3: true, opus: true, vorbis: true, ac3: false, eac3: false, dts: false } };
@@ -16,11 +16,24 @@ test('unsupported audio or video cannot be repaired by remux', () => {
   assert.equal(decideBrowserTransport(source('matroska', 'aac', 'mpeg2video'), supported).transport, 'UNSUPPORTED');
 });
 
+test('MediaCapabilities exact stream result can reject a generic codec signal', () => {
+  const caps = { ...supported, mediaCapabilities: { video: { h264: false }, audio: { aac: true } } };
+  assert.equal(decideBrowserTransport(source(), caps).transport, 'UNSUPPORTED');
+  const audioCaps = { ...supported, mediaCapabilities: { video: { h264: true }, audio: { aac: false } } };
+  assert.equal(decideBrowserTransport(source('matroska', 'aac'), audioCaps).transport, 'UNSUPPORTED');
+});
+
 test('Firefox and Safari remux MKV only when both codecs can be copied', () => {
   for (const name of ['firefox', 'safari']) {
     assert.equal(decideBrowserTransport(source(), { ...supported, browser: { name, version: 140 }, mkvVerified: false }).transport, 'HLS_REMUX');
     assert.equal(decideBrowserTransport(source('matroska', 'dts'), { ...supported, browser: { name, version: 140 }, mkvVerified: false }).transport, 'UNSUPPORTED');
   }
+});
+
+test('unsupported or unknown containers remux when stream copy solves it', () => {
+  const firefox = { ...supported, browser: { name: 'firefox', version: 140 }, mkvVerified: false };
+  assert.equal(decideBrowserTransport(source('legacybox'), firefox).transport, 'HLS_REMUX');
+  assert.equal(decideBrowserTransport(source('unknown'), firefox).transport, 'HLS_REMUX');
 });
 
 test('verified Edge MKV support and unverified Chromium behavior are distinct', () => {
@@ -37,6 +50,24 @@ test('normalizes ffprobe Matroska and codec aliases', () => {
 });
 
 test('Chrome below 145 does not receive the MKV rule', () => {
-  const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/144.0.0.0 Safari/537.36', mediaElement: { canPlayType: () => 'probably' } });
+  const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/144.0.0.0 Safari/537.36', brands: [{ brand: 'Google Chrome', version: '144' }], mediaElement: { canPlayType: () => 'probably' } });
   assert.equal(caps.mkvVerified, false);
+});
+
+test('Chrome 145 client hints qualify for MKV evaluation', () => {
+  const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36', brands: [{ brand: 'Google Chrome', version: '145' }], mediaElement: { canPlayType: () => 'probably' } });
+  assert.equal(caps.mkvVerified, true);
+  assert.equal(decideBrowserTransport(source(), caps).transport, 'DIRECT');
+});
+
+test('Direct network and decode failures do not start remux', () => {
+  assert.equal(shouldFallbackFromDirect(2, true), false);
+  assert.equal(shouldFallbackFromDirect(3, true), false);
+  assert.equal(shouldFallbackFromDirect(4, true), true);
+  assert.equal(shouldFallbackFromDirect(4, false), false);
+});
+
+test('Provider HLS is Direct when the browser has native or MSE HLS support', () => {
+  const caps = { ...supported, containers: { ...supported.containers, hls: true } };
+  assert.equal(decideBrowserTransport(source('hls'), caps).transport, 'DIRECT');
 });
