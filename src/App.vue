@@ -1607,6 +1607,7 @@ function unmuteWebPlayback() {
 function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "DIRECT") return "DIRECT";
   if (strategy === "HLS_REMUX") return "HLS REMUX";
+  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
   if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
   void videoMode;
   return "";
