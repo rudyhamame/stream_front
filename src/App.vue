@@ -954,6 +954,22 @@ async function loadStreamTicket(item) {
   if (!webStreamTicket.value) throw new Error("Could not authorize this stream.");
 }
 
+// Strictly ordered hints: 20% container, 30% codecs; playback then continues
+// as Buffering / Preparing HLS segments from 40%. Codecs the device cannot
+// play are never attempted - the player reports it and closes.
+async function runWebCompatibilitySteps(decision) {
+  const pause = () => new Promise(resolve => setTimeout(resolve, 400));
+  setWebStartupProgress(20, "Check device compatibility with item container");
+  await pause();
+  setWebStartupProgress(30, "Check device compatibility with item codecs");
+  await pause();
+  if (decision?.playable === false) {
+    const error = new Error("The item is not compatible with this device");
+    error.incompatible = true;
+    throw error;
+  }
+}
+
 async function decideWebPlayback(item) {
   const providerURL = item?.providerURL || item?.providerUrl || '';
   if (!/^https?:\/\//i.test(providerURL)) throw new Error('This item is missing its original provider URL.');
@@ -1336,7 +1352,7 @@ function advanceWebHlsFallback(resumeAt) {
   webPlaybackRetryCount.value = 0;
   webPlaybackOffset.value = resumeAt; webCurrentTime.value = resumeAt;
   webBuffering.value = true; webMediaReady.value = false;
-  setWebStartupProgress(55, next === "full" ? "Full transcode" : "Audio transcode");
+  setWebStartupProgress(40, "Preparing HLS segments");
   showWebControls();
   configureMoviePlayback(resumeAt);
   return true;
@@ -1359,7 +1375,7 @@ function fallBackToHlsFromDirect(resumeAt) {
   webCurrentTime.value = target;
   webBuffering.value = true;
   resetWebHlsLadder();
-  setWebStartupProgress(55, "Switching to HLS");
+  setWebStartupProgress(40, "Preparing HLS segments");
   webMediaReady.value = false;
   showWebControls();
   configureMoviePlayback(target);
@@ -1596,7 +1612,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webPendingEncodeStrategy.value = "DIRECT";
-      setWebStartupProgress(45, "Direct");
+      setWebStartupProgress(40, "Buffering");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
       const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
@@ -1638,7 +1654,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         await startWebPlayback(video);
       }
     } else {
-      setWebStartupProgress(60, webPendingEncodeStrategy.value.replace(/^HLS /, "") || "Preparing stream");
+      setWebStartupProgress(40, "Preparing HLS segments");
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
@@ -1694,7 +1710,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         // creating its first segments. Ignore callbacks from a retired source.
         webHls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (playbackToken !== webPlaybackToken) return;
-          setWebStartupProgress(80, webPendingEncodeStrategy.value.replace(/^HLS /, "") || "Buffering");
+          setWebStartupProgress(70, "Preparing HLS segments");
           startWebPlayback(video);
         });
         webHls.loadSource(source);
@@ -1751,7 +1767,7 @@ async function playWebMovie(item) {
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
-  setWebStartupProgress(30, "Choosing path");
+  setWebStartupProgress(10, "Fetching item url from provider");
   if (webNowPlaying.value.kind === "channel") {
     // Live TV has no codec matrix (the streamer only serves the decision for
     // movie/series): play the provider stream directly, or RH HLS when the page
@@ -1760,7 +1776,8 @@ async function playWebMovie(item) {
     webForceHls.value = mixedContent;
     webPendingEncodeStrategy.value = mixedContent ? "" : "DIRECT";
   } else {
-    await decideWebPlayback(webNowPlaying.value);
+    const decision = await decideWebPlayback(webNowPlaying.value);
+    await runWebCompatibilitySteps(decision);
   }
   await configureMoviePlayback(0);
 }
@@ -1777,6 +1794,7 @@ async function playLibraryItem(item) {
     webBuffering.value = false;
     webPlayerError.value = error?.message || "This item could not be played right now.";
     showWebControls();
+    if (error?.incompatible) setTimeout(() => { if (webPlayerError.value === error.message) closeWebPlayer(); }, 2500);
   }
 }
 
