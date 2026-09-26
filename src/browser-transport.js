@@ -112,24 +112,28 @@ export function decideBrowserTransport(rawMedia, capabilities) {
   const media = rawMedia?.video && rawMedia?.audio ? rawMedia : normalizeMediaMetadata(rawMedia);
   const browser = capabilities?.browser || { name: 'unknown', version: 0 };
   const container = media.container === 'matroska' ? 'mkv' : media.container;
+  const videoKnown = Boolean(media.video.codec);
   const videoSignal = capabilities?.mediaCapabilities?.video?.[media.video.codec];
   const audioSignal = capabilities?.mediaCapabilities?.audio?.[media.audio.codec];
-  const videoSupported = videoSignal === false ? false : (videoSignal === true || codecSupport(media.video.codec, capabilities?.videoCodecs)) && videoParametersSupported(media.video).ok;
+  // Unknown probe results are still tried through HLS. They are never enough
+  // evidence for direct playback, but should not close the player's attempt.
+  const videoSupported = !videoKnown || (videoSignal === false ? false : (videoSignal === true || codecSupport(media.video.codec, capabilities?.videoCodecs)) && videoParametersSupported(media.video).ok);
   const audioSupported = !media.audio.codec || (audioSignal === false ? false : (audioSignal === true || codecSupport(media.audio.codec, capabilities?.audioCodecs)));
   const audioParametersSupported = !media.audio.codec || ((media.audio.channels <= 8 || !media.audio.channels) && (media.audio.sampleRate <= 96000 || !media.audio.sampleRate));
   const containerDirect = container === 'hls' ? Boolean(capabilities?.containers?.hls)
     : container === 'mp4' ? Boolean(capabilities?.containers?.mp4)
     : container === 'webm' ? Boolean(capabilities?.containers?.webm)
       : container === 'mkv' ? Boolean(capabilities?.mkvVerified || capabilities?.containers?.mkv) : false;
-  const direct = containerDirect && videoSupported && audioSupported && audioParametersSupported;
-  const remuxVideoCopy = ['h264', 'hevc', 'mpeg2video'].includes(media.video.codec);
+  const direct = videoKnown && containerDirect && videoSupported && audioSupported && audioParametersSupported;
+  const remuxVideoCopy = !videoKnown || ['h264', 'hevc', 'mpeg2video'].includes(media.video.codec);
   const remuxAudioCopy = !media.audio.codec || ['aac', 'mp3', 'mp2', 'ac3', 'eac3'].includes(media.audio.codec);
   const remuxCompatible = videoSupported && audioSupported && audioParametersSupported && remuxVideoCopy && remuxAudioCopy;
   let reason = '';
   if (direct && container === 'mkv' && browser.name === 'chrome') reason = `Chrome ${browser.version} (145+) supports direct Matroska playback and the probed codecs.`;
   else if (direct && container === 'mkv' && browser.name === 'edge') reason = `Edge ${browser.version || ''} has verified Matroska support and the probed codecs are supported.`.trim();
   else if (direct) reason = `${browser.name} ${browser.version || ''} supports the source container and both probed codecs.`.trim();
-  else if (!videoSupported) reason = media.video.codec ? `Video codec ${media.video.codec} or its parameters are unsupported; stream copy cannot change it.` : 'Video codec could not be identified; safe remux compatibility cannot be established.';
+  else if (!videoSupported) reason = `Video codec ${media.video.codec} or its parameters are unsupported; stream copy cannot change it.`;
+  else if (!videoKnown) reason = 'Video codec could not be identified; trying the source through HLS.';
   else if (!audioSupported || !audioParametersSupported) reason = media.audio.codec ? `Audio codec ${media.audio.codec} or its parameters are unsupported; stream copy cannot change them.` : 'Audio codec could not be identified; safe remux compatibility cannot be established.';
   else if (remuxCompatible) reason = `The browser cannot reliably play ${media.container}; supported video and audio can be copied into HLS.`;
   else reason = `Container ${media.container} cannot be played or safely remuxed.`;
