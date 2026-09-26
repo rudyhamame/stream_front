@@ -677,13 +677,14 @@ html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; 
  .web-up-next small { margin-top:4px; color:#aeb7a0; font-size:12px; }
  .web-up-next button { width:34px; height:34px; border:1px solid #9eaa91; border-radius:50%; background:#30352e; color:#ffc107; cursor:pointer; }
  .web-up-next { display:none; }
- .web-player-error { position:absolute; inset:0; z-index:5; display:grid; place-items:center; padding:24px; background:rgba(6,8,6,.68); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px); }
- .web-player-error-card { display:flex; flex-direction:column; align-items:center; gap:12px; width:min(340px,100%); padding:30px 28px; border:1px solid rgba(255,255,255,.14); border-radius:20px; background:rgba(22,26,20,.88); box-shadow:0 24px 60px rgba(0,0,0,.5); text-align:center; }
- .web-player-error-icon { display:grid; place-items:center; width:46px; height:46px; border-radius:50%; background:rgba(229,139,130,.16); color:#f0a59d; }
+ .web-player-error { position:absolute; inset:0; z-index:5; display:grid; place-items:center; padding:24px; background:radial-gradient(ellipse at 50% 40%,rgba(255,196,61,.08),transparent 60%),rgba(7,12,22,.72); backdrop-filter:blur(14px) saturate(1.2); -webkit-backdrop-filter:blur(14px) saturate(1.2); }
+ .web-player-error-card { display:flex; flex-direction:column; align-items:center; gap:12px; width:min(360px,100%); padding:32px 28px 28px; border:1px solid rgba(255,196,61,.22); border-radius:24px; background:linear-gradient(180deg,rgba(30,40,62,.92),rgba(14,20,34,.94)); box-shadow:0 28px 70px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.08); text-align:center; }
+ .web-player-error-icon { display:grid; place-items:center; width:52px; height:52px; border-radius:50%; background:rgba(255,196,61,.14); color:#ffc43d; box-shadow:0 0 0 6px rgba(255,196,61,.06),0 0 28px rgba(255,196,61,.18); }
  .web-player-error-icon svg { width:24px; height:24px; }
- .web-player-error-card strong { color:#f4f7f0; font:600 18px 'Space Grotesk'; letter-spacing:-.01em; }
- .web-player-error-card p { margin:0; color:#aeb7a0; font:400 13px/1.5 'DM Sans'; }
- .web-player-error-card .primary-action { margin-top:4px; border-radius:999px; }
+ .web-player-error-card strong { color:#f5f2ea; font:600 19px 'Space Grotesk'; letter-spacing:-.01em; }
+ .web-player-error-card p { margin:0; color:#a9b4c8; font:400 13px/1.55 'DM Sans'; }
+ .web-player-error-card .primary-action { margin-top:8px; min-width:132px; border:0; border-radius:999px; background:#ffc43d; color:#1b1608; font:700 14px 'DM Sans'; box-shadow:0 8px 22px rgba(255,196,61,.28); cursor:pointer; transition:transform .12s ease,box-shadow .15s ease,background .15s ease; }
+ .web-player-error-card .primary-action:hover,.web-player-error-card .primary-action:focus-visible { background:#ffd25e; transform:translateY(-1px); box-shadow:0 12px 28px rgba(255,196,61,.4); outline:none; }
  .web-player-controls { padding-top:18px; }
  .web-player-controls input[type='range'] { width:100%; accent-color:#ffc107; }
  .web-player-control-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:#aeb7a0; font-size:12px; }
