@@ -1222,6 +1222,26 @@ function onWebPause() {
   // explicit play/pause button (toggleWebPlayback) relays.
 }
 
+function onWebEnded(event) {
+  const item = webNowPlaying.value;
+  const video = event?.target || webVideo.value;
+  const position = webAbsolutePosition();
+  const duration = Math.max(Number(webDuration.value) || 0, Number(video?.duration) || 0);
+  const isRemuxVod = webForceHls.value && !webWwpSessionId.value && item
+    && item.kind !== "channel";
+  // HLS.js can report a normal `ended` event when a provider closes a VOD
+  // response after only its first segment. Use the probed/catalog runtime to
+  // distinguish truncation from a real title end, then recover through the
+  // existing bounded ladder at the last decoded absolute position.
+  if (isRemuxVod && duration > 0 && position + 8 < duration && !wwpUserPaused) {
+    console.warn(`[BrowserTransport] HLS ended early at ${Math.floor(position)}s of ${Math.floor(duration)}s; resuming from the decoded position.`);
+    scheduleWebReconnect(position);
+    return;
+  }
+  webPlaying.value = false;
+  showWebControls();
+}
+
 // Watch with Partner: relay our own play/pause (and the exact spot) to the
 // partner. The long-poll in watchWwpSync() carries the reverse direction.
 async function sendWwpControl(paused) {
@@ -3747,7 +3767,7 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="webPlaying = false; showWebControls()" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>
