@@ -50,7 +50,12 @@ const canPlay = (media, mime) => {
   try { return Boolean(media?.canPlayType?.(mime)); } catch { return false; }
 };
 
-export function detectBrowserCapabilities({ userAgent = globalThis.navigator?.userAgent || '', brands = globalThis.navigator?.userAgentData?.brands || [], mediaElement = globalThis.document?.createElement?.('video') } = {}) {
+export function detectBrowserCapabilities(options = {}) {
+  const navigatorInfo = globalThis.navigator;
+  const documentInfo = globalThis.document;
+  const userAgent = options.userAgent ?? navigatorInfo?.userAgent ?? '';
+  const brands = options.brands ?? navigatorInfo?.userAgentData?.brands ?? [];
+  const mediaElement = options.mediaElement ?? (documentInfo ? documentInfo.createElement('video') : undefined);
   const browser = uaIdentity(userAgent, brands);
   const videoCodecs = {
     h264: canPlay(mediaElement, 'video/mp4; codecs="avc1.42E01E"'),
