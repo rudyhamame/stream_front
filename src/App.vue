@@ -1203,14 +1203,14 @@ function toggleWebControls(event) {
 
 function onWebPlay() {
   webPlaying.value = true;
-  webBuffering.value = false;
+  webBuffering.value = !webMediaReady.value;
   // The WWP resume path (toggleWebPlayback / applyRemoteWwpControl) always does
   // a full restartWebAt because the shared job was torn down on pause, and it
   // sends its own control ping - so nothing to relay from here.
   // The media element is playing, so any earlier "Playback unavailable" was
   // a transient stall that has since recovered. Clear it so the error card
   // cannot sit on top of a working stream and pin the controls open.
-  webPlayerError.value = "";
+  if (webMediaReady.value) webPlayerError.value = "";
   scheduleWebControlsHide();
 }
 
@@ -1339,7 +1339,7 @@ function onWebTimeUpdate(event) {
   webCurrentTime.value = absolutePosition;
   refreshWebBuffered();
   if (webBufferRecoveryPosition.value >= 0 && absolutePosition + 1 >= webBufferRecoveryPosition.value) webBufferRecoveryPosition.value = -1;
-  if (!event.target.paused && event.target.readyState >= 3) {
+  if (!event.target.paused && event.target.readyState >= 3 && webMediaReady.value) {
     webBuffering.value = false;
     // The timeline is advancing with buffered media: the stream is working.
     // Retire any lingering error card and let the controls fade.
@@ -1358,36 +1358,25 @@ function clearWebRecoveryTimer() {
 function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   if (!webNowPlaying.value) return;
   const sessionId = webPlaybackSessionId;
-  const vodLadder = webForceHls.value && !webWwpSessionId.value && webNowPlaying.value.kind !== "channel";
-  if (vodLadder) {
-    // A long healthy stretch since the last recovery starts a fresh budget.
-    if (webHlsRecoveryAt >= 0 && Math.abs(resumeAt - webHlsRecoveryAt) > 120) { webHlsAttempts = 0; webHlsRecoveries = 0; }
-    webHlsRecoveryAt = resumeAt;
-    const exhausted = webHlsRecoveries >= WEB_HLS_RECOVERY_LIMIT;
-    if (exhausted || webHlsAttempts >= WEB_HLS_REINIT_LIMIT) {
-      clearWebRecoveryTimer();
-      clearTimeout(webStallTimer);
-      webStallTimer = null;
-      webBuffering.value = false;
-      webPlayerError.value = webCompatibility.value?.transport === "UNSUPPORTED"
-        ? `Unsupported media. ${webCompatibility.value.reason}`
-        : "This title could not be played on this browser.";
-      return;
-    }
-    webHlsAttempts += 1;
-    webHlsRecoveries += 1;
-  }
   webPlaybackRetryCount.value += 1;
   webBuffering.value = true;
   webPlayerError.value = "";
+  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Buffering");
   showWebControls();
   clearWebRecoveryTimer();
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  const delay = Math.min(15_000, 750 * (2 ** Math.min(4, webPlaybackRetryCount.value - 1)));
+  // Keep retrying while the server or network is unavailable. The cap limits
+  // new stream generations to at most two per minute during a long outage.
+  const delay = Math.min(30_000, 750 * (2 ** Math.min(6, webPlaybackRetryCount.value - 1)));
   webRecoveryTimer = setTimeout(() => {
     webRecoveryTimer = null;
-    if (sessionId === webPlaybackSessionId && webNowPlaying.value) restartWebAt(resumeAt);
+    if (sessionId !== webPlaybackSessionId || !webNowPlaying.value) return;
+    const requestedSeek = webPendingSeek.value >= 0 ? webPendingSeek.value : -1;
+    const target = requestedSeek >= 0 ? requestedSeek
+      : webNowPlaying.value.kind === "channel" ? 0
+        : Math.max(resumeAt, webAbsolutePosition());
+    restartWebAt(target);
   }, delay);
 }
 
@@ -1395,10 +1384,9 @@ function webAbsolutePosition() {
   return Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
 }
 
-// Browser HLS recovery reinitializes only the current copy-only remux job.
-let webHlsStrategy = "", webHlsAttempts = 0, webHlsRecoveries = 0, webHlsRecoveryAt = -1;
-const WEB_HLS_REINIT_LIMIT = 2, WEB_HLS_RECOVERY_LIMIT = 6;
-function resetWebHlsLadder() { webHlsStrategy = ""; webHlsAttempts = 0; webHlsRecoveries = 0; webHlsRecoveryAt = -1; }
+// Retain the current strategy header for the player badge.
+let webHlsStrategy = "";
+function resetWebHlsLadder() { webHlsStrategy = ""; }
 
 // Original quality always tries the direct file first (no HLS at all - the
 // cheapest, most seek-friendly path when the browser can just play the source
@@ -1426,10 +1414,10 @@ function handleWebVideoError() {
   if (!webNowPlaying.value) return;
   if (!webForceHls.value && !webWwpSessionId.value) {
     const mediaErrorCode = Number(webVideo.value?.error?.code) || 0;
-    // A provider/network failure cannot be repaired by changing its container.
+    // A network failure is transient: retry this Direct source and position
+    // with backoff. Switching containers would not repair a lost connection.
     if (mediaErrorCode === 2) {
-      webBuffering.value = false;
-      webPlayerError.value = "The provider stream could not be reached. Check the provider connection and retry.";
+      scheduleWebReconnect(webAbsolutePosition());
     } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible)) {
       fallBackToHlsFromDirect(webAbsolutePosition());
     } else {
@@ -1454,70 +1442,103 @@ function onWebReady(event) {
   if (event?.type === "playing") {
     webPlaying.value = true;
   }
-  webBuffering.value = false;
-  setWebStartupProgress(100, "Ready");
-  webPlaybackRetryCount.value = 0;
-  // A "playing"/"canplay"/first-frame signal means the stream is viable again;
-  // drop any stale playback error so it does not block the auto-hide.
-  webPlayerError.value = "";
-  if (event?.type === "playing" && !webMediaReady.value) {
-    const video = event.target;
-    const readyPlaybackToken = webPlaybackToken;
-    const reveal = () => {
-      if (video !== webVideo.value || readyPlaybackToken !== webPlaybackToken || webMediaReady.value) return;
-      video.style.opacity = "1";
-      webMediaReady.value = true;
-      // A strategy badge is a final playback state. Commit it only after a
-      // decoded video frame is available, never on `playing`/`canplay` alone.
-      if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
-    };
-    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(reveal);
-    // rVFC never fires while the decoder is wedged (audio plays, frame is
-    // black). A timeout may reveal a frame only when the element reports real
-    // video dimensions; otherwise the badge and frame remain unconfirmed.
-    setTimeout(() => {
-      if (video.videoWidth > 0 && video.videoHeight > 0) reveal();
-    }, 1200);
-    startWebVideoWedgeWatchdog(video);
+  if (event?.type === "playing") startWebVideoWedgeWatchdog(event.target);
+  // Audio can trigger "playing" before the video decoder recovers. Wait for a
+  // newly presented frame before hiding the recovery state or revealing video.
+  if (webMediaReady.value) {
+    webBuffering.value = false;
+    setWebStartupProgress(100, "Ready");
+    webPlayerError.value = "";
   }
   scheduleWebControlsHide();
 }
 
-// After an error-recovery restart the MSE video decoder can stay wedged: audio
-// advances but no frame is ever painted (videoWidth stays 0). Nudge it, then
-// fall back to a full stream reload.
+// videoWidth can survive a source reset, so confirm actual newly presented
+// frames. Audio and currentTime advancing alone must never reveal a black frame.
 let webWedgeWatchdog = null;
-let webWedgeStage = 0;
-let webWedgeRestarts = 0;
 function clearWebVideoWedgeWatchdog() {
-  if (webWedgeWatchdog) clearInterval(webWedgeWatchdog);
+  if (!webWedgeWatchdog) return;
+  webWedgeWatchdog.active = false;
+  clearInterval(webWedgeWatchdog.interval);
+  if (webWedgeWatchdog.frameCallbackId !== null) {
+    try { webWedgeWatchdog.video.cancelVideoFrameCallback?.(webWedgeWatchdog.frameCallbackId); } catch { /* source may already be retired */ }
+  }
   webWedgeWatchdog = null;
-  webWedgeStage = 0;
 }
 function startWebVideoWedgeWatchdog(video) {
+  if (webWedgeWatchdog?.video === video && webWedgeWatchdog.token === webPlaybackToken) return;
   clearWebVideoWedgeWatchdog();
-  let lastTime = -1;
-  let stalls = 0;
-  webWedgeWatchdog = setInterval(() => {
-    if (video !== webVideo.value || video.paused) { clearWebVideoWedgeWatchdog(); return; }
-    const advancing = video.currentTime > lastTime + 0.05;
-    lastTime = video.currentTime;
-    // Audio advancing + a real frame painted => healthy, we are done.
-    if (advancing && video.videoWidth > 0) { clearWebVideoWedgeWatchdog(); return; }
-    if (!advancing) { stalls = 0; return; }
-    stalls += 1;
-    if (stalls === 2 && webWedgeStage < 1) {
-      webWedgeStage = 1;
-      try { video.currentTime = video.currentTime + 0.12; } catch { /* not seekable yet */ }
-    } else if (stalls >= 4 && webWedgeStage < 2) {
-      webWedgeStage = 2;
-      clearWebVideoWedgeWatchdog();
-      if (webWedgeRestarts >= 2) { webMediaReady.value = true; webVideo.value.style.opacity = "1"; return; }
-      webWedgeRestarts += 1;
-      const resumeAt = webAbsolutePosition();
-      webMediaReady.value = false;
-      restartWebAt(resumeAt);
+  const token = webPlaybackToken;
+    const now = Date.now();
+    if (document.visibilityState === "hidden") {
+      monitor.lastFrameAt = now;
+      return;
     }
+  const initialQuality = video.getVideoPlaybackQuality?.();
+  const initialFrameCount = Number(initialQuality?.totalVideoFrames ?? video.webkitDecodedFrameCount) || 0;
+  const monitor = {
+    video, token, active: true, interval: null, frameCallbackId: null,
+    lastFrameAt: now, lastTimelineAt: now, lastTimelineTime: video.currentTime,
+    lastPresentedFrames: -1, fallbackFrameCount: initialFrameCount, recoveryStage: 0,
+  };
+  webWedgeWatchdog = monitor;
+  const confirmFrame = frameCount => {
+    if (!monitor.active || webWedgeWatchdog !== monitor || video !== webVideo.value || token !== webPlaybackToken) return;
+    if (Number.isFinite(frameCount) && frameCount >= 0 && frameCount === monitor.lastPresentedFrames) return;
+    if (Number.isFinite(frameCount) && frameCount >= 0) monitor.lastPresentedFrames = frameCount;
+    monitor.lastFrameAt = Date.now();
+    monitor.recoveryStage = 0;
+    if (!webMediaReady.value && video.videoWidth > 0 && video.videoHeight > 0) {
+      video.style.opacity = "1";
+      webMediaReady.value = true;
+      webBuffering.value = false;
+      webPlayerError.value = "";
+      webPlaybackRetryCount.value = 0;
+      setWebStartupProgress(100, "Ready");
+      if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
+    }
+  };
+  const requestFrame = () => {
+    if (!monitor.active || webWedgeWatchdog !== monitor || !video.requestVideoFrameCallback) return;
+    monitor.frameCallbackId = video.requestVideoFrameCallback((_time, metadata) => {
+      if (!monitor.active || webWedgeWatchdog !== monitor) return;
+      confirmFrame(Number(metadata?.presentedFrames) || -1);
+      requestFrame();
+    });
+  };
+  requestFrame();
+  monitor.interval = setInterval(() => {
+    if (!monitor.active || webWedgeWatchdog !== monitor || video !== webVideo.value || token !== webPlaybackToken || video.paused) {
+      clearWebVideoWedgeWatchdog();
+      return;
+    }
+    // Fall back to decoded frame counters on browsers without rVFC.
+    if (!video.requestVideoFrameCallback) {
+      const quality = video.getVideoPlaybackQuality?.();
+      const frames = Number(quality?.totalVideoFrames ?? video.webkitDecodedFrameCount) || 0;
+      if (frames > monitor.fallbackFrameCount) {
+        monitor.fallbackFrameCount = frames;
+        confirmFrame(frames);
+      }
+    }
+    const currentTime = video.currentTime;
+    const timestamp = Date.now();
+    if (currentTime > monitor.lastTimelineTime + 0.05) {
+      monitor.lastTimelineTime = currentTime;
+      monitor.lastTimelineAt = timestamp;
+    }
+    if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
+    if (monitor.recoveryStage === 0 && webHls) {
+      monitor.recoveryStage = 1;
+      monitor.lastFrameAt = timestamp;
+      try { webHls.recoverMediaError(); } catch { /* full reconnect below */ }
+      return;
+    }
+    monitor.recoveryStage = 2;
+    clearWebVideoWedgeWatchdog();
+    webMediaReady.value = false;
+    webBuffering.value = true;
+    scheduleWebReconnect(webAbsolutePosition());
   }, 1000);
 }
 
@@ -1788,7 +1809,6 @@ async function playWebMovie(item) {
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
-  webWedgeRestarts = 0;
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
   if (sessionId !== webPlaybackSessionId) return;
