@@ -18,6 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
+import { browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -145,6 +146,8 @@ const webPlayerError = ref("");
 // The player still gets a chance to try the bounded Direct/Remux path before
 // this is shown to the viewer.
 const webFormatUnsupported = ref(false);
+const webCompatibility = ref(null);
+let webPlaybackSessionId = 0;
 const webEncodeStrategy = ref("");
 // A strategy is selected before it is proven playable. Keep that selection
 // private until the media element emits `playing` for this exact attempt.
@@ -971,6 +974,7 @@ async function runWebCompatibilitySteps(decision) {
 }
 
 async function decideWebPlayback(item) {
+  const sessionId = webPlaybackSessionId;
   const providerURL = item?.providerURL || item?.providerUrl || '';
   if (!/^https?:\/\//i.test(providerURL)) throw new Error('This item is missing its original provider URL.');
   const url = new URL(`${browserStreamer}/api/xtream/playback-decision/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || 'movie')}/${encodeURIComponent(item.id)}`);
@@ -982,20 +986,27 @@ async function decideWebPlayback(item) {
   const headers = deviceToken.value ? { 'x-device-token': deviceToken.value } : {};
   const response = await fetch(url, { cache: 'no-store', headers, signal: AbortSignal.timeout(30_000) });
   const decision = await response.json().catch(() => ({}));
+  if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
   if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
-  webFormatUnsupported.value = /codec|container|profile|level|pixel format|frame rate|channel|sample rate|direct-play facts unavailable/i.test(String(decision.reason || ''));
+  const capabilities = detectBrowserCapabilities();
+  await browserCodecSupportFromMediaCapabilities(capabilities, decision.media || {});
+  if (sessionId !== webPlaybackSessionId) return null;
+  const transport = decideBrowserTransport(decision.media || {}, capabilities);
+  webCompatibility.value = transport;
+  webFormatUnsupported.value = transport.transport === "UNSUPPORTED";
   webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
   // An http:// provider URL cannot be loaded by an https page (mixed content),
   // so skip Direct and start at the compatibility-selected HLS strategy.
   const directBlocked = window.location.protocol === 'https:' && /^http:/i.test(providerURL);
-  const useDirect = decision.directCompatible === true && !directBlocked;
-  webForceHls.value = !useDirect;
+  const useDirect = transport.transport === "DIRECT" && !directBlocked;
+  webForceHls.value = !useDirect && transport.remuxCompatible;
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
-    : (decision.directCompatible ? '' : describeEncodeStrategy(decision.playbackStrategy || '', decision.videoMode || ''));
+    : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
+  if (transport.transport === "UNSUPPORTED") throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });
   if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
-  return decision;
+  return { ...decision, ...transport, transport: transport.transport };
 }
 
 function formatTime(value) {
@@ -1297,13 +1308,12 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
     webHlsRecoveryAt = resumeAt;
     const exhausted = webHlsRecoveries >= WEB_HLS_RECOVERY_LIMIT;
     if (exhausted || webHlsAttempts >= WEB_HLS_REINIT_LIMIT) {
-      if (!exhausted && advanceWebHlsFallback(resumeAt)) return;
       clearWebRecoveryTimer();
       clearTimeout(webStallTimer);
       webStallTimer = null;
       webBuffering.value = false;
-      webPlayerError.value = webFormatUnsupported.value
-        ? "This browser player does not support this item's codecs or container. The server is limited to Direct/Remux playback, so this item cannot be converted for playback."
+      webPlayerError.value = webCompatibility.value?.transport === "UNSUPPORTED"
+        ? `Unsupported media. ${webCompatibility.value.reason}`
         : "This title could not be played on this browser.";
       return;
     }
@@ -1328,42 +1338,18 @@ function webAbsolutePosition() {
   return Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
 }
 
-// HLS recovery ladder, same order as the Roku client: reinitialise the current
-// strategy a bounded number of times at the last confirmed position, then step
-// REMUX -> AUDIO transcode -> FULL transcode. FULL is terminal (never endless).
-const webHlsFallback = ref("");
+// Browser HLS recovery reinitializes only the current copy-only remux job.
 let webHlsStrategy = "", webHlsAttempts = 0, webHlsRecoveries = 0, webHlsRecoveryAt = -1;
-const WEB_HLS_REINIT_LIMIT = 2, WEB_HLS_RECOVERY_LIMIT = 12;
-function resetWebHlsLadder() {
-  webHlsFallback.value = "";
-  webHlsStrategy = ""; webHlsAttempts = 0; webHlsRecoveries = 0; webHlsRecoveryAt = -1;
-}
-function nextWebHlsFallback() {
-  if (webHlsFallback.value === "full" || webHlsStrategy === "HLS_FULL_TRANSCODE") return "";
-  if (webHlsFallback.value === "audio" || /^HLS_(AUDIO|VIDEO|PARTIAL)_TRANSCODE$/.test(webHlsStrategy)) return "full";
-  return "audio";
-}
-function advanceWebHlsFallback(resumeAt) {
-  const next = nextWebHlsFallback();
-  if (!next) return false;
-  webHlsFallback.value = next;
-  webHlsStrategy = ""; webHlsAttempts = 0;
-  webEncodeStrategy.value = ""; webPendingEncodeStrategy.value = "";
-  webPlaybackRetryCount.value = 0;
-  webPlaybackOffset.value = resumeAt; webCurrentTime.value = resumeAt;
-  webBuffering.value = true; webMediaReady.value = false;
-  setWebStartupProgress(40, "Preparing HLS segments");
-  showWebControls();
-  configureMoviePlayback(resumeAt);
-  return true;
-}
+const WEB_HLS_REINIT_LIMIT = 2, WEB_HLS_RECOVERY_LIMIT = 6;
+function resetWebHlsLadder() { webHlsStrategy = ""; webHlsAttempts = 0; webHlsRecoveries = 0; webHlsRecoveryAt = -1; }
 
 // Original quality always tries the direct file first (no HLS at all - the
 // cheapest, most seek-friendly path when the browser can just play the source
-// natively) and falls back to the HLS pipeline (Copy, then the server's own
-// Copy -> transcode cascade) the moment that direct attempt fails or stalls.
+// natively) and falls back to HLS only when stream-copy remux was independently
+// confirmed as sufficient by the browser transport decision.
 function fallBackToHlsFromDirect(resumeAt) {
   clearTimeout(webDirectStartupTimer);
+  if (!webNowPlaying.value || !webCompatibility.value?.remuxCompatible || webForceHls.value) return;
   const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
   webForceHls.value = true;
   // HLS is a transport transition, not a final strategy badge.
@@ -1386,7 +1372,11 @@ function handleWebVideoError() {
   if (!webForceHls.value && !webWwpSessionId.value) {
     // Native transport failed for this item - fall back to the HLS pipeline,
     // re-based at the exact spot playback stopped.
-    fallBackToHlsFromDirect(webAbsolutePosition());
+    if (webCompatibility.value?.remuxCompatible) fallBackToHlsFromDirect(webAbsolutePosition());
+    else {
+      webPlayerError.value = `Unsupported media. ${webCompatibility.value?.reason || "Direct playback failed and remux cannot solve the codec incompatibility."}`;
+      webBuffering.value = false;
+    }
     return;
   }
   // Keep retrying with capped backoff while the player remains open. This
@@ -1493,7 +1483,6 @@ function movieStreamUrl(startSeconds = 0) {
   if (hls && providerURL) target.searchParams.set('providerURL', providerURL);
   if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
   if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
-  if (hls && webHlsFallback.value && !webWwpSessionId.value) target.searchParams.set("hlsFallback", webHlsFallback.value);
   wwpSeekIntent = false;
   return target.toString();
 }
@@ -1560,10 +1549,8 @@ function unmuteWebPlayback() {
 function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "DIRECT") return "DIRECT";
   if (strategy === "HLS_REMUX") return "HLS REMUX";
-  if (strategy === "HLS_AUDIO_TRANSCODE") return "HLS AUDIO TRANSCODE";
-  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
-  if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
-  if (strategy === "HLS_PARTIAL_TRANSCODE") return videoMode === "transcode" ? "HLS VIDEO TRANSCODE" : "HLS AUDIO TRANSCODE";
+  if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
+  void videoMode;
   return "";
 }
 async function fetchWebEncodeStrategy(url) {
@@ -1724,6 +1711,8 @@ async function configureMoviePlayback(startSeconds = 0) {
 }
 
 async function playWebMovie(item) {
+  const sessionId = ++webPlaybackSessionId;
+  webCompatibility.value = null;
   webStreamTicket.value = "";
   // Starting a normal playback ends any WWP guest role from a previous session.
   if (webWwpSessionId.value) stopWwpSync();
@@ -1757,6 +1746,7 @@ async function playWebMovie(item) {
   webWedgeRestarts = 0;
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
+  if (sessionId !== webPlaybackSessionId) return;
   const providerURL = webNowPlaying.value?.providerURL || webNowPlaying.value?.providerUrl;
   if (typeof providerURL !== 'string' || !/^https?:\/\//i.test(providerURL)) {
     throw new Error('This item is missing its original provider URL. Refresh the playlist and try again.');
@@ -1766,6 +1756,7 @@ async function playWebMovie(item) {
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
+  if (sessionId !== webPlaybackSessionId) return;
   setWebStartupProgress(10, "Fetching item url from provider");
   if (webNowPlaying.value.kind === "channel") {
     // Live TV has no codec matrix (the streamer only serves the decision for
@@ -1776,7 +1767,9 @@ async function playWebMovie(item) {
     webPendingEncodeStrategy.value = mixedContent ? "" : "DIRECT";
   } else {
     const decision = await decideWebPlayback(webNowPlaying.value);
+    if (sessionId !== webPlaybackSessionId) return;
     await runWebCompatibilitySteps(decision);
+    if (sessionId !== webPlaybackSessionId) return;
   }
   await configureMoviePlayback(0);
 }
@@ -1790,6 +1783,7 @@ async function playLibraryItem(item) {
   try {
     await playWebMovie(item);
   } catch (error) {
+    if (error?.name === "AbortError" || !webNowPlaying.value) return;
     webBuffering.value = false;
     webPlayerError.value = error?.message || "This item could not be played right now.";
     showWebControls();
