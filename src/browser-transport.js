@@ -1,8 +1,8 @@
 const clean = value => String(value || '').trim().toLowerCase();
 
 export function normalizeMediaMetadata(raw = {}) {
-  const containerText = clean(raw.container || raw.format_name || raw.formatName);
-  const container = /matroska/.test(containerText) ? 'matroska'
+  const containerText = clean(raw.container || raw.format_name || raw.formatName || raw.extension || raw.ext);
+  const container = /^(?:mkv|matroska)$/.test(containerText) || /matroska/.test(containerText) ? 'matroska'
     : /webm/.test(containerText) ? 'webm'
       : /(?:^|,)(?:mp4|m4v|mov|mov,)/.test(containerText) ? 'mp4'
         : containerText.split(',')[0] || 'unknown';

@@ -980,12 +980,12 @@ const webCompatibilityBadges = computed(() => {
   const containerKnown = Boolean(media.container && media.container !== "unknown");
   const directContainerStatus = webDirectTestResult.value === "Passed" ? "compatible"
     : webDirectTestResult.value === "Rejected" ? "incompatible"
-      : media.container === "matroska" ? "unknown"
+      : media.container === "matroska" ? "checking"
         : state(containerKnown, decision.containerCompatible);
   const videoKnown = Boolean(media.video?.codec);
   const audioKnown = Boolean(media.audio?.codec);
   return [
-    { key: "container", label: "Container", status: directContainerStatus, value: media.container || "unknown" },
+    { key: "container", label: "Container", status: directContainerStatus, value: media.container === "matroska" ? "MKV" : (media.container || "unknown").toUpperCase() },
     { key: "video", label: "Video codec", status: state(videoKnown, decision.videoCompatible), value: media.video?.codec || "unknown" },
     { key: "audio", label: "Audio codec", status: audioKnown ? state(true, decision.audioCompatible) : "absent", value: media.audio?.codec || "no audio track" },
   ];
@@ -999,7 +999,7 @@ const webCompatibilityChecks = computed(() => {
   return [
     { label: "Fetch item URL from provider", result: "Passed", detail: `${decision.sourceProtocol || "unknown"} source resolved` },
     { label: "Probe media container", result: result(Boolean(media.container && media.container !== "unknown")), detail: media.container || "unknown" },
-    { label: "Check container compatibility", result: webDirectTestResult.value === "Passed" ? "Passed" : webDirectTestResult.value === "Rejected" ? "Failed" : media.container === "matroska" ? "Unverified" : result(Boolean(decision.containerCompatible)), detail: media.container === "matroska" ? "Matroska support requires an actual decoded frame" : decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Check container compatibility", result: webDirectTestResult.value === "Passed" ? "Passed" : webDirectTestResult.value === "Rejected" ? "Failed" : media.container === "matroska" ? "Checking" : result(Boolean(decision.containerCompatible)), detail: media.container === "matroska" ? "Matroska container was identified; waiting for an actual decoded Direct frame" : decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
     { label: "Probe video codec", result: result(Boolean(media.video?.codec)), detail: [media.video?.codec, media.video?.profile, media.video?.level && `level ${media.video.level}`].filter(Boolean).join(" · ") || "unknown" },
     { label: "Check video codec compatibility", result: result(Boolean(decision.videoCompatible)), detail: decision.videoCompatible ? "Browser reports support" : "Browser reports no native support" },
     { label: "Probe audio codec", result: media.audio?.codec ? "Passed" : "No audio", detail: media.audio?.codec || "No audio track" },
@@ -1075,12 +1075,14 @@ async function decideWebPlayback(item) {
   const decision = await response.json().catch(() => ({}));
   if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
+  const sourceExtension = item.extension || String(decision.providerURL || '').match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1] || '';
+  const mediaForBrowser = { ...(decision.media || {}), extension: sourceExtension };
   const capabilities = detectBrowserCapabilities();
-  await browserCodecSupportFromMediaCapabilities(capabilities, decision.media || {});
+  await browserCodecSupportFromMediaCapabilities(capabilities, mediaForBrowser);
   if (sessionId !== webPlaybackSessionId) return null;
   const sourceProtocol = decision.sourceProtocol || (decision.providerURL ? new URL(decision.providerURL).protocol : '');
   const compatibility = applyServerPlaybackPolicy(
-    decideBrowserTransport(decision.media || {}, capabilities, sourceProtocol), decision,
+    decideBrowserTransport(mediaForBrowser, capabilities, sourceProtocol), decision,
   );
   const transport = {
     ...compatibility,
@@ -1282,9 +1284,12 @@ function webFrameClick(event) {
 
 function toggleWebControls(event) {
   if (event?.target?.closest?.("button, input")) return;
-  // A tap on the video means playback is interactive again; clear any
-  // transient buffering state so the spinner cannot remain stuck over it.
-  webBuffering.value = false;
+  // A click does not prove that a frame was decoded. Keep the startup hint
+  // visible until the media element reports readiness or an actual error.
+  if (!webMediaReady.value && !webPlayerError.value) {
+    webControlsVisible.value = true;
+    return;
+  }
   webControlsVisible.value = !webControlsVisible.value;
   if (webControlsVisible.value) scheduleWebControlsHide(); else clearWebControlsTimer();
 }
@@ -1495,6 +1500,15 @@ function switchRejectedDirectToRemux(reason) {
   const target = webAbsolutePosition();
   webCompatibility.value = { ...webCompatibility.value, transport: "HLS_REMUX", reason };
   webForceHls.value = true;
+  webHlsAwaitingMediaAttach = true;
+  // A detached Direct <video> can keep the provider HTTP request open for
+  // another minute. Abort it before starting FFmpeg's remux connection.
+  const directVideo = webVideo.value;
+  if (directVideo) {
+    directVideo.pause();
+    directVideo.removeAttribute("src");
+    directVideo.load();
+  }
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
   webMediaReady.value = false;
@@ -1504,7 +1518,8 @@ function switchRejectedDirectToRemux(reason) {
   return true;
 }
 
-function handleWebVideoError() {
+function handleWebVideoError(event) {
+  if (event?.target !== webVideo.value) return;
   if (!webNowPlaying.value) return;
   console.warn(`[BrowserMediaError] code=${webVideo.value?.error?.code || 0} strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} src=${webVideo.value?.currentSrc?.slice(0, 24) || 'none'}`);
   // The native Direct decoder can report its rejection after hls.js has
@@ -1741,7 +1756,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   const source = movieStreamUrl(startSeconds);
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
-  webHlsAwaitingMediaAttach = false;
+  webHlsAwaitingMediaAttach = webForceHls.value;
   webStartupGapAligned = false;
   if (!video || !source) {
     webPlayerError.value = "This movie does not have a playable stream.";
@@ -1823,7 +1838,7 @@ async function configureMoviePlayback(startSeconds = 0) {
           webDirectAcceptanceTimer = null;
           if (sessionId !== webPlaybackSessionId || webMediaReady.value || webForceHls.value) return;
           switchRejectedDirectToRemux("Native Direct playback did not present a frame; trying stream-copy HLS.");
-        }, 20_000);
+        }, 8_000);
         await startWebPlayback(video);
       }
     } else {
@@ -1900,7 +1915,6 @@ async function configureMoviePlayback(startSeconds = 0) {
           // hls.js classifies it as live and can otherwise keep reloading the
           // playlist without scheduling a fragment.
           webHls?.startLoad(webWwpSessionId.value ? -1 : 0);
-          startWebPlayback(video);
         });
         webHls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
           if (playbackToken === webPlaybackToken) {
@@ -1913,13 +1927,16 @@ async function configureMoviePlayback(startSeconds = 0) {
             console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.data?.byteLength ?? data?.payload?.byteLength ?? 0} tracks=${Object.keys(data?.tracks || data || {}).join(',')} media=${webHls?.media === video} video=${video.readyState}/${video.networkState} src=${video.currentSrc?.slice(0, 18) || 'none'}`);
           });
         }
-        webHls.on(Hls.Events.BUFFER_APPENDED, () => {
-          if (playbackToken === webPlaybackToken) refreshWebBuffered();
+        webHls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
+          if (playbackToken !== webPlaybackToken) return;
+          refreshWebBuffered();
+          if (Number.isFinite(data?.frag?.sn) && !wwpUserPaused && video.paused) startWebPlayback(video);
         });
         webHls.on(Hls.Events.MEDIA_ATTACHED, () => {
-          if (playbackToken === webPlaybackToken) webHlsAwaitingMediaAttach = false;
+          if (playbackToken !== webPlaybackToken) return;
+          webHlsAwaitingMediaAttach = false;
+          webHls?.loadSource(source);
         });
-        webHls.loadSource(source);
         webHls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
@@ -3992,7 +4009,7 @@ onMounted(async () => {
               <div v-if="webCompatibilityBadges.length" class="web-compatibility-badges" aria-label="Device compatibility">
                 <span v-for="badge in webCompatibilityBadges" :key="badge.key" class="web-compatibility-badge" :data-status="badge.status" :title="`${badge.label}: ${badge.value} · ${badge.status}`">
                   <i aria-hidden="true">{{ badge.status === 'compatible' ? '✓' : badge.status === 'incompatible' ? '!' : badge.status === 'absent' ? '–' : '?' }}</i>
-                  {{ badge.label }}: {{ badge.status }}
+                  {{ badge.label }}: {{ badge.key === 'container' ? `${badge.value} · ${badge.status}` : badge.status }}
                 </span>
               </div>
               <div class="web-partner-control">

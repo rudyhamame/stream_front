@@ -1245,6 +1245,8 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .web-compatibility-badge[data-status="compatible"] i { background:#36a96e; color:#fff; }
 .web-compatibility-badge[data-status="incompatible"] { border-color:rgba(255,112,112,.5); color:#ffd4d4; }
 .web-compatibility-badge[data-status="incompatible"] i { background:#c94f58; color:#fff; }
+.web-compatibility-badge[data-status="checking"] { border-color:rgba(240,190,95,.5); color:#ffe4ac; }
+.web-compatibility-badge[data-status="checking"] i { background:#9d7427; color:#fff; }
 .web-compatibility-badge[data-status="absent"] { border-color:rgba(255,255,255,.15); color:#cbd4df; }
 .web-transport-debug { position:relative; color:#e9edf2; font:600 11px 'DM Sans'; }
 .web-transport-debug summary { list-style:none; cursor:pointer; border:1px solid rgba(255,255,255,.2); border-radius:50%; width:28px; height:28px; display:grid; place-items:center; background:rgba(10,14,20,.68); }
