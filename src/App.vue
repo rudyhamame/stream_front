@@ -18,7 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
-import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
+import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -199,7 +199,7 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
-let webDirectProxyStartupTimer = null;
+let webStartupGapAligned = false;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
@@ -1174,6 +1174,18 @@ const webTimelineStyle = computed(() => {
 function refreshWebBuffered() {
   const video = webVideo.value;
   if (!video || !video.buffered || !video.buffered.length) { webBufferedTime.value = webCurrentTime.value; return; }
+  // Some Matroska files begin with a small positive timestamp. Chrome can
+  // buffer them while remaining at time zero, before the first playable frame.
+  // Enter the existing first buffered range once; this is a native seek and
+  // preserves the Direct source, container, and codecs.
+  if (!webStartupGapAligned && !webHls && !webForceHls.value && !webMediaReady.value
+      && video.currentTime === 0 && webPendingSeek.value <= 0) {
+    const first = video.buffered.start(0);
+    if (first > 0 && first <= 1 && video.buffered.end(0) > first + 0.1) {
+      webStartupGapAligned = true;
+      video.currentTime = first + 0.001;
+    }
+  }
   const now = video.currentTime;
   let ahead = now;
   for (let i = 0; i < video.buffered.length; i += 1) {
@@ -1349,15 +1361,7 @@ function onWebWaiting() {
     const video = webVideo.value;
     if (!webNowPlaying.value || !video || video.readyState >= 3) return;
     if (!webForceHls.value && !webWwpSessionId.value) {
-      // A proxy can return a valid 206 and still leave the browser unable to
-      // initialize a Matroska timeline (for example, when its index is not
-      // available near the beginning). After a sustained startup stall, try
-      // the codec-copy HLS path once; ordinary HTTPS Direct stalls retain the
-      // existing reconnect behavior and transport errors never imply codecs.
-      if (webCompatibility.value?.transport === "DIRECT_PROXY" && webCompatibility.value?.remuxCompatible) {
-        fallBackToHlsFromDirect(Math.max(resumeAt, webAbsolutePosition()));
-        return;
-      }
+      // A transport stall does not change media compatibility. Keep Direct.
       webBuffering.value = true;
       showWebControls();
     } else scheduleWebReconnect(Math.max(resumeAt, webAbsolutePosition()));
@@ -1438,30 +1442,6 @@ function webAbsolutePosition() {
 let webHlsStrategy = "";
 function resetWebHlsLadder() { webHlsStrategy = ""; }
 
-// Original quality always tries the direct file first (no HLS at all - the
-// cheapest, most seek-friendly path when the browser can just play the source
-// natively) and falls back to HLS only when stream-copy remux was independently
-// confirmed as sufficient by the browser transport decision.
-function fallBackToHlsFromDirect(resumeAt) {
-  if (!webNowPlaying.value || !webCompatibility.value?.remuxCompatible || webForceHls.value) return;
-  const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
-  webForceHls.value = true;
-  clearTimeout(webDirectProxyStartupTimer);
-  webDirectProxyStartupTimer = null;
-  // HLS is a transport transition, not a final strategy badge.
-  webEncodeStrategy.value = "";
-  webPendingEncodeStrategy.value = "";
-  webPlaybackRetryCount.value = 0;
-  webPlaybackOffset.value = target;
-  webCurrentTime.value = target;
-  webBuffering.value = true;
-  resetWebHlsLadder();
-  setWebStartupProgress(40, "Preparing HLS segments");
-  webMediaReady.value = false;
-  showWebControls();
-  configureMoviePlayback(target);
-}
-
 function handleWebVideoError() {
   if (!webNowPlaying.value) return;
   if (!webForceHls.value && !webWwpSessionId.value) {
@@ -1470,10 +1450,8 @@ function handleWebVideoError() {
     // with backoff. Switching containers would not repair a lost connection.
     if (mediaErrorCode === 2) {
       scheduleWebReconnect(webAbsolutePosition());
-    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible, webCompatibility.value?.transport)) {
-      fallBackToHlsFromDirect(webAbsolutePosition());
     } else {
-      webPlayerError.value = `Unsupported media. ${webCompatibility.value?.reason || "Direct playback failed and remux cannot solve the codec incompatibility."}`;
+      webPlayerError.value = `Direct playback failed (media error ${mediaErrorCode || "unknown"}). The selected Direct strategy has been preserved. Retry playback.`;
       webBuffering.value = false;
     }
     return;
@@ -1521,11 +1499,7 @@ function startWebVideoWedgeWatchdog(video) {
   if (webWedgeWatchdog?.video === video && webWedgeWatchdog.token === webPlaybackToken) return;
   clearWebVideoWedgeWatchdog();
   const token = webPlaybackToken;
-    const now = Date.now();
-    if (document.visibilityState === "hidden") {
-      monitor.lastFrameAt = now;
-      return;
-    }
+  const now = Date.now();
   const initialQuality = video.getVideoPlaybackQuality?.();
   const initialFrameCount = Number(initialQuality?.totalVideoFrames ?? video.webkitDecodedFrameCount) || 0;
   const monitor = {
@@ -1595,8 +1569,6 @@ function startWebVideoWedgeWatchdog(video) {
 }
 
 function onWebFirstFrame() {
-  clearTimeout(webDirectProxyStartupTimer);
-  webDirectProxyStartupTimer = null;
   webMediaReady.value = true;
   if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   onWebReady();
@@ -1690,6 +1662,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   const source = movieStreamUrl(startSeconds);
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
+  webStartupGapAligned = false;
   if (!video || !source) {
     webPlayerError.value = "This movie does not have a playable stream.";
     return;
@@ -1752,22 +1725,9 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
           video.src = source;
           await startWebPlayback(video);
-        } else fallBackToHlsFromDirect(0);
+        } else webPlayerError.value = "This browser cannot play the provider HLS stream directly.";
       } else {
         video.src = source;
-        if (webCompatibility.value?.transport === "DIRECT_PROXY" && webCompatibility.value?.remuxCompatible) {
-          const sessionId = webPlaybackSessionId;
-          clearTimeout(webDirectProxyStartupTimer);
-          // Some browsers advertise Matroska MIME support but fail to produce
-          // a first frame from a large provider file. Do not leave the player
-          // black forever: after this bounded startup window, switch to the
-          // existing copy-only HLS path at the last known position.
-          webDirectProxyStartupTimer = setTimeout(() => {
-            webDirectProxyStartupTimer = null;
-            if (sessionId !== webPlaybackSessionId || webMediaReady.value || webForceHls.value) return;
-            fallBackToHlsFromDirect(webAbsolutePosition());
-          }, 20_000);
-        }
         await startWebPlayback(video);
       }
     } else {
