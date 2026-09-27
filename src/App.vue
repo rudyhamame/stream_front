@@ -1632,8 +1632,18 @@ function startWebVideoWedgeWatchdog(video) {
     }
     if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
     // Direct compatibility is established by a frame or a native media error,
-    // never by an elapsed-time watchdog. Keep observing for its first frame.
-    if (!webForceHls.value && !webWwpSessionId.value) return;
+    // never by an elapsed-time watchdog - a stall here must never mark Direct
+    // "Rejected" or switch to HLS on its own. But the browser can also stay
+    // silent forever (no frame, no error event) on a hung connection, leaving
+    // the acceptance test pending indefinitely. Retry the same Direct source
+    // instead of waiting forever; scheduleWebReconnect keeps the strategy.
+    if (!webForceHls.value && !webWwpSessionId.value) {
+      clearWebVideoWedgeWatchdog();
+      webMediaReady.value = false;
+      webBuffering.value = true;
+      scheduleWebReconnect(webAbsolutePosition());
+      return;
+    }
     if (monitor.recoveryStage === 0 && webHls) {
       monitor.recoveryStage = 1;
       monitor.lastFrameAt = timestamp;
