@@ -73,7 +73,7 @@ const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibra
 // legacy cache entries when this client starts.
 for (let cacheIndex = window.localStorage.length - 1; cacheIndex >= 0; cacheIndex -= 1) {
   const cacheKey = window.localStorage.key(cacheIndex) || "";
-  if (/^rh-catalog:v[0-5]:/.test(cacheKey)) window.localStorage.removeItem(cacheKey);
+  if (/^rh-catalog:v[0-5]:/.test(cacheKey) || cacheKey.startsWith("rh-catalog-item:v1:")) window.localStorage.removeItem(cacheKey);
 }
 const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
@@ -1041,10 +1041,16 @@ async function decideWebPlayback(item) {
   if (sessionId !== webPlaybackSessionId) return null;
   const sourceProtocol = decision.sourceProtocol || (decision.providerURL ? new URL(decision.providerURL).protocol : '');
   const compatibility = decideBrowserTransport(decision.media || {}, capabilities, sourceProtocol);
-  const transport = compatibility;
+  const transport = {
+    ...compatibility,
+    sourceProtocol,
+    ...(compatibility.transport === "DIRECT_PROXY" ? { reason: "Browser mixed-content protection; media bytes are relayed unchanged over HTTPS." } : {}),
+  };
   if (transport.transport === "DIRECT_PROXY" && !decision.directProxyUrl) throw new Error("The secure Browser streaming session could not be created.");
   webDirectProxyUrl.value = decision.directProxyUrl || "";
-  webDirectProxyToken.value = decision.directProxyUrl?.split("/").pop() || "";
+  webDirectProxyToken.value = decision.directProxyUrl
+    ? new URL(decision.directProxyUrl, browserStreamer).pathname.split("/").pop() || ""
+    : "";
   webCompatibility.value = transport;
   console.info("[BrowserTransport]", {
     browser: transport.browser.name, version: transport.browser.version,
@@ -1447,8 +1453,11 @@ function handleWebVideoError() {
     // with backoff. Switching containers would not repair a lost connection.
     if (mediaErrorCode === 2) {
       scheduleWebReconnect(webAbsolutePosition());
-    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible)) {
+    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible, webCompatibility.value?.transport)) {
       fallBackToHlsFromDirect(webAbsolutePosition());
+    } else if (mediaErrorCode === 4 && webCompatibility.value?.transport === "DIRECT_PROXY") {
+      webPlayerError.value = "The RH HTTPS proxy response was not accepted. Check the proxy MIME type and upstream routing.";
+      webBuffering.value = false;
     } else {
       webPlayerError.value = `Unsupported media. ${webCompatibility.value?.reason || "Direct playback failed and remux cannot solve the codec incompatibility."}`;
       webBuffering.value = false;

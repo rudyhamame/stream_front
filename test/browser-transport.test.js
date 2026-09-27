@@ -78,6 +78,7 @@ test('Direct network and decode failures do not start remux', () => {
   assert.equal(shouldFallbackFromDirect(2, true), false);
   assert.equal(shouldFallbackFromDirect(3, true), false);
   assert.equal(shouldFallbackFromDirect(4, true), true);
+  assert.equal(shouldFallbackFromDirect(4, true, 'DIRECT_PROXY'), false);
   assert.equal(shouldFallbackFromDirect(4, false), false);
 });
 

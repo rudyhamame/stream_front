@@ -144,11 +144,13 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
   return { transport, directCompatible: direct, containerCompatible: containerDirect, videoCompatible: videoSupported, audioCompatible: audioSupported, remuxCompatible, playable: transport !== 'UNSUPPORTED', reason, media, browser };
 }
 
-export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible) {
+export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible, transport = 'DIRECT_PROVIDER') {
   // MEDIA_ERR_SRC_NOT_SUPPORTED is the only HTMLMediaElement error category
   // where a container/protocol remux may help. Network and decode errors do
-  // not become fixable by stream-copying the same essence.
-  return Number(mediaErrorCode) === 4 && remuxCompatible === true;
+  // not become fixable by stream-copying the same essence. The proxy's HTTP
+  // response MIME/routing can itself cause code 4, so preserve that transport
+  // failure instead of changing the media strategy.
+  return Number(mediaErrorCode) === 4 && remuxCompatible === true && transport !== 'DIRECT_PROXY';
 }
 
 export async function browserCodecSupportFromMediaCapabilities(capabilities, media) {
