@@ -205,7 +205,6 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
-let webDirectStartupTimer = null;
 let webStartupGapAligned = false;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
@@ -1142,8 +1141,6 @@ function handleWebMetadata(event) {
     // Native metadata proves that Direct container and track headers were
     // accepted. Rendered-frame readiness is tracked separately below.
     webDirectTestResult.value = "Passed";
-    clearTimeout(webDirectStartupTimer);
-    webDirectStartupTimer = null;
   }
   // HLS movie playback is delivered through a deliberately rolling manifest.
   // Safari reports that short window as media duration, so it must never be
@@ -1521,8 +1518,6 @@ function switchRejectedDirectToRemux(reason) {
 function handleWebVideoError(event) {
   if (event?.target !== webVideo.value) return;
   if (!webNowPlaying.value) return;
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   console.warn(`[BrowserMediaError] code=${webVideo.value?.error?.code || 0} strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} src=${webVideo.value?.currentSrc?.slice(0, 24) || 'none'}`);
   // The native Direct decoder can report its rejection after hls.js has
   // replaced its URL with a MediaSource. That stale event must not tear down
@@ -1555,8 +1550,6 @@ function onWebReady(event) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   if (event?.type === "playing") {
     webPlaying.value = true;
   }
@@ -1840,18 +1833,6 @@ async function configureMoviePlayback(startSeconds = 0) {
       } else {
         video.src = source;
         // A native media error or a decoded frame supplies the Direct result.
-        clearTimeout(webDirectStartupTimer);
-        webDirectStartupTimer = setTimeout(() => {
-          webDirectStartupTimer = null;
-          if (playbackToken !== webPlaybackToken || webMediaReady.value || webForceHls.value) return;
-          if (webCompatibility.value?.remuxCompatible && webCompatibility.value?.remuxEnabled !== false) {
-            switchRejectedDirectToRemux("Direct startup produced no native media milestone; trying stream-copy HLS.");
-          } else {
-            webPlayerError.value = "Direct playback did not start in the browser.";
-            webBuffering.value = false;
-            showWebControls();
-          }
-        }, 8000);
         await startWebPlayback(video);
       }
     } else {
@@ -1864,7 +1845,10 @@ async function configureMoviePlayback(startSeconds = 0) {
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
         webHls = new Hls({
-          enableWorker: true,
+          // Keep transmuxing on the page thread for the RH fMP4 stream. The
+          // worker path can stall before BUFFER_APPENDED without surfacing a
+          // fatal error, leaving startup frozen at the manifest step.
+          enableWorker: false,
           lowLatencyMode: false,
           // Normally start at segment 0 - the ffmpeg job's -ss offset IS the
           // resume point. A Watch-with-Partner participant instead rides the
@@ -2331,8 +2315,6 @@ async function closeWebPlayer() {
   webStallTimer = null;
   clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   if (webSeekTimer) {
     clearTimeout(webSeekTimer);
     webSeekTimer = null;
