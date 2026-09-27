@@ -30,6 +30,32 @@ const legalPage = computed(() => {
   if (path === '/delete-account') return 'delete-account';
   return '';
 });
+const downloadPage = ref(window.location.pathname.replace(/\/+$/, '') === '/download-app');
+const betaEmailSource = ref(new URLSearchParams(window.location.search).get('source') === 'roku-qr' ? 'roku-qr' : 'download-page');
+const testerEmail = ref('');
+const testerEmailTouched = ref(false);
+const testerConsent = ref(false);
+const testerSignupBusy = ref(false);
+const testerSignupMessage = ref('');
+const testerSignupError = ref('');
+async function joinAndroidBeta() {
+  testerSignupBusy.value = true;
+  testerSignupMessage.value = '';
+  testerSignupError.value = '';
+  try {
+    await request('/api/android-beta-testers', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: testerEmail.value, consent: testerConsent.value, source: betaEmailSource.value }),
+    });
+    testerSignupMessage.value = "You're on the RH IPTV Player beta invitation list. We'll email you when your Play Store test access is ready.";
+    testerConsent.value = false;
+  } catch (error) {
+    testerSignupError.value = error.message;
+  } finally {
+    testerSignupBusy.value = false;
+  }
+}
 const canonicalBackend = browserOrigin;
 const configuredBackend = (import.meta.env.VITE_API_BASE_URL || canonicalBackend).replace(/\/$/, "");
 const base = configuredBackend;
@@ -3550,13 +3576,22 @@ onMounted(async () => {
           if (paired?.item?.id) window.localStorage.setItem("rh-profile-id", paired.item.id);
           else window.localStorage.removeItem("rh-profile-id");
           activeProfileId.value = paired?.item?.id || "";
-          safariPage.value = "settings";
-          window.history.replaceState({ appPage: "settings" }, "", "/settings");
+          if (!downloadPage.value) {
+            safariPage.value = "settings";
+            window.history.replaceState({ appPage: "settings" }, "", "/settings");
+          }
         }
       } catch (error) {
         messageType.value = "error";
         message.value = error.message;
       }
+    }
+    if (downloadPage.value) {
+      if (deviceToken.value) {
+        const account = await request('/api/account/email').catch(() => null);
+        if (!testerEmailTouched.value && account?.email) testerEmail.value = account.email;
+      }
+      return;
     }
     if (!deviceToken.value) return;
     if (window.sessionStorage.getItem(profileSelectionKey)) {
@@ -3606,7 +3641,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="shell" :class="{ 'safari-app-mode': browserApp && !legalPage, 'login-shell': pairing && !legalPage, 'legal-shell': legalPage }">
+  <main class="shell" :class="{ 'safari-app-mode': browserApp && !legalPage && !downloadPage, 'login-shell': pairing && !legalPage && !downloadPage, 'legal-shell': legalPage, 'download-shell': downloadPage }">
     <section v-if="legalPage" class="legal-page" :aria-labelledby="`${legalPage}-title`">
       <div class="legal-page-inner">
         <a class="legal-brand" href="/" aria-label="RH IPTV Player home"><span class="legal-brand-mark">RH</span><span>IPTV PLAYER</span></a>
@@ -3653,10 +3688,56 @@ onMounted(async () => {
           <h2>Contact</h2>
           <p>Support: <a href="mailto:rudyhamameca@gmail.com">rudyhamameca@gmail.com</a>.</p>
         </template>
-        <nav class="legal-links" aria-label="Legal navigation"><a href="/privacy">Privacy policy</a><a href="/android/privacy">Android privacy policy</a><a href="/terms">Terms of use</a><a href="/delete-account">Delete account</a><a href="/">Back to RH IPTV Player</a></nav>
+        <nav class="legal-links" aria-label="Legal navigation"><a href="/privacy">Privacy policy</a><a href="/android/privacy">Android privacy policy</a><a href="/terms">Terms of use</a><a href="/delete-account">Delete account</a><a href="/download-app">Download App</a><a href="/">Back to RH IPTV Player</a></nav>
       </div>
     </section>
-    <div v-if="!legalPage" class="app-content">
+    <section v-else-if="downloadPage" class="download-page" aria-labelledby="download-title">
+      <header class="download-header">
+        <a class="download-brand" href="/" aria-label="RH IPTV Player home"><img src="/login/rh-snow-logo.png" alt=""><span>RH IPTV PLAYER</span></a>
+        <a class="download-header-link" href="/">Back to RH IPTV Player</a>
+      </header>
+      <div class="download-main">
+        <section class="download-hero">
+          <div class="download-copy">
+            <p class="download-eyebrow"><span></span> ANDROID APP · BETA TESTING</p>
+            <h1 id="download-title">Help shape the next version of <em>RH IPTV Player.</em></h1>
+            <p class="download-intro">The Android app is being tested with a small group before its official Google Play release. Join the beta, try it with your own playlists, and tell us what would make it better.</p>
+            <div class="download-status"><span class="download-status-dot"></span><div><strong>Currently in Google Play beta</strong><span>Test access is invitation-only while the app is under development.</span></div></div>
+          </div>
+          <form class="beta-signup-card" @submit.prevent="joinAndroidBeta">
+            <p class="beta-card-kicker">JOIN THE TESTERS</p>
+            <h2>Get an invitation</h2>
+            <p>Register the Google account email you use with the Play Store. We’ll add it to the tester list and email you when beta access is ready.</p>
+            <label for="beta-tester-email">Email address</label>
+            <input id="beta-tester-email" v-model="testerEmail" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com" @input="testerEmailTouched = true">
+            <label class="beta-consent"><input v-model="testerConsent" type="checkbox" required><span>Use this email to contact me about RH IPTV Player beta access.</span></label>
+            <button type="submit" class="beta-submit" :disabled="testerSignupBusy || !testerConsent"><span>{{ testerSignupBusy ? 'Adding you…' : 'Join the beta list' }}</span><span aria-hidden="true">→</span></button>
+            <p v-if="testerSignupMessage" class="beta-feedback is-success" role="status">{{ testerSignupMessage }}</p>
+            <p v-if="testerSignupError" class="beta-feedback is-error" role="alert">{{ testerSignupError }}</p>
+            <p v-if="message && !testerSignupError" class="beta-feedback is-error" role="alert">{{ message }}</p>
+            <small>Your email is used only for beta invitations. <a href="/android/privacy">Privacy details</a>.</small>
+          </form>
+        </section>
+        <section class="download-details" aria-label="About the Android app">
+          <div class="download-detail-heading"><p class="download-eyebrow">MADE FOR YOUR LIBRARY</p><h2>Your playlists, organized around you.</h2></div>
+          <div class="download-feature-grid">
+            <article><span class="download-feature-index">01</span><h3>Bring your own source</h3><p>Connect a playlist or provider you’re authorized to use. RH IPTV Player is a player and library manager; it doesn’t supply channels or media.</p></article>
+            <article><span class="download-feature-index">02</span><h3>Pick up where you left off</h3><p>Keep favourites, viewing history, and resume progress together across your linked devices and profiles.</p></article>
+            <article><span class="download-feature-index">03</span><h3>Help us get it ready</h3><p>The beta is still being refined. Tester feedback helps us find issues and improve the app before the wider Play Store release.</p></article>
+          </div>
+        </section>
+        <section class="download-options" aria-label="Download options">
+          <div><p class="download-eyebrow">CHOOSE HOW TO TRY IT</p><h2>Play Store beta or direct download</h2><p>Play Store beta access requires an invitation. The GitHub APK is available as an alternative for people who prefer to install it themselves.</p></div>
+          <div class="download-option-actions">
+            <a class="download-play-button" href="https://play.google.com/store/apps/details?id=com.rhstream.library" target="_blank" rel="noopener noreferrer"><span>Google Play</span><small>Open RH IPTV Player</small></a>
+            <a class="download-github-button" href="https://github.com/rudyhamame/stream_front/releases/latest/download/RH-IPTV-Library.apk" target="_blank" rel="noopener noreferrer"><span>Download APK from GitHub</span><small>Direct install · Android package</small></a>
+          </div>
+          <p class="download-sideload-note">Installing the APK directly may require allowing installs from your browser or file manager. For automatic updates and the simplest setup, use the Play Store beta.</p>
+        </section>
+      </div>
+      <footer class="download-footer"><span>© RH IPTV Player</span><nav aria-label="Footer"><a href="/android/privacy">Privacy</a><a href="mailto:rudyhamameca@gmail.com">Contact</a></nav></footer>
+    </section>
+    <div v-if="!legalPage && !downloadPage" class="app-content">
     <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
     <section v-if="pairing" class="rh-auth">
       <div class="rh-auth-inner">
@@ -3691,6 +3772,7 @@ onMounted(async () => {
           <a href="https://play.google.com/store/apps/details?id=com.rhstream.library" @click.prevent="showPlatformDevelopment('Android')" aria-label="Android app still in development"><img src="/login/android-play-banner.png" alt="Also on Android — Get it on Google Play"></a>
           <a href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development"><img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store"></a>
         </div>
+        <a class="rh-auth-download-link" href="/download-app">Download App · Android beta information</a>
       </div>
       <p v-if="message" role="status" :class="['xtream-message', `is-${messageType}`]">{{ message }}</p>
     </section>
