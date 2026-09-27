@@ -31,6 +31,7 @@ const legalPage = computed(() => {
   return '';
 });
 const downloadPage = ref(window.location.pathname.replace(/\/+$/, '') === '/download-app');
+watch(downloadPage, active => { document.title = active ? 'Download App · RH IPTV Player' : 'RH IPTV Player'; }, { immediate: true });
 const betaEmailSource = ref(new URLSearchParams(window.location.search).get('source') === 'roku-qr' ? 'roku-qr' : 'download-page');
 const testerEmail = ref('');
 const testerEmailTouched = ref(false);
@@ -3700,7 +3701,7 @@ onMounted(async () => {
       <div class="download-main">
         <section class="download-hero">
           <div class="download-copy">
-            <p class="download-eyebrow"><span></span> ANDROID APP · BETA TESTING</p>
+            <p class="download-eyebrow"><span></span> DOWNLOAD APP · ANDROID BETA TESTING</p>
             <h1 id="download-title">Help shape the next version of <em>RH IPTV Player.</em></h1>
             <p class="download-intro">The Android app is being tested with a small group before its official Google Play release. Join the beta, try it with your own playlists, and tell us what would make it better.</p>
             <div class="download-status"><span class="download-status-dot"></span><div><strong>Currently in Google Play beta</strong><span>Test access is invitation-only while the app is under development.</span></div></div>
@@ -3770,7 +3771,7 @@ onMounted(async () => {
           </p>
         </div>
         <div v-if="!isPairingSignup" class="rh-auth-badges">
-          <a href="https://play.google.com/store/apps/details?id=com.rhstream.library" @click.prevent="showPlatformDevelopment('Android')" aria-label="Android app still in development"><img src="/login/android-play-banner.png" alt="Also on Android — Get it on Google Play"></a>
+          <a href="/download-app" aria-label="Download RH IPTV Player and learn about the Android beta"><img src="/login/android-play-banner.png" alt="RH IPTV Player for Android — beta testing"></a>
           <a href="https://channelstore.roku.com/" @click.prevent="showPlatformDevelopment('Roku')" aria-label="Roku app still in development"><img src="/login/roku-channel-banner.png" alt="Also on Roku Channel Store"></a>
         </div>
         <a class="rh-auth-download-link" href="/download-app">Download App · Android beta information</a>
