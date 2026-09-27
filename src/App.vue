@@ -1136,6 +1136,12 @@ function parseDuration(value) {
 
 function handleWebMetadata(event) {
   const duration = Number(event.target.duration) || 0;
+  if (!webForceHls.value && !webWwpSessionId.value
+      && event.target.videoWidth > 0 && event.target.videoHeight > 0) {
+    // Native metadata proves that Direct container and track headers were
+    // accepted. Rendered-frame readiness is tracked separately below.
+    webDirectTestResult.value = "Passed";
+  }
   // HLS movie playback is delivered through a deliberately rolling manifest.
   // Safari reports that short window as media duration, so it must never be
   // used as the movie's timeline length. A native MP4 element, by contrast,
@@ -1548,6 +1554,10 @@ function onWebReady(event) {
     webPlaying.value = true;
   }
   if (["loadeddata", "canplay", "playing"].includes(event?.type)) startWebVideoWedgeWatchdog(event.target);
+  if (!webForceHls.value && !webWwpSessionId.value
+      && ["loadeddata", "canplay", "playing"].includes(event?.type)) {
+    webDirectTestResult.value = "Passed";
+  }
   // Audio can trigger "playing" before the video decoder recovers. Wait for a
   // newly presented frame before hiding the recovery state or revealing video.
   if (webMediaReady.value) {
@@ -1735,7 +1745,6 @@ function unmuteWebPlayback() {
 function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "DIRECT") return "DIRECT";
   if (strategy === "HLS_REMUX") return "HLS REMUX";
-  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
   if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
   void videoMode;
   return "";
