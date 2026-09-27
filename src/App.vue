@@ -206,7 +206,6 @@ let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
 let webStartupGapAligned = false;
-let webDirectAcceptanceTimer = null;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
@@ -1486,15 +1485,9 @@ function webAbsolutePosition() {
 let webHlsStrategy = "";
 function resetWebHlsLadder() { webHlsStrategy = ""; }
 
-function clearWebDirectAcceptanceTimer() {
-  clearTimeout(webDirectAcceptanceTimer);
-  webDirectAcceptanceTimer = null;
-}
-
 function switchRejectedDirectToRemux(reason) {
   if (!webNowPlaying.value || webForceHls.value || webWwpSessionId.value
       || !webCompatibility.value?.remuxCompatible || webCompatibility.value?.remuxEnabled === false) return false;
-  clearWebDirectAcceptanceTimer();
   webDirectTestResult.value = "Rejected";
   webHlsTestResult.value = "Preparing";
   const target = webAbsolutePosition();
@@ -1601,7 +1594,6 @@ function startWebVideoWedgeWatchdog(video) {
     if (!webMediaReady.value && video.videoWidth > 0 && video.videoHeight > 0) {
       if (webForceHls.value) webHlsTestResult.value = "Passed";
       else webDirectTestResult.value = "Passed";
-      clearWebDirectAcceptanceTimer();
       video.style.opacity = "1";
       webMediaReady.value = true;
       webBuffering.value = false;
@@ -1641,6 +1633,9 @@ function startWebVideoWedgeWatchdog(video) {
       monitor.lastTimelineAt = timestamp;
     }
     if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
+    // Direct compatibility is established by a frame or a native media error,
+    // never by an elapsed-time watchdog. Keep observing for its first frame.
+    if (!webForceHls.value && !webWwpSessionId.value) return;
     if (monitor.recoveryStage === 0 && webHls) {
       monitor.recoveryStage = 1;
       monitor.lastFrameAt = timestamp;
@@ -1656,7 +1651,6 @@ function startWebVideoWedgeWatchdog(video) {
 }
 
 function onWebFirstFrame() {
-  clearWebDirectAcceptanceTimer();
   if (webForceHls.value) webHlsTestResult.value = "Passed";
   else webDirectTestResult.value = "Passed";
   webMediaReady.value = true;
@@ -1767,7 +1761,6 @@ async function configureMoviePlayback(startSeconds = 0) {
     webHls = null;
   }
   clearWebRecoveryTimer();
-  clearWebDirectAcceptanceTimer();
   clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
@@ -1829,16 +1822,8 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else webPlayerError.value = "This browser cannot play the provider HLS stream directly.";
       } else {
         video.src = source;
-        clearWebDirectAcceptanceTimer();
-        const sessionId = webPlaybackSessionId;
-        // Direct is accepted only after the browser presents a frame. A source
-        // that downloads bytes but cannot start is eligible for copy-only HLS;
-        // network errors continue through the Direct reconnect path instead.
-        webDirectAcceptanceTimer = setTimeout(() => {
-          webDirectAcceptanceTimer = null;
-          if (sessionId !== webPlaybackSessionId || webMediaReady.value || webForceHls.value) return;
-          switchRejectedDirectToRemux("Native Direct playback did not present a frame; trying stream-copy HLS.");
-        }, 8_000);
+        // Only a native media error can reject Direct. Slow startup remains
+        // pending until the browser presents a decoded frame or reports error.
         await startWebPlayback(video);
       }
     } else {
@@ -2310,7 +2295,6 @@ async function closeWebPlayer() {
   stopWwpSync();
   clearWebControlsTimer();
   clearWebRecoveryTimer();
-  clearWebDirectAcceptanceTimer();
   clearTimeout(webStallTimer);
   webPlaybackSessionId += 1;
   webPlaybackToken += 1;
