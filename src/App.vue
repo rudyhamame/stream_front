@@ -18,7 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
-import { browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
+import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -199,6 +199,7 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
+let webDirectProxyStartupTimer = null;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
@@ -1040,7 +1041,9 @@ async function decideWebPlayback(item) {
   await browserCodecSupportFromMediaCapabilities(capabilities, decision.media || {});
   if (sessionId !== webPlaybackSessionId) return null;
   const sourceProtocol = decision.sourceProtocol || (decision.providerURL ? new URL(decision.providerURL).protocol : '');
-  const compatibility = decideBrowserTransport(decision.media || {}, capabilities, sourceProtocol);
+  const compatibility = applyServerPlaybackPolicy(
+    decideBrowserTransport(decision.media || {}, capabilities, sourceProtocol), decision,
+  );
   const transport = {
     ...compatibility,
     sourceProtocol,
@@ -1341,8 +1344,15 @@ function onWebWaiting() {
     const video = webVideo.value;
     if (!webNowPlaying.value || !video || video.readyState >= 3) return;
     if (!webForceHls.value && !webWwpSessionId.value) {
-      // A stalled Direct timeline is not proof of container incompatibility.
-      // The element error path classifies terminal media errors separately.
+      // A proxy can return a valid 206 and still leave the browser unable to
+      // initialize a Matroska timeline (for example, when its index is not
+      // available near the beginning). After a sustained startup stall, try
+      // the codec-copy HLS path once; ordinary HTTPS Direct stalls retain the
+      // existing reconnect behavior and transport errors never imply codecs.
+      if (webCompatibility.value?.transport === "DIRECT_PROXY" && webCompatibility.value?.remuxCompatible) {
+        fallBackToHlsFromDirect(Math.max(resumeAt, webAbsolutePosition()));
+        return;
+      }
       webBuffering.value = true;
       showWebControls();
     } else scheduleWebReconnect(Math.max(resumeAt, webAbsolutePosition()));
@@ -1431,6 +1441,8 @@ function fallBackToHlsFromDirect(resumeAt) {
   if (!webNowPlaying.value || !webCompatibility.value?.remuxCompatible || webForceHls.value) return;
   const target = webNowPlaying.value?.kind === "channel" ? 0 : Math.max(0, Number(resumeAt) || 0);
   webForceHls.value = true;
+  clearTimeout(webDirectProxyStartupTimer);
+  webDirectProxyStartupTimer = null;
   // HLS is a transport transition, not a final strategy badge.
   webEncodeStrategy.value = "";
   webPendingEncodeStrategy.value = "";
@@ -1455,9 +1467,6 @@ function handleWebVideoError() {
       scheduleWebReconnect(webAbsolutePosition());
     } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible, webCompatibility.value?.transport)) {
       fallBackToHlsFromDirect(webAbsolutePosition());
-    } else if (mediaErrorCode === 4 && webCompatibility.value?.transport === "DIRECT_PROXY") {
-      webPlayerError.value = "The RH HTTPS proxy response was not accepted. Check the proxy MIME type and upstream routing.";
-      webBuffering.value = false;
     } else {
       webPlayerError.value = `Unsupported media. ${webCompatibility.value?.reason || "Direct playback failed and remux cannot solve the codec incompatibility."}`;
       webBuffering.value = false;
@@ -1581,6 +1590,8 @@ function startWebVideoWedgeWatchdog(video) {
 }
 
 function onWebFirstFrame() {
+  clearTimeout(webDirectProxyStartupTimer);
+  webDirectProxyStartupTimer = null;
   webMediaReady.value = true;
   if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   onWebReady();
@@ -1739,6 +1750,19 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else fallBackToHlsFromDirect(0);
       } else {
         video.src = source;
+        if (webCompatibility.value?.transport === "DIRECT_PROXY" && webCompatibility.value?.remuxCompatible) {
+          const sessionId = webPlaybackSessionId;
+          clearTimeout(webDirectProxyStartupTimer);
+          // Some browsers advertise Matroska MIME support but fail to produce
+          // a first frame from a large provider file. Do not leave the player
+          // black forever: after this bounded startup window, switch to the
+          // existing copy-only HLS path at the last known position.
+          webDirectProxyStartupTimer = setTimeout(() => {
+            webDirectProxyStartupTimer = null;
+            if (sessionId !== webPlaybackSessionId || webMediaReady.value || webForceHls.value) return;
+            fallBackToHlsFromDirect(webAbsolutePosition());
+          }, 20_000);
+        }
         await startWebPlayback(video);
       }
     } else {

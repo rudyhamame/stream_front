@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { decideBrowserTransport, detectBrowserCapabilities, normalizeMediaMetadata, shouldFallbackFromDirect } from '../src/browser-transport.js';
+import { applyServerPlaybackPolicy, decideBrowserTransport, detectBrowserCapabilities, normalizeMediaMetadata, shouldFallbackFromDirect } from '../src/browser-transport.js';
 
 const supported = { browser: { name: 'chrome', version: 145 }, containers: { mp4: true, webm: true }, mkvVerified: true,
   videoCodecs: { h264: true, hevc: true, vp8: true, vp9: true, av1: true }, audioCodecs: { aac: true, mp3: true, opus: true, vorbis: true, ac3: false, eac3: false, dts: false } };
@@ -15,6 +15,16 @@ test('delivery protocol changes only the delivery method for compatible media', 
   assert.equal(decideBrowserTransport(source('mp4'), supported, 'https:').transport, 'DIRECT_PROVIDER');
   assert.equal(decideBrowserTransport(source('mp4'), supported, 'http:').transport, 'DIRECT_PROXY');
   assert.equal(decideBrowserTransport(source('matroska'), supported, 'http:').transport, 'DIRECT_PROXY');
+});
+
+test('server strategy policy can disable local Direct and select Browser HLS remux', () => {
+  const local = decideBrowserTransport(source(), supported, 'http:');
+  assert.equal(local.transport, 'DIRECT_PROXY');
+  const policy = applyServerPlaybackPolicy(local, { directCompatible: false, playbackStrategy: 'HLS_REMUX', reason: 'Direct disabled in RH control panel.' });
+  assert.equal(policy.transport, 'HLS_REMUX');
+  assert.equal(policy.directCompatible, false);
+  assert.equal(policy.playable, true);
+  assert.equal(applyServerPlaybackPolicy(local, { directCompatible: true, playbackStrategy: 'DIRECT' }).transport, 'DIRECT_PROXY');
 });
 
 test('HTTP does not turn incompatible containers or codecs into transport failures', () => {
@@ -63,12 +73,13 @@ test('normalizes ffprobe Matroska and codec aliases', () => {
   assert.ok(media.video.frameRate > 23.9);
 });
 
-test('Chrome below 145 does not receive the MKV rule', () => {
-  const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/144.0.0.0 Safari/537.36', brands: [{ brand: 'Google Chrome', version: '144' }], mediaElement: { canPlayType: () => 'probably' } });
+test('Chrome version does not override a negative Matroska capability result', () => {
+  const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/152.0.0.0 Safari/537.36', brands: [{ brand: 'Google Chrome', version: '152' }], mediaElement: { canPlayType: mime => mime.startsWith('video/x-matroska') ? '' : 'probably' } });
   assert.equal(caps.mkvVerified, false);
+  assert.equal(decideBrowserTransport(source(), caps, 'http:').transport, 'HLS_REMUX');
 });
 
-test('Chrome 145 client hints qualify for MKV evaluation', () => {
+test('positive Matroska support is honored when the browser advertises it', () => {
   const caps = detectBrowserCapabilities({ userAgent: 'Mozilla/5.0 Chrome/145.0.0.0 Safari/537.36', brands: [{ brand: 'Google Chrome', version: '145' }], mediaElement: { canPlayType: () => 'probably' } });
   assert.equal(caps.mkvVerified, true);
   assert.equal(decideBrowserTransport(source(), caps).transport, 'DIRECT');
@@ -78,7 +89,7 @@ test('Direct network and decode failures do not start remux', () => {
   assert.equal(shouldFallbackFromDirect(2, true), false);
   assert.equal(shouldFallbackFromDirect(3, true), false);
   assert.equal(shouldFallbackFromDirect(4, true), true);
-  assert.equal(shouldFallbackFromDirect(4, true, 'DIRECT_PROXY'), false);
+  assert.equal(shouldFallbackFromDirect(4, true, 'DIRECT_PROXY'), true);
   assert.equal(shouldFallbackFromDirect(4, false), false);
 });
 

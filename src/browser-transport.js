@@ -74,10 +74,10 @@ export function detectBrowserCapabilities(options = {}) {
     dts: false,
   };
   const containerElement = mediaElement;
-  const chromeMkv = browser.name === 'chrome' && browser.version >= 145;
-  const edgeMkv = browser.name === 'edge'; // Verified RH target per Jellyfin browser compatibility table.
   const mkvFeature = canPlay(containerElement, 'video/x-matroska; codecs="avc1.42E01E, mp4a.40.2"');
-  const mkvVerified = chromeMkv || edgeMkv || (browser.name === 'chromium' && mkvFeature);
+  // Browser version alone is not proof that this build/platform can demux MKV.
+  // Require the actual media element to advertise the probed Matroska codecs.
+  const mkvVerified = mkvFeature;
   const mseHls = Boolean(globalThis.MediaSource?.isTypeSupported?.('video/mp4; codecs="avc1.42E01E, mp4a.40.2"'));
   return {
     browser, containers: { mp4: canPlay(mediaElement, 'video/mp4'), webm: canPlay(mediaElement, 'video/webm'), mkv: mkvVerified, hls: canPlay(mediaElement, 'application/vnd.apple.mpegurl') || mseHls },
@@ -144,13 +144,22 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
   return { transport, directCompatible: direct, containerCompatible: containerDirect, videoCompatible: videoSupported, audioCompatible: audioSupported, remuxCompatible, playable: transport !== 'UNSUPPORTED', reason, media, browser };
 }
 
+export function applyServerPlaybackPolicy(decision, serverDecision) {
+  // The RH strategy checklist is the per-device authority. A local capability
+  // probe may refine compatibility, but it must never re-enable Direct after
+  // the server has disabled it or selected the compatible HLS remux path.
+  if (serverDecision?.directCompatible !== false) return decision;
+  if (serverDecision?.playbackStrategy === 'HLS_REMUX' && decision.remuxCompatible) {
+    return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
+      playable: true, reason: serverDecision.reason || 'HLS REMUX selected by RH Browser strategy policy.' };
+  }
+  return decision;
+}
+
 export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible, transport = 'DIRECT_PROVIDER') {
   // MEDIA_ERR_SRC_NOT_SUPPORTED is the only HTMLMediaElement error category
-  // where a container/protocol remux may help. Network and decode errors do
-  // not become fixable by stream-copying the same essence. The proxy's HTTP
-  // response MIME/routing can itself cause code 4, so preserve that transport
-  // failure instead of changing the media strategy.
-  return Number(mediaErrorCode) === 4 && remuxCompatible === true && transport !== 'DIRECT_PROXY';
+  // where a container remux may help. Network errors remain transport retries.
+  return Number(mediaErrorCode) === 4 && remuxCompatible === true;
 }
 
 export async function browserCodecSupportFromMediaCapabilities(capabilities, media) {
