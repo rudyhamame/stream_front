@@ -195,6 +195,7 @@ const webMini = ref(false);
 const webMiniPos = ref(null);
 let miniDrag = null, webMiniJustDragged = false;
 let webHls = null;
+let webHlsAwaitingMediaAttach = false;
 let liveTvHls = null;
 let liveTvRequestId = 0;
 let playlistPreviewHls = null;
@@ -1438,6 +1439,7 @@ function clearWebRecoveryTimer() {
 
 function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   if (!webNowPlaying.value) return;
+  console.warn(`[BrowserReconnect] strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} mediaError=${webVideo.value?.error?.code || 0} reason=${new Error().stack?.split('\n').slice(2, 5).join(' | ')}`);
   const sessionId = webPlaybackSessionId;
   webPlaybackRetryCount.value += 1;
   webBuffering.value = true;
@@ -1494,6 +1496,11 @@ function switchRejectedDirectToRemux(reason) {
 
 function handleWebVideoError() {
   if (!webNowPlaying.value) return;
+  console.warn(`[BrowserMediaError] code=${webVideo.value?.error?.code || 0} strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} src=${webVideo.value?.currentSrc?.slice(0, 24) || 'none'}`);
+  // The native Direct decoder can report its rejection after hls.js has
+  // replaced its URL with a MediaSource. That stale event must not tear down
+  // the new HLS attachment before sourceopen. hls.js owns startup failures.
+  if (webForceHls.value && webHlsAwaitingMediaAttach) return;
   if (!webForceHls.value && !webWwpSessionId.value) {
     const mediaErrorCode = Number(webVideo.value?.error?.code) || 0;
     // A network failure is transient: retry this Direct source and position
@@ -1720,6 +1727,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   const source = movieStreamUrl(startSeconds);
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
+  webHlsAwaitingMediaAttach = false;
   webStartupGapAligned = false;
   if (!video || !source) {
     webPlayerError.value = "This movie does not have a playable stream.";
@@ -1745,7 +1753,10 @@ async function configureMoviePlayback(startSeconds = 0) {
   // Let the browser itself start playback as soon as data is ready, unless the
   // viewer paused on purpose; startWebPlayback below is only the backstop.
   video.autoplay = !wwpUserPaused;
-  video.load();
+  // Do not load the element while it has no src. Chrome reports a transient
+  // NO_SOURCE error in that gap, which the recovery handler can mistake for
+  // an HLS failure and destroy the MediaSource before it opens. Assigning the
+  // next Direct URL or attaching hls.js starts the new load itself.
   try {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
@@ -1801,6 +1812,7 @@ async function configureMoviePlayback(startSeconds = 0) {
       }
     } else {
       setWebStartupProgress(40, "Preparing HLS segments");
+      webHlsAwaitingMediaAttach = true;
       // The placeholder already covers the frame. Keep the media element
       // visible to Chrome while its MediaSource opens.
       video.style.opacity = "1";
@@ -1888,8 +1900,14 @@ async function configureMoviePlayback(startSeconds = 0) {
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
           if (playbackToken === webPlaybackToken) refreshWebBuffered();
         });
+        webHls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          if (playbackToken === webPlaybackToken) webHlsAwaitingMediaAttach = false;
+        });
         webHls.loadSource(source);
         webHls.attachMedia(video);
+        // Clear the rejected Direct decoder only once the replacement blob
+        // URL exists. This starts MediaSource.sourceopen in Chrome.
+        video.load();
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
