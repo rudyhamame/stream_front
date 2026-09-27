@@ -121,6 +121,7 @@ function handleNavigationKeydown(event) {
   focusMainMenu();
 }
 const webVideo = ref(null);
+const webVideoElementKey = ref(0);
 const liveTvVideo = ref(null);
 const liveTvSelected = ref(null);
 const liveTvLoading = ref(false);
@@ -966,7 +967,7 @@ const webTransportDetails = computed(() => {
     `Video: ${media.video.codec || "unknown"} ${media.video.profile || ""}${level} ${media.video.width || "?"}×${media.video.height || "?"} ${media.video.frameRate || "?"} fps ${media.video.bitDepth || "?"}-bit ${media.video.pixelFormat || ""}`.trim(),
     `Audio: ${media.audio.codec || "none"} ${media.audio.profile || ""} ${media.audio.channels || "?"} channels ${media.audio.sampleRate || "?"} Hz`.trim(),
     `Browser: ${browser.name} ${browser.version || "unknown"}`,
-    `Direct container: ${decision.containerCompatible ? "yes" : "no"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
+    `Direct container: ${webDirectTestResult.value === "Passed" ? "accepted" : webDirectTestResult.value === "Rejected" ? "rejected" : "unverified"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
     `Remux compatible: ${decision.remuxCompatible ? "yes" : "no"}`,
     `Decision: ${decision.reason}`,
   ].join("\n");
@@ -977,10 +978,14 @@ const webCompatibilityBadges = computed(() => {
   const media = decision.media || {};
   const state = (available, compatible) => !available ? "unknown" : compatible ? "compatible" : "incompatible";
   const containerKnown = Boolean(media.container && media.container !== "unknown");
+  const directContainerStatus = webDirectTestResult.value === "Passed" ? "compatible"
+    : webDirectTestResult.value === "Rejected" ? "incompatible"
+      : media.container === "matroska" ? "unknown"
+        : state(containerKnown, decision.containerCompatible);
   const videoKnown = Boolean(media.video?.codec);
   const audioKnown = Boolean(media.audio?.codec);
   return [
-    { key: "container", label: "Container", status: state(containerKnown, decision.containerCompatible), value: media.container || "unknown" },
+    { key: "container", label: "Container", status: directContainerStatus, value: media.container || "unknown" },
     { key: "video", label: "Video codec", status: state(videoKnown, decision.videoCompatible), value: media.video?.codec || "unknown" },
     { key: "audio", label: "Audio codec", status: audioKnown ? state(true, decision.audioCompatible) : "absent", value: media.audio?.codec || "no audio track" },
   ];
@@ -994,7 +999,7 @@ const webCompatibilityChecks = computed(() => {
   return [
     { label: "Fetch item URL from provider", result: "Passed", detail: `${decision.sourceProtocol || "unknown"} source resolved` },
     { label: "Probe media container", result: result(Boolean(media.container && media.container !== "unknown")), detail: media.container || "unknown" },
-    { label: "Check container compatibility", result: result(Boolean(decision.containerCompatible)), detail: decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Check container compatibility", result: webDirectTestResult.value === "Passed" ? "Passed" : webDirectTestResult.value === "Rejected" ? "Failed" : media.container === "matroska" ? "Unverified" : result(Boolean(decision.containerCompatible)), detail: media.container === "matroska" ? "Matroska support requires an actual decoded frame" : decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
     { label: "Probe video codec", result: result(Boolean(media.video?.codec)), detail: [media.video?.codec, media.video?.profile, media.video?.level && `level ${media.video.level}`].filter(Boolean).join(" · ") || "unknown" },
     { label: "Check video codec compatibility", result: result(Boolean(decision.videoCompatible)), detail: decision.videoCompatible ? "Browser reports support" : "Browser reports no native support" },
     { label: "Probe audio codec", result: media.audio?.codec ? "Passed" : "No audio", detail: media.audio?.codec || "No audio track" },
@@ -1381,6 +1386,11 @@ function onWebWaiting() {
     }
   }, 300);
   clearTimeout(webStallTimer);
+  // Initial Direct rejection and HLS segment preparation are startup states.
+  // A runtime stall timer here races the first HLS manifest (which can take
+  // longer than 20 seconds) and repeatedly destroys MediaSource before it
+  // ever receives its first fragment.
+  if (!webMediaReady.value) return;
   const resumeAt = webAbsolutePosition();
   const sessionId = webPlaybackSessionId;
   webStallTimer = setTimeout(() => {
@@ -1444,7 +1454,7 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   webPlaybackRetryCount.value += 1;
   webBuffering.value = true;
   webPlayerError.value = "";
-  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Buffering");
+  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Trying Direct playback");
   showWebControls();
   clearWebRecoveryTimer();
   clearTimeout(webStallTimer);
@@ -1722,6 +1732,10 @@ function describeEncodeStrategy(strategy, videoMode) {
   return "";
 }
 async function configureMoviePlayback(startSeconds = 0) {
+  // A rejected native Direct decoder can retain a media error even after its
+  // src changes to a MediaSource blob. A fresh element gives HLS its own
+  // decoder and lets sourceopen fire independently of the Direct attempt.
+  if (webForceHls.value) webVideoElementKey.value += 1;
   await nextTick();
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
@@ -1741,6 +1755,8 @@ async function configureMoviePlayback(startSeconds = 0) {
   clearWebDirectAcceptanceTimer();
   clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
+  clearTimeout(webStallTimer);
+  webStallTimer = null;
   video.removeAttribute("src");
   // Drop any object source and force a full element reset so the previous
   // decoder never carries over (the cause of a black frame with live audio
@@ -1761,7 +1777,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webPendingEncodeStrategy.value = "DIRECT";
-      setWebStartupProgress(40, "Buffering");
+      setWebStartupProgress(40, "Trying Direct playback");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
       const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
@@ -1905,9 +1921,6 @@ async function configureMoviePlayback(startSeconds = 0) {
         });
         webHls.loadSource(source);
         webHls.attachMedia(video);
-        // Clear the rejected Direct decoder only once the replacement blob
-        // URL exists. This starts MediaSource.sourceopen in Chrome.
-        video.load();
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
@@ -1949,7 +1962,7 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
-  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Buffering");
+  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Trying Direct playback");
   await new Promise(resolve => setTimeout(resolve, 0));
   webControlsVisible.value = true;
   webPlayerError.value = "";
@@ -3963,7 +3976,7 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video :key="webVideoElementKey" ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>
