@@ -145,11 +145,11 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
 }
 
 export function applyServerPlaybackPolicy(decision, serverDecision) {
-  // The RH strategy checklist is the per-device authority. A local capability
-  // probe may refine compatibility, but it must never re-enable Direct after
-  // the server has disabled it or selected the compatible HLS remux path.
-  if (serverDecision?.directCompatible !== false) return decision;
-  if (serverDecision?.playbackStrategy === 'HLS_REMUX' && decision.remuxCompatible) {
+  // The RH checkbox gates whether Direct may be used. Compatibility belongs
+  // to the actual browser: the server's generic profile intentionally cannot
+  // certify container support such as newer Chrome's Matroska support.
+  if (serverDecision?.directEnabled !== false) return decision;
+  if (decision.remuxCompatible) {
     return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
       playable: true, reason: serverDecision.reason || 'HLS REMUX selected by RH Browser strategy policy.' };
   }

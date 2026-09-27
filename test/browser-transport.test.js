@@ -17,14 +17,14 @@ test('delivery protocol changes only the delivery method for compatible media', 
   assert.equal(decideBrowserTransport(source('matroska'), supported, 'http:').transport, 'DIRECT_PROXY');
 });
 
-test('server strategy policy can disable local Direct and select Browser HLS remux', () => {
+test('server Direct checkbox gates Direct while browser compatibility decides transport', () => {
   const local = decideBrowserTransport(source(), supported, 'http:');
   assert.equal(local.transport, 'DIRECT_PROXY');
-  const policy = applyServerPlaybackPolicy(local, { directCompatible: false, playbackStrategy: 'HLS_REMUX', reason: 'Direct disabled in RH control panel.' });
+  const policy = applyServerPlaybackPolicy(local, { directEnabled: false, directCompatible: false, playbackStrategy: 'HLS_REMUX', reason: 'Direct disabled in RH control panel.' });
   assert.equal(policy.transport, 'HLS_REMUX');
   assert.equal(policy.directCompatible, false);
   assert.equal(policy.playable, true);
-  assert.equal(applyServerPlaybackPolicy(local, { directCompatible: true, playbackStrategy: 'DIRECT' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, directCompatible: false, playbackStrategy: 'HLS_REMUX' }).transport, 'DIRECT_PROXY');
 });
 
 test('HTTP does not turn incompatible containers or codecs into transport failures', () => {
