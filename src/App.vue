@@ -966,7 +966,8 @@ const webTransportDetails = computed(() => {
     `Video: ${media.video.codec || "unknown"} ${media.video.profile || ""}${level} ${media.video.width || "?"}×${media.video.height || "?"} ${media.video.frameRate || "?"} fps ${media.video.bitDepth || "?"}-bit ${media.video.pixelFormat || ""}`.trim(),
     `Audio: ${media.audio.codec || "none"} ${media.audio.profile || ""} ${media.audio.channels || "?"} channels ${media.audio.sampleRate || "?"} Hz`.trim(),
     `Browser: ${browser.name} ${browser.version || "unknown"}`,
-    `Direct container: ${webDirectTestResult.value === "Passed" ? "accepted" : webDirectTestResult.value === "Rejected" ? "rejected" : "unverified"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
+    `Browser-reported support — container: ${decision.containerCompatible ? "yes" : "no"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
+    `Actual Direct playback: ${webDirectTestResult.value === "Passed" ? "accepted" : webDirectTestResult.value === "Rejected" ? "rejected" : "pending browser result"}`,
     `Remux compatible: ${decision.remuxCompatible ? "yes" : "no"}`,
     `Decision: ${decision.reason}`,
   ].join("\n");
@@ -977,10 +978,7 @@ const webCompatibilityBadges = computed(() => {
   const media = decision.media || {};
   const state = (available, compatible) => !available ? "unknown" : compatible ? "compatible" : "incompatible";
   const containerKnown = Boolean(media.container && media.container !== "unknown");
-  const directContainerStatus = webDirectTestResult.value === "Passed" ? "compatible"
-    : webDirectTestResult.value === "Rejected" ? "incompatible"
-      : media.container === "matroska" ? "checking"
-        : state(containerKnown, decision.containerCompatible);
+  const directContainerStatus = state(containerKnown, decision.containerCompatible);
   const videoKnown = Boolean(media.video?.codec);
   const audioKnown = Boolean(media.audio?.codec);
   return [
@@ -998,13 +996,13 @@ const webCompatibilityChecks = computed(() => {
   return [
     { label: "Fetch item URL from provider", result: "Passed", detail: `${decision.sourceProtocol || "unknown"} source resolved` },
     { label: "Probe media container", result: result(Boolean(media.container && media.container !== "unknown")), detail: media.container || "unknown" },
-    { label: "Check container compatibility", result: webDirectTestResult.value === "Passed" ? "Passed" : webDirectTestResult.value === "Rejected" ? "Failed" : media.container === "matroska" ? "Checking" : result(Boolean(decision.containerCompatible)), detail: media.container === "matroska" ? "Matroska container was identified; waiting for an actual decoded Direct frame" : decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Check container compatibility", result: result(Boolean(decision.containerCompatible)), detail: decision.containerCompatible ? "Browser reports possible native support; actual playback is checked separately" : "Browser reports no native support" },
     { label: "Probe video codec", result: result(Boolean(media.video?.codec)), detail: [media.video?.codec, media.video?.profile, media.video?.level && `level ${media.video.level}`].filter(Boolean).join(" · ") || "unknown" },
     { label: "Check video codec compatibility", result: result(Boolean(decision.videoCompatible)), detail: decision.videoCompatible ? "Browser reports support" : "Browser reports no native support" },
     { label: "Probe audio codec", result: media.audio?.codec ? "Passed" : "No audio", detail: media.audio?.codec || "No audio track" },
     { label: "Check audio codec compatibility", result: media.audio?.codec ? result(Boolean(decision.audioCompatible)) : "Passed", detail: media.audio?.codec ? (decision.audioCompatible ? "Browser reports support" : "Browser reports no native support") : "No audio decoding required" },
     { label: "Direct strategy enabled", result: result(decision.directEnabled !== false), detail: decision.directEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
-    { label: "Direct browser acceptance test", result: webDirectTestResult.value, detail: directSelected ? "Testing the original media bytes" : "The browser did not present a Direct video frame" },
+    { label: "Direct browser acceptance test", result: webDirectTestResult.value, detail: directSelected ? "Waiting for a decoded frame or native media error; the browser gives no final answer while silent" : "The browser did not present a Direct video frame" },
     { label: "Copy-only HLS eligibility", result: result(Boolean(decision.remuxCompatible)), detail: decision.remuxCompatible ? "No video or audio transcode required" : "A codec transcode would be required" },
     { label: "HLS Remux strategy enabled", result: result(decision.remuxEnabled !== false), detail: decision.remuxEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
     { label: "HLS Remux playback test", result: webHlsTestResult.value, detail: webForceHls.value ? "Testing the copy-only HLS stream" : "Used only if Direct is rejected" },
