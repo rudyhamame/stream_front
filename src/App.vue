@@ -903,9 +903,14 @@ const webPlayerSrc = computed(() => {
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
   const providerURL = typeof item.providerURL === 'string' ? item.providerURL : typeof item.providerUrl === 'string' ? item.providerUrl : '';
-  const raw = isDirectProxy && webDirectProxyUrl.value
-    ? `${browserStreamer}${webDirectProxyUrl.value}`
-    : shouldUseDirect ? (/^https:\/\//i.test(providerURL) ? providerURL : '') : (generated || '');
+  // Once Direct playback fails, a compatible source must switch to the RH HLS
+  // endpoint. Keeping the opaque Direct proxy URL here made hls.js parse the
+  // full MKV response as a playlist, causing the proxy MIME/routing error.
+  const raw = shouldUseDirect
+    ? isDirectProxy && webDirectProxyUrl.value
+      ? `${browserStreamer}${webDirectProxyUrl.value}`
+      : (/^https:\/\//i.test(providerURL) ? providerURL : '')
+    : (generated || '');
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
   if (isDirectProxy) target.searchParams.set("playbackClientId", browserPlaybackClientId);
@@ -918,7 +923,7 @@ const webPlayerSrc = computed(() => {
   // under the wrong account and 404. The host authenticates with its own
   // long-lived device token; its 5-minute stream ticket is not the media key.
   const onStreamer = target.origin === new URL(browserStreamer).origin;
-  if (isDirectProxy) {
+  if (shouldUseDirect && isDirectProxy) {
     // The high entropy, short-lived URL is the authorization capability.
     // Provider URLs and account tokens are not included in the media request.
   } else if (webIsWwpGuest.value) {
