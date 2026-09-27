@@ -707,7 +707,8 @@ function browserDeviceLabel() {
 }
 async function sendBrowserHeartbeat() {
   if (!deviceToken.value) return;
-  try { await request("/api/account/heartbeat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: browserDeviceId(), streaming: webPlaying.value, label: browserDeviceLabel() }) }); }
+  const item=webPlaying.value?webNowPlaying.value:null;
+  try { await request("/api/account/heartbeat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ deviceId: browserDeviceId(), streaming: webPlaying.value, label: browserDeviceLabel(), sourceId:item?.sourceId||"", playbackKind:item?.kind||"", itemId:item?.id||"", title:item?.title||"", durationSeconds:Math.max(0,Math.round(webDuration.value||0)), positionSeconds:Math.max(0,Math.round(webCurrentTime.value||0)) }) }); }
   catch { /* Best effort — a missed heartbeat just leaves this tab looking briefly offline. */ }
 }
 const playlistHealthBySource = ref({});
@@ -2094,6 +2095,28 @@ watch([safariPage, safariLibraryTab], ([pageName, tab]) => {
 
 watch([kind, sourceId], () => stopPlaylistPreview({ clearSelection: true }));
 
+function browserPlaybackReleaseUrl(item, includeMedia = false) {
+  const params = new URLSearchParams({ client: "browser", playbackClientId: browserPlaybackClientId });
+  if (deviceToken.value) params.set("deviceToken", deviceToken.value);
+  if (includeMedia && item) {
+    params.set("sourceId", item.sourceId || sourceId.value || "");
+    params.set("kind", item.kind || "movie");
+    params.set("id", item.id || "");
+    params.set("extension", item.extension || "");
+  }
+  return `${browserStreamer}/api/xtream/playback/release?${params}`;
+}
+
+function releaseBrowserPlaybackOnPageHide() {
+  const item = webNowPlaying.value;
+  if (!item || webWwpSessionId.value) return;
+  // Query metadata keeps this a simple sendBeacon request, which browsers
+  // allow to finish when the tab or window itself is closed.
+  try { navigator.sendBeacon(browserPlaybackReleaseUrl(item, true)); } catch { /* tab is already closing */ }
+}
+window.addEventListener("pagehide", releaseBrowserPlaybackOnPageHide);
+onBeforeUnmount(() => window.removeEventListener("pagehide", releaseBrowserPlaybackOnPageHide));
+
 async function closeWebPlayer() {
   // Watch with Partner: tell the other participant to close too (unless it was
   // them closing that brought us here). sendBeacon so it survives a tab close.
@@ -2103,6 +2126,14 @@ async function closeWebPlayer() {
     if (deviceToken.value) q.set("deviceToken", deviceToken.value);
     const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
     try { navigator.sendBeacon(endUrl); } catch { fetch(endUrl, { method: "POST", keepalive: true }).catch(() => {}); }
+  } else if (webNowPlaying.value) {
+    // Stop this tab's HLS generation immediately. The idle sweep is only a
+    // safety net for lost clients; closing the player should release its job
+    // and provider lease now.
+    const item = webNowPlaying.value;
+    const releaseUrl = browserPlaybackReleaseUrl(item);
+    const body = JSON.stringify({ sourceId: item.sourceId || sourceId.value, kind: item.kind || "movie", id: item.id, extension: item.extension || "" });
+    fetch(releaseUrl, { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
   }
   wwpRemoteEnded = false;
   stopWwpSync();
@@ -2130,6 +2161,7 @@ async function closeWebPlayer() {
   webVideo.value?.load();
   webNowPlaying.value = null;
   webPlaying.value = false;
+  void sendBrowserHeartbeat();
   webPlayerError.value = "";
   webFullscreen.value = false;
   webMini.value = false;
