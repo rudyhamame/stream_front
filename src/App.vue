@@ -205,6 +205,7 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
+let webDirectStartupTimer = null;
 let webStartupGapAligned = false;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
@@ -1512,6 +1513,8 @@ function switchRejectedDirectToRemux(reason) {
 function handleWebVideoError(event) {
   if (event?.target !== webVideo.value) return;
   if (!webNowPlaying.value) return;
+  clearTimeout(webDirectStartupTimer);
+  webDirectStartupTimer = null;
   console.warn(`[BrowserMediaError] code=${webVideo.value?.error?.code || 0} strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} src=${webVideo.value?.currentSrc?.slice(0, 24) || 'none'}`);
   // The native Direct decoder can report its rejection after hls.js has
   // replaced its URL with a MediaSource. That stale event must not tear down
@@ -1544,6 +1547,8 @@ function onWebReady(event) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
+  clearTimeout(webDirectStartupTimer);
+  webDirectStartupTimer = null;
   if (event?.type === "playing") {
     webPlaying.value = true;
   }
@@ -1773,6 +1778,8 @@ async function configureMoviePlayback(startSeconds = 0) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
+  clearTimeout(webDirectStartupTimer);
+  webDirectStartupTimer = null;
   video.removeAttribute("src");
   // Drop any object source and force a full element reset so the previous
   // decoder never carries over (the cause of a black frame with live audio
@@ -1830,8 +1837,19 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else webPlayerError.value = "This browser cannot play the provider HLS stream directly.";
       } else {
         video.src = source;
-        // Only a native media error can reject Direct. Slow startup remains
-        // pending until the browser presents a decoded frame or reports error.
+        // Only a native media error can reject Direct - a stall here must
+        // never mark it "Rejected" or switch to HLS. But a hung connection
+        // can give the browser nothing to react to at all: no data ever
+        // arrives, so there is no "playing" event to arm the wedge watchdog
+        // and no error event either. Without this, the acceptance test can
+        // wait forever with no signal. Retry the same Direct source if
+        // nothing has resolved after a generous startup window.
+        clearTimeout(webDirectStartupTimer);
+        webDirectStartupTimer = setTimeout(() => {
+          webDirectStartupTimer = null;
+          if (playbackToken !== webPlaybackToken || webMediaReady.value) return;
+          scheduleWebReconnect(webAbsolutePosition());
+        }, 15_000);
         await startWebPlayback(video);
       }
     } else {
@@ -2309,6 +2327,8 @@ async function closeWebPlayer() {
   webStallTimer = null;
   clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
+  clearTimeout(webDirectStartupTimer);
+  webDirectStartupTimer = null;
   if (webSeekTimer) {
     clearTimeout(webSeekTimer);
     webSeekTimer = null;
