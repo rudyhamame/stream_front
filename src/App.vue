@@ -1796,6 +1796,13 @@ async function configureMoviePlayback(startSeconds = 0) {
         });
         webHls.on(Hls.Events.ERROR, (_event, data) => {
           if (playbackToken !== webPlaybackToken) return;
+          console.warn("[BrowserHls]", {
+            fatal: Boolean(data.fatal),
+            type: data.type,
+            details: data.details,
+            reason: data.reason || data.error?.message || "",
+            responseCode: data.response?.code || data.response?.status || 0,
+          });
           if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR && webPlaybackRetryCount.value < 2) {
             webPlaybackRetryCount.value += 1;
@@ -1827,10 +1834,21 @@ async function configureMoviePlayback(startSeconds = 0) {
           setWebStartupProgress(70, "Preparing HLS segments");
           startWebPlayback(video);
         });
+        webHls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
+          if (playbackToken === webPlaybackToken) {
+            console.info("[BrowserHls] fragment loading", data.frag?.sn);
+          }
+        });
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
           if (playbackToken === webPlaybackToken) refreshWebBuffered();
         });
-        webHls.loadSource(source);
+        // Attach MSE first, then load the playlist. This keeps hls.js from
+        // parsing a quickly returned manifest before the MediaSource has an
+        // attached media element, which can leave the level loaded without
+        // ever scheduling its first fragment.
+        webHls.on(Hls.Events.MEDIA_ATTACHED, () => {
+          if (playbackToken === webPlaybackToken) webHls?.loadSource(source);
+        });
         webHls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
