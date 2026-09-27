@@ -1478,6 +1478,8 @@ function switchRejectedDirectToRemux(reason) {
   if (!webNowPlaying.value || webForceHls.value || webWwpSessionId.value
       || !webCompatibility.value?.remuxCompatible || webCompatibility.value?.remuxEnabled === false) return false;
   clearWebDirectAcceptanceTimer();
+  webDirectTestResult.value = "Rejected";
+  webHlsTestResult.value = "Preparing";
   const target = webAbsolutePosition();
   webCompatibility.value = { ...webCompatibility.value, transport: "HLS_REMUX", reason };
   webForceHls.value = true;
@@ -1565,6 +1567,8 @@ function startWebVideoWedgeWatchdog(video) {
     monitor.lastFrameAt = Date.now();
     monitor.recoveryStage = 0;
     if (!webMediaReady.value && video.videoWidth > 0 && video.videoHeight > 0) {
+      if (webForceHls.value) webHlsTestResult.value = "Passed";
+      else webDirectTestResult.value = "Passed";
       clearWebDirectAcceptanceTimer();
       video.style.opacity = "1";
       webMediaReady.value = true;
@@ -1621,6 +1625,8 @@ function startWebVideoWedgeWatchdog(video) {
 
 function onWebFirstFrame() {
   clearWebDirectAcceptanceTimer();
+  if (webForceHls.value) webHlsTestResult.value = "Passed";
+  else webDirectTestResult.value = "Passed";
   webMediaReady.value = true;
   if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   onWebReady();
@@ -1886,6 +1892,9 @@ async function configureMoviePlayback(startSeconds = 0) {
 async function playWebMovie(item) {
   const sessionId = ++webPlaybackSessionId;
   webCompatibility.value = null;
+  webPlayerMenuOpen.value = false;
+  webDirectTestResult.value = "Pending";
+  webHlsTestResult.value = "Not attempted";
   webStreamTicket.value = "";
   webDirectProxyToken.value = "";
   webDirectProxyUrl.value = "";
@@ -2266,6 +2275,7 @@ async function closeWebPlayer() {
   webVideo.value?.removeAttribute("src");
   webVideo.value?.load();
   webNowPlaying.value = null;
+  webPlayerMenuOpen.value = false;
   webPlaying.value = false;
   void sendBrowserHeartbeat();
   webPlayerError.value = "";
@@ -3945,13 +3955,22 @@ onMounted(async () => {
                   {{ badge.label }}: {{ badge.status }}
                 </span>
               </div>
-              <details v-if="webCompatibility" class="web-transport-debug">
-                <summary aria-label="Playback compatibility details" title="Playback compatibility details">Info</summary>
-                <pre>{{ webTransportDetails }}</pre>
-              </details>
               <div class="web-partner-control">
                 <button type="button" class="web-pl-btn" :class="{active: webPartnerMenuOpen || webWwpSessionId}" aria-label="Watch with Partner" title="Watch with Partner" @click.stop="webPartnerMenuOpen = !webPartnerMenuOpen"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M20.24 4.76c-2.3-2.29-5.87-2.35-8.24-.19-2.37-2.16-5.93-2.09-8.24.2-2.36 2.37-2.36 6.07 0 8.43l7.53 7.52c.2.19.45.29.71.29s.51-.1.71-.29l7.53-7.52c2.36-2.36 2.36-6.06 0-8.43Zm-1.41 7.02-6.82 6.81-6.82-6.81a3.92 3.92 0 0 1 0-5.6C5.98 5.39 6.99 5 8 5s2.02.39 2.8 1.18l.5.5c.39.39 1.02.39 1.41 0l.5-.5c1.57-1.57 4.04-1.57 5.62 0 1.57 1.58 1.57 4.04 0 5.6"/><path d="M13 8.5h-2V11H8.5v2H11v2.5h2V13h2.5v-2H13z"/></svg></button>
                 <div v-if="webPartnerMenuOpen" class="web-quality-menu web-partner-menu"><p v-if="partnerEmail">Invite <strong>{{ partnerEmail }}</strong> to watch this with you, on the same stream.</p><p v-else>Set a partner in Settings first.</p><button type="button" class="primary-action" :disabled="!partnerEmail" @click.stop="sendPartnerInvite">Send invite</button><button v-if="webWwpSessionId && !webCallActive" type="button" class="primary-action wwp-call-start" @click.stop="startWebCall">🎙 Start voice call</button><button v-if="webCallActive" type="button" class="primary-action wwp-call-end" @click.stop="endWebCall">End voice call</button></div>
+              </div>
+              <div class="web-player-menu-control">
+                <button type="button" class="web-pl-btn" :aria-expanded="webPlayerMenuOpen" aria-label="Player menu" title="Player menu" @click.stop="webPlayerMenuOpen = !webPlayerMenuOpen; webPartnerMenuOpen = false"><DotsVerticalRoundedIcon /></button>
+                <div v-if="webPlayerMenuOpen" class="web-player-menu" @click.stop>
+                  <details :open="Boolean(webCompatibility)">
+                    <summary>Compatibility check</summary>
+                    <p v-if="!webCompatibility">Fetching item URL and checking media…</p>
+                    <ol v-else class="web-compatibility-check-list">
+                      <li v-for="(check, index) in webCompatibilityChecks" :key="index"><span class="web-check-index">{{ index + 1 }}</span><div><strong>{{ check.label }}</strong><small>{{ check.detail }}</small></div><em>{{ check.result }}</em></li>
+                    </ol>
+                    <pre v-if="webCompatibility">{{ webTransportDetails }}</pre>
+                  </details>
+                </div>
               </div>
             </div>
           </header>

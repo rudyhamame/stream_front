@@ -1250,6 +1250,17 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .web-transport-debug summary { list-style:none; cursor:pointer; border:1px solid rgba(255,255,255,.2); border-radius:50%; width:28px; height:28px; display:grid; place-items:center; background:rgba(10,14,20,.68); }
 .web-transport-debug summary::-webkit-details-marker { display:none; }
 .web-transport-debug pre { position:absolute; z-index:20; top:34px; right:0; width:min(440px,80vw); max-height:55vh; overflow:auto; white-space:pre-wrap; margin:0; padding:14px; border:1px solid rgba(255,255,255,.16); border-radius:12px; background:rgba(8,12,18,.96); color:#e9edf2; font:500 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace; box-shadow:0 14px 40px rgba(0,0,0,.45); }
+.web-player-menu-control { position:relative; flex:0 0 auto; }
+.web-player-menu { position:absolute; z-index:30; top:calc(100% + 8px); right:0; width:min(460px,90vw); max-height:min(75vh,680px); overflow:auto; padding:16px; border:1px solid rgba(255,255,255,.18); border-radius:16px; background:rgba(8,12,18,.97); color:#eef3f7; box-shadow:0 18px 50px rgba(0,0,0,.6); font:500 12px/1.45 'DM Sans',sans-serif; }
+.web-player-menu summary { cursor:pointer; font-weight:700; font-size:14px; }
+.web-player-menu p { margin:14px 0 0; }
+.web-compatibility-check-list { list-style:none; margin:14px 0; padding:0; }
+.web-compatibility-check-list li { display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:start; gap:9px; padding:9px 0; border-top:1px solid rgba(255,255,255,.1); }
+.web-check-index { display:grid; place-items:center; width:20px; height:20px; border-radius:50%; background:rgba(255,255,255,.12); font-size:10px; }
+.web-compatibility-check-list strong,.web-compatibility-check-list small { display:block; }
+.web-compatibility-check-list small { color:#aebaca; margin-top:2px; }
+.web-compatibility-check-list em { color:#b8dfc7; font-style:normal; font-weight:700; white-space:nowrap; }
+.web-player-menu pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:12px 0 0; padding:12px; border-radius:8px; background:rgba(255,255,255,.06); color:#d1dbe5; font:500 11px/1.45 ui-monospace,monospace; }
 .web-strategy-badge i { --tier-color:#7fd6a3; flex:0 0 auto; width:8px; height:8px; border-radius:50%; background:var(--tier-color); box-shadow:0 0 0 3px color-mix(in srgb,var(--tier-color) 25%,transparent),0 0 10px var(--tier-color); }
 .web-strategy-badge[data-tier="remux"] i { --tier-color:#8ec5ff; }
 .web-strategy-badge[data-tier="unsupported"] i { --tier-color:#ff7a7a; }
