@@ -942,6 +942,20 @@ const webTransportDetails = computed(() => {
     `Decision: ${decision.reason}`,
   ].join("\n");
 });
+const webCompatibilityBadges = computed(() => {
+  const decision = webCompatibility.value;
+  if (!decision) return [];
+  const media = decision.media || {};
+  const state = (available, compatible) => !available ? "unknown" : compatible ? "compatible" : "incompatible";
+  const containerKnown = Boolean(media.container && media.container !== "unknown");
+  const videoKnown = Boolean(media.video?.codec);
+  const audioKnown = Boolean(media.audio?.codec);
+  return [
+    { key: "container", label: "Container", status: state(containerKnown, decision.containerCompatible), value: media.container || "unknown" },
+    { key: "video", label: "Video codec", status: state(videoKnown, decision.videoCompatible), value: media.video?.codec || "unknown" },
+    { key: "audio", label: "Audio codec", status: audioKnown ? state(true, decision.audioCompatible) : "absent", value: media.audio?.codec || "no audio track" },
+  ];
+});
 const webStreamFormatLabel = computed(() => {
   const item = webNowPlaying.value;
   if (!item) return "";
@@ -3833,6 +3847,12 @@ onMounted(async () => {
             <h2 class="web-player-name">{{ webNowPlaying.title }}</h2>
             <div class="web-player-topbar-actions">
               <span v-if="webEncodeStrategy" class="web-strategy-badge" :data-tier="webStrategyTier" :title="'Playback: ' + webEncodeStrategy"><i aria-hidden="true"></i>{{ webEncodeStrategy }}</span>
+              <div v-if="webCompatibilityBadges.length" class="web-compatibility-badges" aria-label="Device compatibility">
+                <span v-for="badge in webCompatibilityBadges" :key="badge.key" class="web-compatibility-badge" :data-status="badge.status" :title="`${badge.label}: ${badge.value} · ${badge.status}`">
+                  <i aria-hidden="true">{{ badge.status === 'compatible' ? '✓' : badge.status === 'incompatible' ? '!' : badge.status === 'absent' ? '–' : '?' }}</i>
+                  {{ badge.label }}: {{ badge.status }}
+                </span>
+              </div>
               <details v-if="webCompatibility" class="web-transport-debug">
                 <summary aria-label="Playback compatibility details" title="Playback compatibility details">Info</summary>
                 <pre>{{ webTransportDetails }}</pre>
