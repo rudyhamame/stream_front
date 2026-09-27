@@ -11,6 +11,20 @@ test('Chrome 145 directly plays compatible MKV and MP4', () => {
   assert.equal(decideBrowserTransport(source('mp4'), supported).transport, 'DIRECT');
 });
 
+test('delivery protocol changes only the delivery method for compatible media', () => {
+  assert.equal(decideBrowserTransport(source('mp4'), supported, 'https:').transport, 'DIRECT_PROVIDER');
+  assert.equal(decideBrowserTransport(source('mp4'), supported, 'http:').transport, 'DIRECT_PROXY');
+  assert.equal(decideBrowserTransport(source('matroska'), supported, 'http:').transport, 'DIRECT_PROXY');
+});
+
+test('HTTP does not turn incompatible containers or codecs into transport failures', () => {
+  const firefox = { ...supported, browser: { name: 'firefox', version: 140 }, mkvVerified: false };
+  assert.equal(decideBrowserTransport(source('legacybox'), firefox, 'https:').transport, 'HLS_REMUX');
+  assert.equal(decideBrowserTransport(source('legacybox'), firefox, 'http:').transport, 'HLS_REMUX');
+  assert.equal(decideBrowserTransport(source('mp4', 'dts'), supported, 'https:').transport, 'UNSUPPORTED');
+  assert.equal(decideBrowserTransport(source('mp4', 'dts'), supported, 'http:').transport, 'UNSUPPORTED');
+});
+
 test('unsupported audio or video cannot be repaired by remux', () => {
   assert.equal(decideBrowserTransport(source('matroska', 'dts'), supported).transport, 'UNSUPPORTED');
   assert.equal(decideBrowserTransport(source('matroska', 'aac', 'mpeg2video'), supported).transport, 'UNSUPPORTED');

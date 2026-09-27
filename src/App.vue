@@ -68,6 +68,13 @@ const initialRoute = routeFromLocation();
 const safariPage = ref(initialRoute.page === "episodes" ? "episodes" : initialRoute.page);
 const storedLibraryTab = window.localStorage.getItem("rh-safari-library-tab");
 const safariLibraryTab = ref(["series", "movie", "channel"].includes(storedLibraryTab) ? storedLibraryTab : "series");
+// Older Browser catalog caches included credential-bearing provider URLs.
+// The Browser now resolves all playback URLs server-side, so discard those
+// legacy cache entries when this client starts.
+for (let cacheIndex = window.localStorage.length - 1; cacheIndex >= 0; cacheIndex -= 1) {
+  const cacheKey = window.localStorage.key(cacheIndex) || "";
+  if (/^rh-catalog:v[0-5]:/.test(cacheKey)) window.localStorage.removeItem(cacheKey);
+}
 const safariMenuItems = [
   { id: "welcome", label: "Welcome", icon: HomeIcon },
   { id: "playlist", label: "Playlist", icon: GlobeAlt2Icon },
@@ -152,6 +159,8 @@ const webEncodeStrategy = ref("");
 // private until the media element emits `playing` for this exact attempt.
 const webPendingEncodeStrategy = ref("");
 const webStreamTicket = ref("");
+const webDirectProxyToken = ref("");
+const webDirectProxyUrl = ref("");
 const webForceHls = ref(false);
 const webWwpSessionId = ref("");
 // True only for the INVITED partner (joined via an invite's stream ticket, no
@@ -291,7 +300,9 @@ function markLogoFailed(value) {
 async function request(path, options = {}) {
   const headers = new Headers(options.headers || {});
   if (deviceToken.value) headers.set("x-device-token", deviceToken.value);
-  const response = await fetch(api(path), { ...options, headers });
+  const target = new URL(api(path));
+  if (target.pathname.startsWith("/api/")) target.searchParams.set("client", "browser");
+  const response = await fetch(target.toString(), { ...options, headers });
   const data = response.status === 204 ? null : normalizeBrowserText(await response.json().catch(() => ({})));
   if (!response.ok) {
     const error = new Error(data?.error || `Request failed (${response.status})`);
@@ -884,19 +895,19 @@ const webPlayerSrc = computed(() => {
   // alone does not describe the codecs/container returned by the provider.
   // Watch-with-Partner must remain on its shared HLS generation.
   const shouldUseDirect = !webForceHls.value && !webWwpSessionId.value;
+  const isDirectProxy = webCompatibility.value?.transport === "DIRECT_PROXY";
   const generated = playableSourceId && item.id
     ? (shouldUseDirect
       ? `/api/xtream/play/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}${extension}`
       : `/api/xtream/hls/${encodeURIComponent(playableSourceId)}/${playableKind}/${encodeURIComponent(item.id)}/master.m3u8${extension}`)
     : "";
   const providerURL = typeof item.providerURL === 'string' ? item.providerURL : typeof item.providerUrl === 'string' ? item.providerUrl : '';
-  // Direct uses the original provider URL verbatim. The resolver redirect is
-  // only for older catalog records that do not yet carry it.
-  const raw = shouldUseDirect
-    ? (/^https?:\/\//i.test(providerURL) ? providerURL : '')
-    : (generated || '');
+  const raw = isDirectProxy && webDirectProxyUrl.value
+    ? `${browserStreamer}${webDirectProxyUrl.value}`
+    : shouldUseDirect ? (/^https:\/\//i.test(providerURL) ? providerURL : '') : (generated || '');
   if (!raw) return "";
   const target = new URL(browserPlaybackUrl(raw));
+  if (isDirectProxy) target.searchParams.set("playbackClientId", browserPlaybackClientId);
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
   }
@@ -906,7 +917,10 @@ const webPlayerSrc = computed(() => {
   // under the wrong account and 404. The host authenticates with its own
   // long-lived device token; its 5-minute stream ticket is not the media key.
   const onStreamer = target.origin === new URL(browserStreamer).origin;
-  if (webIsWwpGuest.value) {
+  if (isDirectProxy) {
+    // The high entropy, short-lived URL is the authorization capability.
+    // Provider URLs and account tokens are not included in the media request.
+  } else if (webIsWwpGuest.value) {
     if (onStreamer && webStreamTicket.value) target.searchParams.set("streamTicket", webStreamTicket.value);
   } else if (onStreamer && deviceToken.value) {
     target.searchParams.set("deviceToken", deviceToken.value);
@@ -931,8 +945,11 @@ const webTransportDetails = computed(() => {
   if (!decision) return "";
   const { media, browser } = decision;
   const level = media.video.level ? `@${media.video.level}` : "";
+  const direct = decision.transport === "DIRECT_PROVIDER" || decision.transport === "DIRECT_PROXY" || decision.transport === "DIRECT";
+  const delivery = decision.transport === "DIRECT_PROXY" ? "HTTPS Proxy" : decision.transport === "DIRECT_PROVIDER" ? "Provider HTTPS" : "";
   return [
-    `Transport: ${decision.transport}`,
+    `Transport: ${direct ? "DIRECT" : decision.transport}`,
+    ...(delivery ? [`Delivery: ${delivery}`, `Source: ${decision.sourceProtocol || (decision.transport === "DIRECT_PROVIDER" ? "https:" : "unknown")}`] : []),
     `Container: ${media.container}`,
     `Video: ${media.video.codec || "unknown"} ${media.video.profile || ""}${level} ${media.video.width || "?"}×${media.video.height || "?"} ${media.video.frameRate || "?"} fps ${media.video.bitDepth || "?"}-bit ${media.video.pixelFormat || ""}`.trim(),
     `Audio: ${media.audio.codec || "none"} ${media.audio.profile || ""} ${media.audio.channels || "?"} channels ${media.audio.sampleRate || "?"} Hz`.trim(),
@@ -1008,11 +1025,9 @@ async function runWebCompatibilitySteps(decision) {
 
 async function decideWebPlayback(item) {
   const sessionId = webPlaybackSessionId;
-  const providerURL = item?.providerURL || item?.providerUrl || '';
-  if (!/^https?:\/\//i.test(providerURL)) throw new Error('This item is missing its original provider URL.');
   const url = new URL(`${browserStreamer}/api/xtream/playback-decision/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || 'movie')}/${encodeURIComponent(item.id)}`);
   url.searchParams.set('client', 'browser');
-  url.searchParams.set('providerURL', providerURL);
+  url.searchParams.set('playbackClientId', browserPlaybackClientId);
   if (item.extension) url.searchParams.set('ext', item.extension);
   if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
   if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
@@ -1021,15 +1036,15 @@ async function decideWebPlayback(item) {
   const decision = await response.json().catch(() => ({}));
   if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
-  if (decision.providerURL !== providerURL) throw new Error('The playback provider URL changed during compatibility checking.');
   const capabilities = detectBrowserCapabilities();
   await browserCodecSupportFromMediaCapabilities(capabilities, decision.media || {});
   if (sessionId !== webPlaybackSessionId) return null;
-  const compatibility = decideBrowserTransport(decision.media || {}, capabilities);
-  const directBlocked = window.location.protocol === 'https:' && /^http:/i.test(providerURL);
-  const transport = directBlocked && compatibility.transport === "DIRECT"
-    ? { ...compatibility, transport: "HLS_REMUX", reason: "The page blocks direct HTTP media; compatible streams can be copied into HLS." }
-    : compatibility;
+  const sourceProtocol = decision.sourceProtocol || (decision.providerURL ? new URL(decision.providerURL).protocol : '');
+  const compatibility = decideBrowserTransport(decision.media || {}, capabilities, sourceProtocol);
+  const transport = compatibility;
+  if (transport.transport === "DIRECT_PROXY" && !decision.directProxyUrl) throw new Error("The secure Browser streaming session could not be created.");
+  webDirectProxyUrl.value = decision.directProxyUrl || "";
+  webDirectProxyToken.value = decision.directProxyUrl?.split("/").pop() || "";
   webCompatibility.value = transport;
   console.info("[BrowserTransport]", {
     browser: transport.browser.name, version: transport.browser.version,
@@ -1038,10 +1053,9 @@ async function decideWebPlayback(item) {
     videoDirect: transport.videoCompatible, audioDirect: transport.audioCompatible,
     remuxCompatible: transport.remuxCompatible, decision: transport.transport, reason: transport.reason,
   });
-  webNowPlaying.value = { ...webNowPlaying.value, providerURL: decision.providerURL, playbackStrategy: decision.playbackStrategy };
-  // An http:// provider URL cannot be loaded by an https page (mixed content),
-  // so use the independently confirmed stream-copy path.
-  const useDirect = transport.transport === "DIRECT";
+  const { providerURL: _providerURL, providerUrl: _providerUrl, ...safeNowPlaying } = webNowPlaying.value || {};
+  webNowPlaying.value = { ...safeNowPlaying, ...(decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
+  const useDirect = transport.transport.startsWith("DIRECT");
   webForceHls.value = !useDirect && transport.remuxCompatible;
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
@@ -1572,9 +1586,6 @@ function movieStreamUrl(startSeconds = 0) {
   if (!source) return "";
   const target = new URL(source);
   const hls = target.pathname.includes('/api/xtream/hls/');
-  const item = webNowPlaying.value;
-  const providerURL = typeof item?.providerURL === 'string' ? item.providerURL : typeof item?.providerUrl === 'string' ? item.providerUrl : '';
-  if (hls && providerURL) target.searchParams.set('providerURL', providerURL);
   if (startSeconds > 0 && hls) target.searchParams.set("start", String(Math.floor(startSeconds)));
   if (hls && wwpSeekIntent && webWwpSessionId.value) target.searchParams.set("wwpSeek", "1");
   wwpSeekIntent = false;
@@ -1795,6 +1806,8 @@ async function playWebMovie(item) {
   const sessionId = ++webPlaybackSessionId;
   webCompatibility.value = null;
   webStreamTicket.value = "";
+  webDirectProxyToken.value = "";
+  webDirectProxyUrl.value = "";
   // Starting a normal playback ends any WWP guest role from a previous session.
   if (webWwpSessionId.value) stopWwpSync();
   webIsWwpGuest.value = false;
@@ -1827,11 +1840,6 @@ async function playWebMovie(item) {
   clearWebVideoWedgeWatchdog();
   await resolveWebPlayableItem(item);
   if (sessionId !== webPlaybackSessionId) return;
-  const providerURL = webNowPlaying.value?.providerURL || webNowPlaying.value?.providerUrl;
-  if (typeof providerURL !== 'string' || !/^https?:\/\//i.test(providerURL)) {
-    throw new Error('This item is missing its original provider URL. Refresh the playlist and try again.');
-  }
-  if (!webNowPlaying.value.providerURL) webNowPlaying.value = { ...webNowPlaying.value, providerURL };
   // Native metadata or the HLS response supplies the runtime. A separate
   // provider probe before Play added up to 30s and competed for its stream slot.
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
@@ -1842,6 +1850,7 @@ async function playWebMovie(item) {
     // Live TV has no codec matrix (the streamer only serves the decision for
     // movie/series): play the provider stream directly, or RH HLS when the page
     // is https and the provider URL is plain http (mixed content).
+    const providerURL = webNowPlaying.value?.providerURL || webNowPlaying.value?.providerUrl || '';
     const mixedContent = window.location.protocol === "https:" && /^http:/i.test(providerURL);
     webForceHls.value = mixedContent;
     webPendingEncodeStrategy.value = mixedContent ? "" : "DIRECT";
@@ -2118,6 +2127,7 @@ function browserPlaybackReleaseUrl(item, includeMedia = false) {
     params.set("id", item.id || "");
     params.set("extension", item.extension || "");
   }
+  if (webDirectProxyToken.value) params.set("directProxyToken", webDirectProxyToken.value);
   return `${browserStreamer}/api/xtream/playback/release?${params}`;
 }
 
@@ -2146,7 +2156,7 @@ async function closeWebPlayer() {
     // and provider lease now.
     const item = webNowPlaying.value;
     const releaseUrl = browserPlaybackReleaseUrl(item);
-    const body = JSON.stringify({ sourceId: item.sourceId || sourceId.value, kind: item.kind || "movie", id: item.id, extension: item.extension || "" });
+    const body = JSON.stringify({ sourceId: item.sourceId || sourceId.value, kind: item.kind || "movie", id: item.id, extension: item.extension || "", directProxyToken: webDirectProxyToken.value });
     fetch(releaseUrl, { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true }).catch(() => {});
   }
   wwpRemoteEnded = false;
@@ -2278,7 +2288,7 @@ async function sendPartnerInvite() {
     const start = Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
     const data = await request("/api/partner/invite", {
       method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, providerURL: item.providerURL || item.providerUrl || '', extension: item.extension || "", title: item.title || "", start, quality: "", durationSeconds: Math.round(webDuration.value) || 0, hostAvatar: activeProfile.value?.avatarImage || "" }),
+      body: JSON.stringify({ sourceId: item.sourceId, kind: item.kind, id: item.id, extension: item.extension || "", title: item.title || "", start, quality: "", durationSeconds: Math.round(webDuration.value) || 0, hostAvatar: activeProfile.value?.avatarImage || "" }),
     });
     webWwpSessionId.value = data.wwpSessionId;
     webIsWwpGuest.value = false; // we are the host - keep authenticating with our device token
@@ -2309,7 +2319,7 @@ async function joinPartnerInvite(invite) {
   webWwpSessionId.value = invite.wwpSessionId;
   webIsWwpGuest.value = true; // joined via the host's ticket; never send our own token on media requests
   webForceHls.value = true;
-  webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, providerURL: invite.providerURL || '', extension: invite.extension || "", title: invite.title || "Watch with partner" };
+  webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, extension: invite.extension || "", title: invite.title || "Watch with partner" };
   webPlaying.value = false;
   // The Join click's user-gesture is spent by the time HLS.js is ready, so the
   // first play() will be an auto-play and must start muted; the unmute pill
@@ -3238,7 +3248,7 @@ async function loadCatalog(reset = true) {
     // Keep catalog pages across reloads and reopened tabs. The account/source
     // identity is part of the key, so one account cannot reuse another one's
     // catalog entries.
-    const browserCacheKey = `rh-catalog:v5:${requestedSourceId}:${requestedKind}:${category.value}:${titleLanguage.value}:${normalizedQuery}:${requestedPage}`;
+    const browserCacheKey = `rh-catalog:v6:${requestedSourceId}:${requestedKind}:${category.value}:${titleLanguage.value}:${normalizedQuery}:${requestedPage}`;
     let data;
     try {
       const cached = window.localStorage.getItem(browserCacheKey);

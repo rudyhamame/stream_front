@@ -108,7 +108,7 @@ function videoParametersSupported(video) {
   return { ok: true, reason: '' };
 }
 
-export function decideBrowserTransport(rawMedia, capabilities) {
+export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = '') {
   const media = rawMedia?.video && rawMedia?.audio ? rawMedia : normalizeMediaMetadata(rawMedia);
   const browser = capabilities?.browser || { name: 'unknown', version: 0 };
   const container = media.container === 'matroska' ? 'mkv' : media.container;
@@ -137,7 +137,10 @@ export function decideBrowserTransport(rawMedia, capabilities) {
   else if (!audioSupported || !audioParametersSupported) reason = media.audio.codec ? `Audio codec ${media.audio.codec} or its parameters are unsupported; stream copy cannot change them.` : 'Audio codec could not be identified; safe remux compatibility cannot be established.';
   else if (remuxCompatible) reason = `The browser cannot reliably play ${media.container}; supported video and audio can be copied into HLS.`;
   else reason = `Container ${media.container} cannot be played or safely remuxed.`;
-  const transport = direct ? 'DIRECT' : remuxCompatible ? 'HLS_REMUX' : 'UNSUPPORTED';
+  const normalizedProtocol = String(sourceProtocol || '').toLowerCase();
+  const transport = direct
+    ? normalizedProtocol === 'http:' ? 'DIRECT_PROXY' : normalizedProtocol === 'https:' ? 'DIRECT_PROVIDER' : 'DIRECT'
+    : remuxCompatible ? 'HLS_REMUX' : 'UNSUPPORTED';
   return { transport, directCompatible: direct, containerCompatible: containerDirect, videoCompatible: videoSupported, audioCompatible: audioSupported, remuxCompatible, playable: transport !== 'UNSUPPORTED', reason, media, browser };
 }
 
