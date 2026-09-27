@@ -120,10 +120,17 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
   const videoSupported = !videoKnown || (videoSignal === false ? false : (videoSignal === true || codecSupport(media.video.codec, capabilities?.videoCodecs)) && videoParametersSupported(media.video).ok);
   const audioSupported = !media.audio.codec || (audioSignal === false ? false : (audioSignal === true || codecSupport(media.audio.codec, capabilities?.audioCodecs)));
   const audioParametersSupported = !media.audio.codec || ((media.audio.channels <= 8 || !media.audio.channels) && (media.audio.sampleRate <= 96000 || !media.audio.sampleRate));
+  // Firefox can report Matroska as possibly playable but still scans a large
+  // file for cues at the end before presenting the first frame. Treat only
+  // verified Chrome/Edge Matroska support as Direct-capable; copy-compatible
+  // Firefox MKV sources go through HLS Remux for prompt startup.
+  const browserMkvDirect = container === 'mkv'
+    && ((browser.name === 'chrome' && browser.version >= 145)
+      || (browser.name === 'edge' && browser.version >= 145));
   const containerDirect = container === 'hls' ? Boolean(capabilities?.containers?.hls)
     : container === 'mp4' ? Boolean(capabilities?.containers?.mp4)
     : container === 'webm' ? Boolean(capabilities?.containers?.webm)
-      : container === 'mkv' ? Boolean(capabilities?.mkvVerified || capabilities?.containers?.mkv) : false;
+      : container === 'mkv' ? browserMkvDirect && Boolean(capabilities?.mkvVerified || capabilities?.containers?.mkv) : false;
   const direct = videoKnown && containerDirect && videoSupported && audioSupported && audioParametersSupported;
   const remuxVideoCopy = !videoKnown || ['h264', 'hevc', 'mpeg2video'].includes(media.video.codec);
   const remuxAudioCopy = !media.audio.codec || ['aac', 'mp3', 'mp2', 'ac3', 'eac3'].includes(media.audio.codec);
@@ -149,7 +156,7 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
   // Feature detection informs the badges; the native player gets the final
   // decision by attempting the source whenever Direct is enabled.
-  if (directEnabled) {
+  if (directEnabled && decision.directCompatible) {
     const protocol = serverDecision?.sourceProtocol || '';
     const transport = protocol === 'http:' ? 'DIRECT_PROXY'
       : protocol === 'https:' ? 'DIRECT_PROVIDER'
