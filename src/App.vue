@@ -18,6 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
+import DotsVerticalRoundedIcon from "./components/icons/DotsVerticalRoundedIcon.vue";
 import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
@@ -168,6 +169,9 @@ const webWwpSessionId = ref("");
 // its own device token. Governs which credential every playback request sends.
 const webIsWwpGuest = ref(false);
 const webPartnerMenuOpen = ref(false);
+const webPlayerMenuOpen = ref(false);
+const webDirectTestResult = ref("pending");
+const webHlsTestResult = ref("not started");
 const pendingPartnerInvite = ref(null);
 // Watch with Partner voice call (WebRTC, runs inside an <iframe> served by the
 // streamer). webCall* only ever matter while a WWP session is live.
@@ -978,6 +982,28 @@ const webCompatibilityBadges = computed(() => {
     { key: "container", label: "Container", status: state(containerKnown, decision.containerCompatible), value: media.container || "unknown" },
     { key: "video", label: "Video codec", status: state(videoKnown, decision.videoCompatible), value: media.video?.codec || "unknown" },
     { key: "audio", label: "Audio codec", status: audioKnown ? state(true, decision.audioCompatible) : "absent", value: media.audio?.codec || "no audio track" },
+  ];
+});
+const webCompatibilityChecks = computed(() => {
+  const decision = webCompatibility.value;
+  if (!decision) return [];
+  const media = decision.media || {};
+  const result = value => value ? "Passed" : "Failed";
+  const directSelected = !webForceHls.value && !webWwpSessionId.value;
+  return [
+    { label: "Fetch item URL from provider", result: "Passed", detail: `${decision.sourceProtocol || "unknown"} source resolved` },
+    { label: "Probe media container", result: result(Boolean(media.container && media.container !== "unknown")), detail: media.container || "unknown" },
+    { label: "Check container compatibility", result: result(Boolean(decision.containerCompatible)), detail: decision.containerCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Probe video codec", result: result(Boolean(media.video?.codec)), detail: [media.video?.codec, media.video?.profile, media.video?.level && `level ${media.video.level}`].filter(Boolean).join(" · ") || "unknown" },
+    { label: "Check video codec compatibility", result: result(Boolean(decision.videoCompatible)), detail: decision.videoCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Probe audio codec", result: media.audio?.codec ? "Passed" : "No audio", detail: media.audio?.codec || "No audio track" },
+    { label: "Check audio codec compatibility", result: media.audio?.codec ? result(Boolean(decision.audioCompatible)) : "Passed", detail: media.audio?.codec ? (decision.audioCompatible ? "Browser reports support" : "Browser reports no native support") : "No audio decoding required" },
+    { label: "Direct strategy enabled", result: result(decision.directEnabled !== false), detail: decision.directEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
+    { label: "Direct browser acceptance test", result: webDirectTestResult.value, detail: directSelected ? "Testing the original media bytes" : "The browser did not present a Direct video frame" },
+    { label: "Copy-only HLS eligibility", result: result(Boolean(decision.remuxCompatible)), detail: decision.remuxCompatible ? "No video or audio transcode required" : "A codec transcode would be required" },
+    { label: "HLS Remux strategy enabled", result: result(decision.remuxEnabled !== false), detail: decision.remuxEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
+    { label: "HLS Remux playback test", result: webHlsTestResult.value, detail: webForceHls.value ? "Testing the copy-only HLS stream" : "Used only if Direct is rejected" },
+    { label: "Current transport", result: webEncodeStrategy.value || webPendingEncodeStrategy.value || decision.transport || "Pending", detail: decision.reason || "" },
   ];
 });
 const webStreamFormatLabel = computed(() => {
@@ -1796,13 +1822,13 @@ async function configureMoviePlayback(startSeconds = 0) {
         });
         webHls.on(Hls.Events.ERROR, (_event, data) => {
           if (playbackToken !== webPlaybackToken) return;
-          console.warn("[BrowserHls]", {
+          console.warn("[BrowserHls] " + JSON.stringify({
             fatal: Boolean(data.fatal),
             type: data.type,
             details: data.details,
             reason: data.reason || data.error?.message || "",
             responseCode: data.response?.code || data.response?.status || 0,
-          });
+          }));
           if (!data.fatal) return;
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR && webPlaybackRetryCount.value < 2) {
             webPlaybackRetryCount.value += 1;
@@ -1832,6 +1858,11 @@ async function configureMoviePlayback(startSeconds = 0) {
         webHls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (playbackToken !== webPlaybackToken) return;
           setWebStartupProgress(70, "Preparing HLS segments");
+          // Explicitly start the stream controller at the beginning of this
+          // generated VOD window. The playlist grows while FFmpeg runs, so
+          // hls.js classifies it as live and can otherwise keep reloading the
+          // playlist without scheduling a fragment.
+          webHls?.startLoad(webWwpSessionId.value ? -1 : 0);
           startWebPlayback(video);
         });
         webHls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
@@ -1842,14 +1873,8 @@ async function configureMoviePlayback(startSeconds = 0) {
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
           if (playbackToken === webPlaybackToken) refreshWebBuffered();
         });
-        // Attach MSE first, then load the playlist. This keeps hls.js from
-        // parsing a quickly returned manifest before the MediaSource has an
-        // attached media element, which can leave the level loaded without
-        // ever scheduling its first fragment.
-        webHls.on(Hls.Events.MEDIA_ATTACHED, () => {
-          if (playbackToken === webPlaybackToken) webHls?.loadSource(source);
-        });
         webHls.attachMedia(video);
+        webHls.loadSource(source);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
