@@ -1801,6 +1801,9 @@ async function configureMoviePlayback(startSeconds = 0) {
       }
     } else {
       setWebStartupProgress(40, "Preparing HLS segments");
+      // The placeholder already covers the frame. Keep the media element
+      // visible to Chrome while its MediaSource opens.
+      video.style.opacity = "1";
       const Hls = await loadHlsConstructor();
       if (playbackToken !== webPlaybackToken) return;
       if (Hls.isSupported()) {
@@ -1876,17 +1879,17 @@ async function configureMoviePlayback(startSeconds = 0) {
             console.info("[BrowserHls] fragment loading", data.frag?.sn);
           }
         });
-        for (const eventName of [Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
+        for (const eventName of [Hls.Events.MEDIA_ATTACHING, Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
           webHls.on(eventName, (_event, data) => {
             if (playbackToken !== webPlaybackToken) return;
-            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.data?.byteLength ?? data?.payload?.byteLength ?? 0} tracks=${Object.keys(data?.tracks || data || {}).join(',')} mediaSource=${webHls?.mediaSource?.readyState || 'none'} video=${video.readyState}/${video.networkState}`);
+            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.data?.byteLength ?? data?.payload?.byteLength ?? 0} tracks=${Object.keys(data?.tracks || data || {}).join(',')} media=${webHls?.media === video} video=${video.readyState}/${video.networkState} src=${video.currentSrc?.slice(0, 18) || 'none'}`);
           });
         }
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
           if (playbackToken === webPlaybackToken) refreshWebBuffered();
         });
-        webHls.attachMedia(video);
         webHls.loadSource(source);
+        webHls.attachMedia(video);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
