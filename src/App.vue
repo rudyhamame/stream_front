@@ -1876,10 +1876,10 @@ async function configureMoviePlayback(startSeconds = 0) {
             console.info("[BrowserHls] fragment loading", data.frag?.sn);
           }
         });
-        for (const eventName of [Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
+        for (const eventName of [Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
           webHls.on(eventName, (_event, data) => {
             if (playbackToken !== webPlaybackToken) return;
-            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.payload?.byteLength ?? 0}`);
+            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.data?.byteLength ?? data?.payload?.byteLength ?? 0} tracks=${Object.keys(data?.tracks || data || {}).join(',')} mediaSource=${webHls?.mediaSource?.readyState || 'none'} video=${video.readyState}/${video.networkState}`);
           });
         }
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
