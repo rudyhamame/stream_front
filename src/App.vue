@@ -1876,6 +1876,12 @@ async function configureMoviePlayback(startSeconds = 0) {
             console.info("[BrowserHls] fragment loading", data.frag?.sn);
           }
         });
+        for (const eventName of [Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
+          webHls.on(eventName, (_event, data) => {
+            if (playbackToken !== webPlaybackToken) return;
+            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.payload?.byteLength ?? 0}`);
+          });
+        }
         webHls.on(Hls.Events.BUFFER_APPENDED, () => {
           if (playbackToken === webPlaybackToken) refreshWebBuffered();
         });
