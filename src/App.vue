@@ -205,7 +205,6 @@ let hlsConstructorPromise = null;
 let webRecoveryTimer = null;
 let webStallTimer = null;
 let webBufferingTimer = null;
-let webDirectStartupTimer = null;
 let webStartupGapAligned = false;
 let webPlaybackToken = 0;
 let liveTvRecoveryTimer = null;
@@ -1513,8 +1512,6 @@ function switchRejectedDirectToRemux(reason) {
 function handleWebVideoError(event) {
   if (event?.target !== webVideo.value) return;
   if (!webNowPlaying.value) return;
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   console.warn(`[BrowserMediaError] code=${webVideo.value?.error?.code || 0} strategy=${webForceHls.value ? 'HLS' : 'DIRECT'} awaitingAttach=${webHlsAwaitingMediaAttach} src=${webVideo.value?.currentSrc?.slice(0, 24) || 'none'}`);
   // The native Direct decoder can report its rejection after hls.js has
   // replaced its URL with a MediaSource. That stale event must not tear down
@@ -1547,12 +1544,10 @@ function onWebReady(event) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   if (event?.type === "playing") {
     webPlaying.value = true;
   }
-  if (event?.type === "playing") startWebVideoWedgeWatchdog(event.target);
+  if (["loadeddata", "canplay", "playing"].includes(event?.type)) startWebVideoWedgeWatchdog(event.target);
   // Audio can trigger "playing" before the video decoder recovers. Wait for a
   // newly presented frame before hiding the recovery state or revealing video.
   if (webMediaReady.value) {
@@ -1614,14 +1609,16 @@ function startWebVideoWedgeWatchdog(video) {
       requestFrame();
     });
   };
+  if (initialFrameCount > 0) confirmFrame(initialFrameCount);
   requestFrame();
   monitor.interval = setInterval(() => {
-    if (!monitor.active || webWedgeWatchdog !== monitor || video !== webVideo.value || token !== webPlaybackToken || video.paused) {
+    if (!monitor.active || webWedgeWatchdog !== monitor || video !== webVideo.value || token !== webPlaybackToken) {
       clearWebVideoWedgeWatchdog();
       return;
     }
-    // Fall back to decoded frame counters on browsers without rVFC.
-    if (!video.requestVideoFrameCallback) {
+    // A decoded frame also confirms acceptance when presentation callbacks
+    // are delayed by occlusion or rendering throttling.
+    {
       const quality = video.getVideoPlaybackQuality?.();
       const frames = Number(quality?.totalVideoFrames ?? video.webkitDecodedFrameCount) || 0;
       if (frames > monitor.fallbackFrameCount) {
@@ -1629,6 +1626,7 @@ function startWebVideoWedgeWatchdog(video) {
         confirmFrame(frames);
       }
     }
+    if (video.paused) return;
     const currentTime = video.currentTime;
     const timestamp = Date.now();
     if (currentTime > monitor.lastTimelineTime + 0.05) {
@@ -1636,19 +1634,8 @@ function startWebVideoWedgeWatchdog(video) {
       monitor.lastTimelineAt = timestamp;
     }
     if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
-    // Direct compatibility is established by a frame or a native media error,
-    // never by an elapsed-time watchdog - a stall here must never mark Direct
-    // "Rejected" or switch to HLS on its own. But the browser can also stay
-    // silent forever (no frame, no error event) on a hung connection, leaving
-    // the acceptance test pending indefinitely. Retry the same Direct source
-    // instead of waiting forever; scheduleWebReconnect keeps the strategy.
-    if (!webForceHls.value && !webWwpSessionId.value) {
-      clearWebVideoWedgeWatchdog();
-      webMediaReady.value = false;
-      webBuffering.value = true;
-      scheduleWebReconnect(webAbsolutePosition());
-      return;
-    }
+    // Elapsed time never rejects or restarts a Direct attempt.
+    if (!webForceHls.value && !webWwpSessionId.value) return;
     if (monitor.recoveryStage === 0 && webHls) {
       monitor.recoveryStage = 1;
       monitor.lastFrameAt = timestamp;
@@ -1757,7 +1744,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   // A rejected native Direct decoder can retain a media error even after its
   // src changes to a MediaSource blob. A fresh element gives HLS its own
   // decoder and lets sourceopen fire independently of the Direct attempt.
-  if (webForceHls.value) webVideoElementKey.value += 1;
+  webVideoElementKey.value += 1;
   await nextTick();
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
@@ -1778,14 +1765,13 @@ async function configureMoviePlayback(startSeconds = 0) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   video.removeAttribute("src");
   // Drop any object source and force a full element reset so the previous
   // decoder never carries over (the cause of a black frame with live audio
   // after an error-recovery reload).
   try { video.srcObject = null; } catch { /* not all browsers */ }
-  video.style.opacity = "0";
+  // Keep video renderable while observing its first frame.
+  video.style.opacity = "1";
   // Carry the current mute choice onto the (re)loaded element so a pre-muted
   // auto-play start (WWP joiner) is not fighting an un-muted element.
   video.muted = webMuted.value;
@@ -1837,19 +1823,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else webPlayerError.value = "This browser cannot play the provider HLS stream directly.";
       } else {
         video.src = source;
-        // Only a native media error can reject Direct - a stall here must
-        // never mark it "Rejected" or switch to HLS. But a hung connection
-        // can give the browser nothing to react to at all: no data ever
-        // arrives, so there is no "playing" event to arm the wedge watchdog
-        // and no error event either. Without this, the acceptance test can
-        // wait forever with no signal. Retry the same Direct source if
-        // nothing has resolved after a generous startup window.
-        clearTimeout(webDirectStartupTimer);
-        webDirectStartupTimer = setTimeout(() => {
-          webDirectStartupTimer = null;
-          if (playbackToken !== webPlaybackToken || webMediaReady.value) return;
-          scheduleWebReconnect(webAbsolutePosition());
-        }, 15_000);
+        // A native media error or a decoded frame supplies the Direct result.
         await startWebPlayback(video);
       }
     } else {
@@ -2327,8 +2301,6 @@ async function closeWebPlayer() {
   webStallTimer = null;
   clearWebVideoWedgeWatchdog();
   clearTimeout(webBufferingTimer);
-  clearTimeout(webDirectStartupTimer);
-  webDirectStartupTimer = null;
   if (webSeekTimer) {
     clearTimeout(webSeekTimer);
     webSeekTimer = null;
@@ -4005,7 +3977,7 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video :key="webVideoElementKey" ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video :key="webVideoElementKey" ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError && (webForceHls || webWwpSessionId)" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>
