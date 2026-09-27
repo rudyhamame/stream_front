@@ -145,21 +145,30 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
 }
 
 export function applyServerPlaybackPolicy(decision, serverDecision) {
-  // The RH checkbox gates whether Direct may be used. Compatibility belongs
-  // to the actual browser: the server's generic profile intentionally cannot
-  // certify container support such as newer Chrome's Matroska support.
-  if (serverDecision?.directEnabled !== false) return decision;
-  if (decision.remuxCompatible) {
-    return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
-      playable: true, reason: serverDecision.reason || 'HLS REMUX selected by RH Browser strategy policy.' };
+  const directEnabled = serverDecision?.directEnabled !== false;
+  const remuxEnabled = serverDecision?.remuxEnabled !== false;
+  // Feature detection informs the badges; the native player gets the final
+  // decision by attempting the source whenever Direct is enabled.
+  if (directEnabled) {
+    const protocol = serverDecision?.sourceProtocol || '';
+    const transport = protocol === 'http:' ? 'DIRECT_PROXY'
+      : protocol === 'https:' ? 'DIRECT_PROVIDER'
+        : decision.transport.startsWith('DIRECT') ? decision.transport : 'DIRECT';
+    return { ...decision, transport, playable: true, remuxEnabled,
+      reason: 'Trying native Direct playback; the player determines acceptance.' };
   }
-  return decision;
+  if (remuxEnabled && decision.remuxCompatible) {
+    return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
+      remuxEnabled, playable: true, reason: 'Direct is disabled; copying compatible streams into HLS.' };
+  }
+  return { ...decision, transport: 'UNSUPPORTED', playable: false, remuxEnabled,
+    reason: 'No enabled strategy can play this item without transcoding.' };
 }
 
-export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible, transport = 'DIRECT_PROVIDER') {
-  // MEDIA_ERR_SRC_NOT_SUPPORTED is the only HTMLMediaElement error category
-  // where a container remux may help. Network errors remain transport retries.
-  return Number(mediaErrorCode) === 4 && remuxCompatible === true;
+export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible) {
+  // A native demux/decode rejection can try stream copy. Network errors,
+  // aborts, and startup timeouts never establish media incompatibility.
+  return [3, 4].includes(Number(mediaErrorCode)) && remuxCompatible === true;
 }
 
 export async function browserCodecSupportFromMediaCapabilities(capabilities, media) {

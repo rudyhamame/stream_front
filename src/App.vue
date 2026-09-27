@@ -18,7 +18,7 @@ import LockKeyholeOpenAltIcon from "./components/icons/LockKeyholeOpenAltIcon.vu
 import BookmarkIcon from "./components/icons/BookmarkIcon.vue";
 import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
-import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities } from "./browser-transport.js";
+import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -1450,6 +1450,17 @@ function handleWebVideoError() {
     // with backoff. Switching containers would not repair a lost connection.
     if (mediaErrorCode === 2) {
       scheduleWebReconnect(webAbsolutePosition());
+    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible)
+        && webCompatibility.value?.remuxEnabled !== false) {
+      const target = webAbsolutePosition();
+      webCompatibility.value = { ...webCompatibility.value, transport: "HLS_REMUX",
+        reason: "Native Direct playback rejected the media; trying stream-copy HLS." };
+      webForceHls.value = true;
+      webPlaybackOffset.value = target;
+      webCurrentTime.value = target;
+      webMediaReady.value = false;
+      webPendingEncodeStrategy.value = "HLS REMUX";
+      configureMoviePlayback(target);
     } else {
       webPlayerError.value = `Direct playback failed (media error ${mediaErrorCode || "unknown"}). The selected Direct strategy has been preserved. Retry playback.`;
       webBuffering.value = false;

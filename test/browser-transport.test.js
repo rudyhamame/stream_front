@@ -85,9 +85,11 @@ test('positive Matroska support is honored when the browser advertises it', () =
   assert.equal(decideBrowserTransport(source(), caps).transport, 'DIRECT');
 });
 
-test('Direct network and decode failures do not start remux', () => {
+test('Only native media rejection permits copy-compatible remux', () => {
   assert.equal(shouldFallbackFromDirect(2, true), false);
-  assert.equal(shouldFallbackFromDirect(3, true), false);
+  assert.equal(shouldFallbackFromDirect(3, true), true);
+  assert.equal(shouldFallbackFromDirect(3, false), false);
+  assert.equal(shouldFallbackFromDirect(0, true), false);
   assert.equal(shouldFallbackFromDirect(4, true), true);
   assert.equal(shouldFallbackFromDirect(4, true, 'DIRECT_PROXY'), true);
   assert.equal(shouldFallbackFromDirect(4, false), false);
@@ -96,4 +98,13 @@ test('Direct network and decode failures do not start remux', () => {
 test('Provider HLS is Direct when the browser has native or MSE HLS support', () => {
   const caps = { ...supported, containers: { ...supported.containers, hls: true } };
   assert.equal(decideBrowserTransport(source('hls'), caps).transport, 'DIRECT');
+});
+
+ test('Direct attempt takes precedence over capability predictions; checkboxes still gate both paths', () => {
+  const local = decideBrowserTransport(source('legacybox'), supported, 'http:');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, sourceProtocol: 'http:' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: false, remuxEnabled: false }).playable, false);
+  const incompatible = decideBrowserTransport(source('mp4', 'dts'), supported, 'http:');
+  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: true, sourceProtocol: 'http:' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: false, remuxEnabled: true }).playable, false);
 });
