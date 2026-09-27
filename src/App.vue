@@ -3664,6 +3664,7 @@ onMounted(async () => {
           <p v-else>RH IPTV Player is a personal streaming library that lets you connect an authorised provider, organise content by profile, and continue watching across linked devices. This policy explains what information we use to provide those features.</p>
           <h2>Information we collect</h2>
           <p>We collect your email address and password when you create an account, profile names and preferences you choose, linked-device and pairing information, favourites, playback history, and resume positions. Provider credentials and catalogue data are used only to connect your authorised playlist and deliver requested media.</p>
+          <p v-if="legalPage === 'android-privacy'"><strong>Android beta tester list:</strong> If you register on the Download App page, we store the email address you submit so we can add you to the RH IPTV Player beta invitation list and contact you about testing. We keep it for the beta programme and remove it on request. To withdraw, email <a href="mailto:rudyhamameca@gmail.com?subject=Remove%20me%20from%20the%20Android%20beta%20list">rudyhamameca@gmail.com</a>.</p>
           <h2>How we use information</h2>
           <p>We use this information to authenticate you, keep your library isolated to your account and profiles, synchronise playback and favourites, operate subscriptions, prevent abuse, and provide support. We do not sell personal information or use it for third-party advertising.</p>
           <h2>Sharing and retention</h2>
