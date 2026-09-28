@@ -930,6 +930,7 @@ const webPlayerSrc = computed(() => {
   if (isDirectProxy) target.searchParams.set("playbackClientId", browserPlaybackClientId);
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
+    if (webCompatibility.value?.transport === "HLS_TIMING_REPAIR") target.searchParams.set("timingRepair", "1");
   }
   // The invited partner does not own this source, so every media request must
   // carry the host's stream ticket and NOTHING else - sending the partner's own
@@ -1089,7 +1090,11 @@ async function decideWebPlayback(item) {
   const compatibility = applyServerPlaybackPolicy(
     decideBrowserTransport(mediaForBrowser, capabilities, sourceProtocol), decision,
   );
-  const transport = {
+  const transport = decision.timingRepair && compatibility.videoCompatible && compatibility.audioCompatible ? {
+    ...compatibility,
+    transport: "HLS_TIMING_REPAIR",
+    reason: "Decoded frame presentation timestamps move backward; RH will rebuild the video timeline.",
+  } : {
     ...compatibility,
     sourceProtocol,
     ...(compatibility.transport === "DIRECT_PROXY" ? { reason: "Browser mixed-content protection; media bytes are relayed unchanged over HTTPS." } : {}),
@@ -1110,10 +1115,11 @@ async function decideWebPlayback(item) {
   const { providerURL: _providerURL, providerUrl: _providerUrl, ...safeNowPlaying } = webNowPlaying.value || {};
   webNowPlaying.value = { ...safeNowPlaying, ...(decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
   const useDirect = transport.transport.startsWith("DIRECT");
-  webForceHls.value = !useDirect && transport.remuxCompatible;
+  const useTimingRepair = decision.timingRepair && compatibility.videoCompatible && compatibility.audioCompatible;
+  webForceHls.value = useTimingRepair || (!useDirect && transport.remuxCompatible);
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
-    : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
+    : useTimingRepair ? 'TIMING REPAIR → HLS' : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
   if (transport.transport === "UNSUPPORTED") {
     webEncodeStrategy.value = "UNSUPPORTED";
     throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });
@@ -1753,6 +1759,7 @@ function unmuteWebPlayback() {
 function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "DIRECT") return "DIRECT";
   if (strategy === "HLS_REMUX") return "HLS REMUX";
+  if (strategy === "HLS_TIMING_REPAIR") return "TIMING REPAIR → HLS";
   if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
   void videoMode;
   return "";

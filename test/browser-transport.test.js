@@ -27,6 +27,14 @@ test('server Direct checkbox gates Direct while browser compatibility decides tr
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, directCompatible: false, playbackStrategy: 'HLS_REMUX' }).transport, 'DIRECT_PROXY');
 });
 
+test('timing repair is selected only when the backend flags decoded PTS regressions and Browser codecs work', () => {
+  const direct = decideBrowserTransport(source('mp4'), supported, 'https:');
+  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: false }).transport, 'DIRECT_PROVIDER');
+  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: true }).transport, 'HLS_TIMING_REPAIR');
+  const brokenAudio = decideBrowserTransport(source('mp4', 'dts'), supported, 'https:');
+  assert.equal(applyServerPlaybackPolicy(brokenAudio, { timingRepair: true }).transport, 'UNSUPPORTED');
+});
+
 test('HTTP does not turn incompatible containers or codecs into transport failures', () => {
   const firefox = { ...supported, browser: { name: 'firefox', version: 140 }, mkvVerified: false };
   assert.equal(decideBrowserTransport(source('legacybox'), firefox, 'https:').transport, 'HLS_REMUX');
