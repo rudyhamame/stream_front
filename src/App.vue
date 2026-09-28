@@ -299,9 +299,6 @@ const newPassword = ref("");
 const newPasswordConfirmation = ref("");
 const passwordMessage = ref("");
 const passwordMessageType = ref("info");
-const deleteAccountOpen = ref(false);
-const deleteAccountPassword = ref("");
-const deleteAccountMessage = ref("");
 const partnerEmailOpen = ref(false);
 const partnerEmail = ref("");
 const partnerEmailInput = ref("");
@@ -631,22 +628,6 @@ async function changePassword() {
   } catch (error) {
     passwordMessageType.value = "error";
     passwordMessage.value = error.message;
-  }
-}
-
-async function deleteAccount() {
-  deleteAccountMessage.value = "";
-  if (!window.confirm("Delete your account? This permanently removes your library, profiles, and settings. This cannot be undone.")) return;
-  try {
-    busy.value = true;
-    await request("/api/account", { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: deleteAccountPassword.value }) });
-    deviceToken.value = "";
-    window.localStorage.removeItem("rh-device-token");
-    window.location.reload();
-  } catch (error) {
-    deleteAccountMessage.value = error.message;
-  } finally {
-    busy.value = false;
   }
 }
 
@@ -3650,10 +3631,8 @@ onMounted(async () => {
         <h1 :id="`${legalPage}-title`">{{ legalPage === 'terms' ? 'Terms of use' : legalPage === 'delete-account' ? 'Delete your account' : (legalPage === 'android-privacy' ? 'Android privacy policy' : 'Privacy policy') }}</h1>
         <p class="legal-updated">Effective September 11, 2026</p>
         <template v-if="legalPage === 'delete-account'">
-          <p>You can permanently delete your RH IPTV Player account, profiles, library, favourites, and playback history at any time, from a browser or the app - no need to keep it installed.</p>
-          <h2>Delete it yourself (immediate)</h2>
-          <p>1. Sign in at <a :href="browserOrigin">{{ browserOrigin }}</a> (or open the app) with your account email and password.<br>2. Go to <strong>Settings &rarr; Delete account</strong>.<br>3. Confirm with your password. Your account and all associated data are deleted immediately - this cannot be undone.</p>
-          <h2>Can't sign in? Request deletion by email</h2>
+          <p>You can request permanent deletion of your RH IPTV Player account, profiles, library, favourites, and playback history without keeping the app installed.</p>
+          <h2>Request account deletion</h2>
           <p>Email <a href="mailto:rudyhamameca@gmail.com?subject=Delete%20my%20RH%20IPTV%20Player%20account">rudyhamameca@gmail.com</a> from the address on your account and we will delete it for you, usually within a few days.</p>
           <h2>What gets deleted</h2>
           <p>Your account credentials, profiles, linked devices, favourites, watch history and resume positions, and any Watch-with-Partner pairing are all permanently removed. Provider/playlist credentials you connected are deleted along with the account, not retained separately.</p>
@@ -4039,8 +4018,6 @@ onMounted(async () => {
           <div class="profile-password-heading"><div><p class="eyebrow">SECURITY</p><h3>Change password</h3></div><button type="button" class="source-action" @click="changePasswordOpen = !changePasswordOpen">{{ changePasswordOpen ? 'Cancel' : 'Update password' }}</button></div>
           <form v-if="changePasswordOpen" class="web-password-form profile-password-form" @submit.prevent="changePassword"><label>Current password<input v-model="currentPassword" type="password" minlength="8" required autocomplete="current-password"></label><label>New password<input v-model="newPassword" type="password" minlength="8" required autocomplete="new-password"></label><label>Confirm new password<input v-model="newPasswordConfirmation" type="password" minlength="8" required autocomplete="new-password"></label><button type="submit" class="primary-action" :disabled="busy">Change password</button><p v-if="passwordMessage" :class="['web-password-message', `is-${passwordMessageType}`]">{{ passwordMessage }}</p></form>
           <div class="profile-password-divider"></div>
-          <div class="profile-password-heading"><div><p class="eyebrow">DANGER ZONE</p><h3>Delete account</h3></div><button type="button" class="source-action web-delete-account-toggle" @click="deleteAccountOpen = !deleteAccountOpen; deleteAccountMessage = ''">{{ deleteAccountOpen ? 'Cancel' : 'Delete account' }}</button></div>
-          <form v-if="deleteAccountOpen" class="web-password-form profile-password-form" @submit.prevent="deleteAccount"><p>This permanently deletes your account, library, profiles, and settings. This cannot be undone.</p><label>Current password<input v-model="deleteAccountPassword" type="password" minlength="8" required autocomplete="current-password"></label><button type="submit" class="primary-action web-delete-account-confirm" :disabled="busy">Permanently delete account</button><p v-if="deleteAccountMessage" class="web-password-message is-error">{{ deleteAccountMessage }}</p></form>
           <div class="profile-password-divider"></div>
           <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? `${partnerEmail} (${partnerProfileCode})` : 'No partner set' }}</h3><p class="profile-picture-help">Your profile code is <code class="profile-code-badge">{{ activeProfile.code }}</code> - give it to whoever adds you as their partner.</p></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail; partnerProfileCodeInput = partnerProfileCode">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
           <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><label>Partner's profile code<input v-model="partnerProfileCodeInput" type="text" placeholder="e.g. R1" maxlength="6" autocomplete="off" style="text-transform:uppercase"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
