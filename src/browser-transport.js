@@ -154,7 +154,8 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
 export function applyServerPlaybackPolicy(decision, serverDecision) {
   const directEnabled = serverDecision?.directEnabled !== false;
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
-  if (serverDecision?.timingRepair && decision.videoCompatible && decision.audioCompatible) {
+  if ((serverDecision?.timingRepair === true || serverDecision?.playbackStrategy === 'HLS_TIMING_REPAIR')
+      && decision.videoCompatible && decision.audioCompatible) {
     return { ...decision, transport: 'HLS_TIMING_REPAIR', directCompatible: false,
       remuxEnabled, playable: true, reason: 'Decoded frame presentation timestamps regress; RH will rebuild the video timeline.' };
   }

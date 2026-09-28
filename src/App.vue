@@ -1090,7 +1090,8 @@ async function decideWebPlayback(item) {
   const compatibility = applyServerPlaybackPolicy(
     decideBrowserTransport(mediaForBrowser, capabilities, sourceProtocol), decision,
   );
-  const transport = decision.timingRepair && compatibility.videoCompatible && compatibility.audioCompatible ? {
+  const serverRequiresTimingRepair = decision.playbackStrategy === "HLS_TIMING_REPAIR" || decision.timingRepair === true;
+  const transport = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible ? {
     ...compatibility,
     transport: "HLS_TIMING_REPAIR",
     reason: "Decoded frame presentation timestamps move backward; RH will rebuild the video timeline.",
@@ -1115,7 +1116,7 @@ async function decideWebPlayback(item) {
   const { providerURL: _providerURL, providerUrl: _providerUrl, ...safeNowPlaying } = webNowPlaying.value || {};
   webNowPlaying.value = { ...safeNowPlaying, ...(decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
   const useDirect = transport.transport.startsWith("DIRECT");
-  const useTimingRepair = decision.timingRepair && compatibility.videoCompatible && compatibility.audioCompatible;
+  const useTimingRepair = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible;
   webForceHls.value = useTimingRepair || (!useDirect && transport.remuxCompatible);
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
@@ -1772,6 +1773,15 @@ async function configureMoviePlayback(startSeconds = 0) {
   await nextTick();
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
+  if (source) {
+    const safeSource = new URL(source, window.location.href);
+    for (const key of ["deviceToken", "streamTicket", "playbackClientId", "wwpSessionId"]) safeSource.searchParams.delete(key);
+    const transport = webCompatibility.value?.transport || (webForceHls.value ? "HLS" : "DIRECT");
+    console.info(`[BrowserPlayer] transport=${transport} url=${safeSource.toString()}`);
+    if (transport === "HLS_TIMING_REPAIR" && safeSource.pathname.includes("/direct-session/")) {
+      throw new Error("Fatal Browser transport decision: timing repair cannot use a DIRECT session URL.");
+    }
+  }
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
   webHlsAwaitingMediaAttach = webForceHls.value;

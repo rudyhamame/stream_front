@@ -31,6 +31,7 @@ test('timing repair is selected only when the backend flags decoded PTS regressi
   const direct = decideBrowserTransport(source('mp4'), supported, 'https:');
   assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: false }).transport, 'DIRECT_PROVIDER');
   assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: true }).transport, 'HLS_TIMING_REPAIR');
+  assert.equal(applyServerPlaybackPolicy(direct, { playbackStrategy: 'HLS_TIMING_REPAIR', directEnabled: true }).transport, 'HLS_TIMING_REPAIR');
   const brokenAudio = decideBrowserTransport(source('mp4', 'dts'), supported, 'https:');
   assert.equal(applyServerPlaybackPolicy(brokenAudio, { timingRepair: true }).transport, 'UNSUPPORTED');
 });
