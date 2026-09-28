@@ -2363,9 +2363,8 @@ async function closeWebPlayer() {
     const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
     try { navigator.sendBeacon(endUrl); } catch { fetch(endUrl, { method: "POST", keepalive: true }).catch(() => {}); }
   } else if (webNowPlaying.value) {
-    // Stop this tab's HLS generation immediately. The idle sweep is only a
-    // safety net for lost clients; closing the player should release its job
-    // and provider lease now.
+    // Detach this tab from its HLS job. Other tabs may still be watching the
+    // same generation, so the server stops it only after the last viewer leaves.
     const item = webNowPlaying.value;
     const releaseUrl = browserPlaybackReleaseUrl(item);
     const body = JSON.stringify({ sourceId: item.sourceId || sourceId.value, kind: item.kind || "movie", id: item.id, extension: item.extension || "", directProxyToken: webDirectProxyToken.value });
