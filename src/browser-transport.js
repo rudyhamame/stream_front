@@ -190,6 +190,13 @@ export function shouldFallbackFromDirect(mediaErrorCode, remuxCompatible) {
 
 export async function browserCodecSupportFromMediaCapabilities(capabilities, media) {
   if (!globalThis.navigator?.mediaCapabilities?.decodingInfo) return capabilities;
+  // Some browser builds leave decodingInfo pending while a decoder is busy.
+  // The media element's canPlayType result is already available, so a slow
+  // advisory query must not hold playback at the provider-fetch hint.
+  const boundedDecodingInfo = config => Promise.race([
+    navigator.mediaCapabilities.decodingInfo(config),
+    new Promise(resolve => setTimeout(() => resolve(null), 1500)),
+  ]);
   capabilities.mediaCapabilities = { video: {}, audio: {} };
   // canPlayType remains the baseline; MediaCapabilities can only positively add evidence.
   if (media?.video?.codec) {
@@ -201,18 +208,22 @@ export async function browserCodecSupportFromMediaCapabilities(capabilities, med
         : media.video.codec === 'vp9' ? 'vp09.00.10.08' : media.video.codec === 'av1' ? 'av01.0.08M.08' : media.video.codec;
     const codecString = media.video.codec === 'h264' ? `avc1.${profileLevel}` : profileLevel;
     try {
-      const result = await navigator.mediaCapabilities.decodingInfo({ type: 'file', video: { contentType: `${mime}; codecs="${codecString}"`, width: media.video.width || 1280, height: media.video.height || 720, bitrate: media.bitrate || 2_000_000, framerate: media.video.frameRate || 30 } });
-      capabilities.mediaCapabilities.video[media.video.codec] = Boolean(result.supported);
-      if (result.supported) capabilities.videoCodecs[media.video.codec] = true;
+      const result = await boundedDecodingInfo({ type: 'file', video: { contentType: `${mime}; codecs="${codecString}"`, width: media.video.width || 1280, height: media.video.height || 720, bitrate: media.bitrate || 2_000_000, framerate: media.video.frameRate || 30 } });
+      if (result) {
+        capabilities.mediaCapabilities.video[media.video.codec] = Boolean(result.supported);
+        if (result.supported) capabilities.videoCodecs[media.video.codec] = true;
+      }
     } catch { /* Unsupported configuration is handled by canPlayType and parameter checks. */ }
   }
   if (media?.audio?.codec) {
     const audioMimes = { aac: 'audio/mp4; codecs="mp4a.40.2"', mp3: 'audio/mpeg', opus: 'audio/webm; codecs="opus"', vorbis: 'audio/webm; codecs="vorbis"', ac3: 'audio/mp4; codecs="ac-3"', eac3: 'audio/mp4; codecs="ec-3"' };
     const contentType = audioMimes[media.audio.codec];
     if (contentType) try {
-      const result = await navigator.mediaCapabilities.decodingInfo({ type: 'file', audio: { contentType, channels: String(media.audio.channels || 2), bitrate: media.bitrate || 192_000, samplerate: media.audio.sampleRate || 48_000 } });
-      capabilities.mediaCapabilities.audio[media.audio.codec] = Boolean(result.supported);
-      if (result.supported) capabilities.audioCodecs[media.audio.codec] = true;
+      const result = await boundedDecodingInfo({ type: 'file', audio: { contentType, channels: String(media.audio.channels || 2), bitrate: media.bitrate || 192_000, samplerate: media.audio.sampleRate || 48_000 } });
+      if (result) {
+        capabilities.mediaCapabilities.audio[media.audio.codec] = Boolean(result.supported);
+        if (result.supported) capabilities.audioCodecs[media.audio.codec] = true;
+      }
     } catch { /* Unsupported configuration is handled by canPlayType. */ }
   }
   return capabilities;

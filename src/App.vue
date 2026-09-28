@@ -171,6 +171,32 @@ const playlistPreviewSelected = ref(null);
 const playlistPreviewLoading = ref(false);
 const playlistPreviewError = ref("");
 const webNowPlaying = ref(null);
+let browserBuildCheckTimer = null;
+let browserBuildCheckRunning = false;
+async function checkBrowserBuild() {
+  if (browserBuildCheckRunning || document.hidden || webNowPlaying.value || legalPage.value || downloadPage.value
+      || document.activeElement?.matches?.('input, textarea, select, [contenteditable]')) return;
+  const loadedScript = document.querySelector('script[type="module"][src*="/assets/index-"]')?.src;
+  if (!loadedScript) return;
+  browserBuildCheckRunning = true;
+  try {
+    const response = await fetch('/home', { cache: 'no-store', signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return;
+    const currentDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const currentScript = currentDocument.querySelector('script[type="module"][src*="/assets/index-"]')?.getAttribute('src');
+    if (currentScript && new URL(currentScript, location.origin).pathname !== new URL(loadedScript).pathname
+        && !webNowPlaying.value) location.reload();
+  } catch { /* The existing page stays usable during a temporary network error. */ }
+  finally { browserBuildCheckRunning = false; }
+}
+function checkBrowserBuildWhenVisible() {
+  if (!document.hidden) void checkBrowserBuild();
+}
+onBeforeUnmount(() => {
+  clearInterval(browserBuildCheckTimer);
+  document.removeEventListener('visibilitychange', checkBrowserBuildWhenVisible);
+  window.removeEventListener('focus', checkBrowserBuildWhenVisible);
+});
 const webPlaying = ref(false);
 const webMuted = ref(false);
 // Set when the browser's autoplay policy forced a muted start (the common case
@@ -3630,6 +3656,9 @@ watch(query, () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => l
 watch(category, () => loadCatalog());
 watch(titleLanguage, () => loadCatalog());
 onMounted(async () => {
+  browserBuildCheckTimer = window.setInterval(checkBrowserBuildWhenVisible, 45_000);
+  document.addEventListener('visibilitychange', checkBrowserBuildWhenVisible);
+  window.addEventListener('focus', checkBrowserBuildWhenVisible);
   document.addEventListener("keydown", handleNavigationKeydown);
   document.addEventListener("click", closeCardActionsOnOutsideClick);
   window.addEventListener("popstate", enforceProfileSelection);
