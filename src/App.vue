@@ -249,6 +249,7 @@ let webStallTimer = null;
 let webBufferingTimer = null;
 let webStartupGapAligned = false;
 let webPlaybackToken = 0;
+let webStartupPollTimer = null;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
 let playlistPreviewRecoveryTimer = null;
@@ -258,6 +259,33 @@ let webControlsTimer = null;
 function setWebStartupProgress(percent, hint) {
   webStartupPercent.value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
   webStartupHint.value = String(hint || "Starting");
+}
+function advanceWebStartupProgress(percent, hint) {
+  if (webMediaReady.value || percent <= webStartupPercent.value) return;
+  setWebStartupProgress(percent, hint);
+}
+function stopWebStartupPoll() {
+  clearTimeout(webStartupPollTimer);
+  webStartupPollTimer = null;
+}
+function pollWebHlsStartup(source, token) {
+  stopWebStartupPoll();
+  const statusUrl = new URL(source);
+  if (!statusUrl.pathname.endsWith('/master.m3u8')) return;
+  statusUrl.pathname = statusUrl.pathname.replace(/\/master\.m3u8$/, '/startup-status');
+  const poll = async () => {
+    if (token !== webPlaybackToken || webMediaReady.value || !webNowPlaying.value || webStartupPercent.value >= 70) return;
+    try {
+      const response = await fetch(statusUrl, { cache: 'no-store' });
+      if (response.ok && token === webPlaybackToken) {
+        const status = await response.json();
+        if (status.phase !== 'failed') advanceWebStartupProgress(Math.min(68, Number(status.percent) || 40), 'Preparing HLS segments');
+      }
+    } catch { /* HLS error handling owns a failed or interrupted request. */ }
+    if (token === webPlaybackToken && !webMediaReady.value && webStartupPercent.value < 70)
+      webStartupPollTimer = setTimeout(poll, 750);
+  };
+  poll();
 }
 async function loadHlsConstructor() {
   if (!hlsConstructorPromise) hlsConstructorPromise = import("hls.js").then(module => module.default);
@@ -1189,6 +1217,7 @@ function parseDuration(value) {
 }
 
 function handleWebMetadata(event) {
+  if (event.target !== webVideo.value) return;
   const duration = Number(event.target.duration) || 0;
   if (!webForceHls.value && !webWwpSessionId.value
       && event.target.videoWidth > 0 && event.target.videoHeight > 0) {
@@ -1351,7 +1380,8 @@ function toggleWebControls(event) {
   if (webControlsVisible.value) scheduleWebControlsHide(); else clearWebControlsTimer();
 }
 
-function onWebPlay() {
+function onWebPlay(event) {
+  if (event.target !== webVideo.value) return;
   webPlaying.value = true;
   webBuffering.value = !webMediaReady.value;
   // The WWP resume path (toggleWebPlayback / applyRemoteWwpControl) always does
@@ -1364,7 +1394,8 @@ function onWebPlay() {
   scheduleWebControlsHide();
 }
 
-function onWebPause() {
+function onWebPause(event) {
+  if (event.target !== webVideo.value) return;
   webPlaying.value = false;
   showWebControls();
   // NB: no WWP relay here - the element pauses for buffering stalls, stream
@@ -1373,6 +1404,7 @@ function onWebPause() {
 }
 
 function onWebEnded(event) {
+  if (event?.target !== webVideo.value) return;
   const item = webNowPlaying.value;
   const video = event?.target || webVideo.value;
   const position = webAbsolutePosition();
@@ -1437,7 +1469,8 @@ async function applyRemoteWwpControl(data) {
   }
 }
 
-function onWebWaiting() {
+function onWebWaiting(event) {
+  if (event?.target !== webVideo.value) return;
   if (webNowPlaying.value?.kind !== "channel") webBufferRecoveryPosition.value = Math.max(webBufferRecoveryPosition.value, webCurrentTime.value);
   clearTimeout(webBufferingTimer);
   webBufferingTimer = setTimeout(() => {
@@ -1469,6 +1502,8 @@ function onWebWaiting() {
 }
 
 function onWebTimeUpdate(event) {
+  if (event.target !== webVideo.value) return;
+  if (!webMediaReady.value) return;
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
@@ -1516,9 +1551,10 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
   webPlaybackRetryCount.value += 1;
   webBuffering.value = true;
   webPlayerError.value = "";
-  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Trying Direct playback");
+  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Buffering");
   showWebControls();
   clearWebRecoveryTimer();
+  stopWebStartupPoll();
   clearTimeout(webStallTimer);
   webStallTimer = null;
   // Keep retrying while the server or network is unavailable. The cap limits
@@ -1530,13 +1566,16 @@ function scheduleWebReconnect(resumeAt = webAbsolutePosition()) {
     const requestedSeek = webPendingSeek.value >= 0 ? webPendingSeek.value : -1;
     const target = requestedSeek >= 0 ? requestedSeek
       : webNowPlaying.value.kind === "channel" ? 0
-        : Math.max(resumeAt, webAbsolutePosition());
+        : Math.max(resumeAt, webCurrentTime.value);
     restartWebAt(target);
   }, delay);
 }
 
 function webAbsolutePosition() {
-  return Math.max(0, webPlaybackOffset.value + (webVideo.value?.currentTime || 0));
+  // webCurrentTime is advanced only by the current element's timeupdate.
+  // Reading currentTime from an element being replaced can add its old HLS
+  // timeline to the new offset and skip hundreds of seconds on reconnect.
+  return Math.max(0, webPendingSeek.value >= 0 ? webPendingSeek.value : webCurrentTime.value);
 }
 
 // Retain the current strategy header for the player badge.
@@ -1598,6 +1637,7 @@ function handleWebVideoError(event) {
 }
 
 function onWebReady(event) {
+  if (event?.target !== webVideo.value) return;
   // A Direct -> HLS (or fallback-rung) switch reloads the element, which leaves
   // it paused; resume unless the viewer paused on purpose.
   if ((event?.type === "canplay" || event?.type === "loadeddata") && webNowPlaying.value && !wwpUserPaused && event.target?.paused) startWebPlayback(event.target);
@@ -1616,8 +1656,11 @@ function onWebReady(event) {
   // newly presented frame before hiding the recovery state or revealing video.
   if (webMediaReady.value) {
     webBuffering.value = false;
+    stopWebStartupPoll();
     setWebStartupProgress(100, "Ready");
     webPlayerError.value = "";
+  } else if (["loadeddata", "canplay", "playing"].includes(event?.type)) {
+    advanceWebStartupProgress(95, webForceHls.value ? "Preparing HLS segments" : "Buffering");
   }
   scheduleWebControlsHide();
 }
@@ -1661,6 +1704,7 @@ function startWebVideoWedgeWatchdog(video) {
       webBuffering.value = false;
       webPlayerError.value = "";
       webPlaybackRetryCount.value = 0;
+      stopWebStartupPoll();
       setWebStartupProgress(100, "Ready");
       if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
     }
@@ -1821,6 +1865,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   }
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
+  stopWebStartupPoll();
   webHlsAwaitingMediaAttach = webForceHls.value;
   webStartupGapAligned = false;
   if (!video || !source) {
@@ -1857,7 +1902,7 @@ async function configureMoviePlayback(startSeconds = 0) {
     const directPlayback = !webForceHls.value && !webWwpSessionId.value;
     if (directPlayback) {
       webPendingEncodeStrategy.value = "DIRECT";
-      setWebStartupProgress(40, "Trying Direct playback");
+      setWebStartupProgress(40, "Buffering");
       // Native MP4 carries the whole timeline, so a resume point is a real
       // element seek once metadata is in (not a re-based manifest request).
       const seekTarget = webPendingSeek.value > 0 ? webPendingSeek.value : startSeconds;
@@ -1867,6 +1912,9 @@ async function configureMoviePlayback(startSeconds = 0) {
           webPendingSeek.value = -1;
         }, { once: true });
       }
+      video.addEventListener('loadedmetadata', () => {
+        if (playbackToken === webPlaybackToken) advanceWebStartupProgress(65, 'Buffering');
+      }, { once: true });
       // Chrome/Firefox need hls.js to consume a provider's live m3u8. Loading
       // the /play URL through hls.js still follows the 302 and streams directly
       // from the provider; it does not invoke RH HLS/transcoding.
@@ -1899,6 +1947,7 @@ async function configureMoviePlayback(startSeconds = 0) {
       }
     } else {
       setWebStartupProgress(40, "Preparing HLS segments");
+      pollWebHlsStartup(source, playbackToken);
       webHlsAwaitingMediaAttach = true;
       // The placeholder already covers the frame. Keep the media element
       // visible to Chrome while its MediaSource opens.
@@ -1968,7 +2017,8 @@ async function configureMoviePlayback(startSeconds = 0) {
         // creating its first segments. Ignore callbacks from a retired source.
         webHls.on(Hls.Events.MANIFEST_PARSED, () => {
           if (playbackToken !== webPlaybackToken) return;
-          setWebStartupProgress(70, "Preparing HLS segments");
+          stopWebStartupPoll();
+          advanceWebStartupProgress(70, "Preparing HLS segments");
           // Explicitly start the stream controller at the beginning of this
           // generated VOD window. The playlist grows while FFmpeg runs, so
           // hls.js classifies it as live and can otherwise keep reloading the
@@ -1977,8 +2027,15 @@ async function configureMoviePlayback(startSeconds = 0) {
         });
         webHls.on(Hls.Events.FRAG_LOADING, (_event, data) => {
           if (playbackToken === webPlaybackToken) {
+            advanceWebStartupProgress(75, "Preparing HLS segments");
             console.info("[BrowserHls] fragment loading", data.frag?.sn);
           }
+        });
+        webHls.on(Hls.Events.FRAG_LOADED, () => {
+          if (playbackToken === webPlaybackToken) advanceWebStartupProgress(84, 'Preparing HLS segments');
+        });
+        webHls.on(Hls.Events.FRAG_PARSED, () => {
+          if (playbackToken === webPlaybackToken) advanceWebStartupProgress(88, 'Preparing HLS segments');
         });
         for (const eventName of [Hls.Events.MEDIA_ATTACHING, Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
           webHls.on(eventName, (_event, data) => {
@@ -1988,6 +2045,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         }
         webHls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
           if (playbackToken !== webPlaybackToken) return;
+          advanceWebStartupProgress(92, 'Preparing HLS segments');
           refreshWebBuffered();
           if (Number.isFinite(data?.frag?.sn) && !wwpUserPaused && video.paused) startWebPlayback(video);
         });
@@ -2044,7 +2102,8 @@ async function playWebMovie(item) {
   webBufferRecoveryPosition.value = -1;
   webMediaReady.value = false;
   webBuffering.value = true;
-  setWebStartupProgress(40, webForceHls.value ? "Preparing HLS segments" : "Trying Direct playback");
+  stopWebStartupPoll();
+  setWebStartupProgress(10, "Fetching item url from provider");
   await new Promise(resolve => setTimeout(resolve, 0));
   webControlsVisible.value = true;
   webPlayerError.value = "";
@@ -2057,7 +2116,6 @@ async function playWebMovie(item) {
   webDuration.value = parseDuration(webNowPlaying.value?.duration);
   if (!deviceToken.value) await loadStreamTicket(webNowPlaying.value);
   if (sessionId !== webPlaybackSessionId) return;
-  setWebStartupProgress(10, "Fetching item url from provider");
   if (webNowPlaying.value.kind === "channel") {
     // Live TV has no codec matrix (the streamer only serves the decision for
     // movie/series): play the provider stream directly, or RH HLS when the page
@@ -2374,6 +2432,7 @@ async function closeWebPlayer() {
   stopWwpSync();
   clearWebControlsTimer();
   clearWebRecoveryTimer();
+  stopWebStartupPoll();
   clearTimeout(webStallTimer);
   webPlaybackSessionId += 1;
   webPlaybackToken += 1;
@@ -2482,6 +2541,7 @@ async function restartWebAt(target, opts = {}) {
   }
   webPlaybackOffset.value = nextIsHls ? target : 0;
   webCurrentTime.value = target;
+  webBufferRecoveryPosition.value = -1;
   if (!nextIsHls) webPendingSeek.value = target;
   webPlayerError.value = "";
   webBuffering.value = true;
