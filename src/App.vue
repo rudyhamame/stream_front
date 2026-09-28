@@ -1093,10 +1093,14 @@ async function runWebCompatibilitySteps(decision) {
 
 async function decideWebPlayback(item) {
   const sessionId = webPlaybackSessionId;
+  const capabilities = detectBrowserCapabilities();
   const url = new URL(`${browserStreamer}/api/xtream/playback-decision/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || 'movie')}/${encodeURIComponent(item.id)}`);
   url.searchParams.set('client', 'browser');
   url.searchParams.set('playbackClientId', browserPlaybackClientId);
   url.searchParams.set('traceId', webPlaybackTraceId);
+  if (capabilities.mkvVerified && ['chrome', 'edge'].includes(capabilities.browser.name) && capabilities.browser.version >= 145) {
+    url.searchParams.set('caps', 'mkv-direct');
+  }
   if (item.extension) url.searchParams.set('ext', item.extension);
   if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
   if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
@@ -1110,7 +1114,6 @@ async function decideWebPlayback(item) {
   }
   const sourceExtension = item.extension || String(decision.providerURL || '').match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1] || '';
   const mediaForBrowser = { ...(decision.media || {}), extension: sourceExtension };
-  const capabilities = detectBrowserCapabilities();
   await browserCodecSupportFromMediaCapabilities(capabilities, mediaForBrowser);
   if (sessionId !== webPlaybackSessionId) return null;
   const sourceProtocol = decision.sourceProtocol || (decision.providerURL ? new URL(decision.providerURL).protocol : '');
