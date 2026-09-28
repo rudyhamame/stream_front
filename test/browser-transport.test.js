@@ -17,19 +17,21 @@ test('delivery protocol changes only the delivery method for compatible media', 
   assert.equal(decideBrowserTransport(source('matroska'), supported, 'http:').transport, 'DIRECT_PROXY');
 });
 
-test('server Direct checkbox gates Direct while browser compatibility decides transport', () => {
+test('server timing decision gates Direct even when Browser reports MKV support', () => {
   const local = decideBrowserTransport(source(), supported, 'http:');
   assert.equal(local.transport, 'DIRECT_PROXY');
   const policy = applyServerPlaybackPolicy(local, { directEnabled: false, directCompatible: false, playbackStrategy: 'HLS_REMUX', reason: 'Direct disabled in RH control panel.' });
   assert.equal(policy.transport, 'HLS_REMUX');
   assert.equal(policy.directCompatible, false);
   assert.equal(policy.playable, true);
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, directCompatible: false, playbackStrategy: 'HLS_REMUX' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT' }).transport, 'HLS_REMUX');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', sourceProtocol: 'http:', media: { timing: { checked: true, decodedPtsMonotonic: true } } }).transport, 'DIRECT_PROXY');
 });
 
 test('timing repair is selected only when the backend flags decoded PTS regressions and Browser codecs work', () => {
   const direct = decideBrowserTransport(source('mp4'), supported, 'https:');
-  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: false }).transport, 'DIRECT_PROVIDER');
+  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: false, playbackStrategy: 'DIRECT', sourceProtocol: 'https:', media: { timing: { checked: true, decodedPtsMonotonic: true } } }).transport, 'DIRECT_PROVIDER');
   assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: true }).transport, 'HLS_TIMING_REPAIR');
   assert.equal(applyServerPlaybackPolicy(direct, { playbackStrategy: 'HLS_TIMING_REPAIR', directEnabled: true }).transport, 'HLS_TIMING_REPAIR');
   const brokenAudio = decideBrowserTransport(source('mp4', 'dts'), supported, 'https:');
@@ -70,7 +72,7 @@ test('unsupported or unknown containers remux when stream copy solves it', () =>
 });
 
 test('verified Edge MKV support and unverified Chromium behavior are distinct', () => {
-  assert.equal(decideBrowserTransport(source(), { ...supported, browser: { name: 'edge', version: 140 } }).transport, 'DIRECT');
+  assert.equal(decideBrowserTransport(source(), { ...supported, browser: { name: 'edge', version: 145 }, mkvVerified: true }).transport, 'DIRECT');
   assert.equal(decideBrowserTransport(source(), { ...supported, browser: { name: 'chromium', version: 140 }, mkvVerified: false, containers: { mp4: true, webm: true, mkv: false } }).transport, 'HLS_REMUX');
 });
 
@@ -109,11 +111,11 @@ test('Provider HLS is Direct when the browser has native or MSE HLS support', ()
   assert.equal(decideBrowserTransport(source('hls'), caps).transport, 'DIRECT');
 });
 
- test('Direct attempt takes precedence over capability predictions; checkboxes still gate both paths', () => {
+test('Browser cannot override an HLS or unsupported server decision with Direct', () => {
   const local = decideBrowserTransport(source('legacybox'), supported, 'http:');
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, sourceProtocol: 'http:' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: false, remuxEnabled: false }).playable, false);
   const incompatible = decideBrowserTransport(source('mp4', 'dts'), supported, 'http:');
-  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: true, sourceProtocol: 'http:' }).transport, 'DIRECT_PROXY');
+  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX' }).transport, 'UNSUPPORTED');
   assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: false, remuxEnabled: true }).playable, false);
 });

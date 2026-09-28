@@ -1810,12 +1810,10 @@ async function configureMoviePlayback(startSeconds = 0) {
   const video = webVideo.value;
   const source = movieStreamUrl(startSeconds);
   if (source) {
-    const safeSource = new URL(source, window.location.href);
-    for (const key of ["deviceToken", "streamTicket", "playbackClientId", "wwpSessionId"]) safeSource.searchParams.delete(key);
     const transport = webCompatibility.value?.transport || (webForceHls.value ? "HLS" : "DIRECT");
-    console.info(`[BrowserPlayer] transport=${transport} url=${safeSource.toString()}`);
-    if (transport === "HLS_TIMING_REPAIR" && safeSource.pathname.includes("/direct-session/")) {
-      throw new Error("Fatal Browser transport decision: timing repair cannot use a DIRECT session URL.");
+    console.info(`[RH-TRACE-8] traceId=${webPlaybackTraceId} transport=${transport} actualVideoSource=${traceMediaUrl(source)}`);
+    if (transport === "HLS_TIMING_REPAIR" && !isHlsPlaybackUrl(source)) {
+      throw new Error("BUG: malformed video timing cannot use DIRECT or HLS remux.");
     }
   }
   webEncodeStrategy.value = "";
@@ -2008,7 +2006,11 @@ async function configureMoviePlayback(startSeconds = 0) {
 
 async function playWebMovie(item) {
   const sessionId = ++webPlaybackSessionId;
+  webPlaybackTraceId = crypto.randomUUID().slice(0, 12);
+  console.info(`[RH-TRACE-1] traceId=${webPlaybackTraceId} itemId=${item?.kind || "movie"}:${item?.id || "unknown"} client=browser`);
   webCompatibility.value = null;
+  webServerPlaybackUrl.value = "";
+  webPlaybackSourceHash.value = "";
   webPlayerMenuOpen.value = false;
   webDirectTestResult.value = "Pending";
   webHlsTestResult.value = "Not attempted";
