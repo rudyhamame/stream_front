@@ -154,14 +154,19 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
 export function applyServerPlaybackPolicy(decision, serverDecision) {
   const directEnabled = serverDecision?.directEnabled !== false;
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
+  const serverTransport = String(serverDecision?.playbackStrategy || '');
+  const timing = serverDecision?.media?.timing || serverDecision?.timing || {};
   if ((serverDecision?.timingRepair === true || serverDecision?.playbackStrategy === 'HLS_TIMING_REPAIR')
       && decision.videoCompatible && decision.audioCompatible) {
     return { ...decision, transport: 'HLS_TIMING_REPAIR', directCompatible: false,
       remuxEnabled, playable: true, reason: 'Decoded frame presentation timestamps regress; RH will rebuild the video timeline.' };
   }
-  // Feature detection informs the badges; the native player gets the final
-  // decision by attempting the source whenever Direct is enabled.
-  if (directEnabled && decision.directCompatible) {
+  // Browser capability can veto DIRECT, but cannot override the backend's
+  // timing result or its selected HLS route. Older decisions without a
+  // completed healthy timing check cannot authorize a native media URL.
+  if (directEnabled && serverTransport === 'DIRECT'
+      && timing.checked === true && timing.decodedPtsMonotonic === true
+      && decision.directCompatible) {
     const protocol = serverDecision?.sourceProtocol || '';
     const transport = protocol === 'http:' ? 'DIRECT_PROXY'
       : protocol === 'https:' ? 'DIRECT_PROVIDER'
@@ -171,7 +176,7 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
   }
   if (remuxEnabled && decision.remuxCompatible) {
     return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
-      remuxEnabled, playable: true, reason: 'Direct is disabled; copying compatible streams into HLS.' };
+      remuxEnabled, playable: true, reason: 'The backend selected HLS; copying compatible streams into HLS.' };
   }
   return { ...decision, transport: 'UNSUPPORTED', playable: false, remuxEnabled,
     reason: 'No enabled strategy can play this item without transcoding.' };

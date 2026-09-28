@@ -75,6 +75,18 @@ function browserPlaybackUrl(raw) {
   }
   return target.toString();
 }
+function traceMediaUrl(raw) {
+  if (!raw) return "[missing]";
+  const target = new URL(raw, browserStreamer);
+  if (target.pathname.includes("/direct-session/")) {
+    return `${target.origin}/api/xtream/direct-session/[redacted]?rhMime=${target.searchParams.get("rhMime") || "unknown"}`;
+  }
+  if (![new URL(browserStreamer).origin, new URL(browserOrigin).origin].includes(target.origin)) {
+    return `[provider-direct:${target.origin}]`;
+  }
+  for (const key of ["deviceToken", "streamTicket", "playbackClientId", "wwpSessionId"]) target.searchParams.delete(key);
+  return target.toString();
+}
 const browserApp = ref(true);
 const navOpen = ref(false);
 const openCardKey = ref("");
@@ -190,6 +202,9 @@ const webPendingEncodeStrategy = ref("");
 const webStreamTicket = ref("");
 const webDirectProxyToken = ref("");
 const webDirectProxyUrl = ref("");
+const webServerPlaybackUrl = ref("");
+const webPlaybackSourceHash = ref("");
+let webPlaybackTraceId = "";
 const webForceHls = ref(false);
 const webWwpSessionId = ref("");
 // True only for the INVITED partner (joined via an invite's stream ticket, no
@@ -903,6 +918,7 @@ const firstDisplayedEpisode = computed(() => displayedSeriesEpisodeSeasons.value
 const webPlayerSrc = computed(() => {
   const item = webNowPlaying.value;
   if (!item) return "";
+  if (item.kind !== "channel" && !webCompatibility.value) return "";
   const playableSourceId = item.sourceId || sourceId.value;
   const extension = item.extension ? `?ext=${encodeURIComponent(item.extension)}` : "";
   const playableKind = ['movie', 'series', 'channel'].includes(item.kind) ? item.kind : 'movie';
@@ -920,7 +936,12 @@ const webPlayerSrc = computed(() => {
   // Once Direct playback fails, a compatible source must switch to the RH HLS
   // endpoint. Keeping the opaque Direct proxy URL here made hls.js parse the
   // full MKV response as a playlist, causing the proxy MIME/routing error.
-  const raw = shouldUseDirect
+  const selectedTransport = webCompatibility.value?.transport || "";
+  const serverUrl = webServerPlaybackUrl.value ? new URL(webServerPlaybackUrl.value, browserStreamer).toString() : "";
+  const serverUrlIsHls = serverUrl && isHlsPlaybackUrl(serverUrl);
+  const useServerUrl = !webWwpSessionId.value && serverUrl
+    && (shouldUseDirect ? selectedTransport.startsWith("DIRECT") : serverUrlIsHls);
+  const raw = useServerUrl ? serverUrl : shouldUseDirect
     ? isDirectProxy && webDirectProxyUrl.value
       ? `${browserStreamer}${webDirectProxyUrl.value}`
       : (/^https:\/\//i.test(providerURL) ? providerURL : '')
@@ -931,6 +952,8 @@ const webPlayerSrc = computed(() => {
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
     if (webCompatibility.value?.transport === "HLS_TIMING_REPAIR") target.searchParams.set("timingRepair", "1");
+    if (webPlaybackSourceHash.value) target.searchParams.set("sourceHash", webPlaybackSourceHash.value);
+    if (webPlaybackTraceId) target.searchParams.set("traceId", webPlaybackTraceId);
   }
   // The invited partner does not own this source, so every media request must
   // carry the host's stream ticket and NOTHING else - sending the partner's own
@@ -1073,6 +1096,7 @@ async function decideWebPlayback(item) {
   const url = new URL(`${browserStreamer}/api/xtream/playback-decision/${encodeURIComponent(item.sourceId)}/${encodeURIComponent(item.kind || 'movie')}/${encodeURIComponent(item.id)}`);
   url.searchParams.set('client', 'browser');
   url.searchParams.set('playbackClientId', browserPlaybackClientId);
+  url.searchParams.set('traceId', webPlaybackTraceId);
   if (item.extension) url.searchParams.set('ext', item.extension);
   if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
   if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
@@ -1081,6 +1105,9 @@ async function decideWebPlayback(item) {
   const decision = await response.json().catch(() => ({}));
   if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
+  if (decision.traceId !== webPlaybackTraceId || !decision.playbackUrl) {
+    throw new Error('The streamer returned an incomplete or mismatched playback decision.');
+  }
   const sourceExtension = item.extension || String(decision.providerURL || '').match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1] || '';
   const mediaForBrowser = { ...(decision.media || {}), extension: sourceExtension };
   const capabilities = detectBrowserCapabilities();
@@ -1091,6 +1118,12 @@ async function decideWebPlayback(item) {
     decideBrowserTransport(mediaForBrowser, capabilities, sourceProtocol), decision,
   );
   const serverRequiresTimingRepair = decision.playbackStrategy === "HLS_TIMING_REPAIR" || decision.timingRepair === true;
+  if (serverRequiresTimingRepair) {
+    const serverSource = new URL(decision.playbackUrl, browserStreamer);
+    if (!serverSource.pathname.includes("/api/xtream/hls/") || serverSource.searchParams.get("timingRepair") !== "1") {
+      throw new Error("BUG: timing repair decision did not return a repair HLS playlist.");
+    }
+  }
   const transport = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible ? {
     ...compatibility,
     transport: "HLS_TIMING_REPAIR",
@@ -1106,6 +1139,9 @@ async function decideWebPlayback(item) {
     ? new URL(decision.directProxyUrl, browserStreamer).pathname.split("/").pop() || ""
     : "";
   webCompatibility.value = transport;
+  webServerPlaybackUrl.value = decision.playbackUrl;
+  webPlaybackSourceHash.value = decision.sourceHash || "";
+  console.info(`[RH-TRACE-7] traceId=${webPlaybackTraceId} receivedTransport=${decision.playbackStrategy} browserTransport=${transport.transport} receivedUrl=${traceMediaUrl(decision.playbackUrl)} sourceHash=${webPlaybackSourceHash.value}`);
   console.info("[BrowserTransport]", {
     browser: transport.browser.name, version: transport.browser.version,
     container: transport.media.container, video: transport.media.video.codec || "unknown",
@@ -1114,10 +1150,10 @@ async function decideWebPlayback(item) {
     remuxCompatible: transport.remuxCompatible, decision: transport.transport, reason: transport.reason,
   });
   const { providerURL: _providerURL, providerUrl: _providerUrl, ...safeNowPlaying } = webNowPlaying.value || {};
-  webNowPlaying.value = { ...safeNowPlaying, ...(decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
+  webNowPlaying.value = { ...safeNowPlaying, ...(transport.transport.startsWith("DIRECT") && decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
   const useDirect = transport.transport.startsWith("DIRECT");
   const useTimingRepair = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible;
-  webForceHls.value = useTimingRepair || (!useDirect && transport.remuxCompatible);
+  webForceHls.value = useTimingRepair || transport.transport.startsWith("HLS");
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
     : useTimingRepair ? 'TIMING REPAIR → HLS' : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
