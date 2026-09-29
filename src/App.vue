@@ -827,9 +827,7 @@ const categoryEditorKeys = ref([]), categoryNameDrafts = ref({}), newCategoryNam
 const homeLoading = ref(false);
 const homeError = ref("");
 const welcomeProviderItems = ref({ series: [], movie: [], channel: [] });
-const homeFavorites = ref([]);
 const homeContinueWatching = ref([]);
-const homeFavoriteKeys = ref(new Set());
 const homeBackdropUrl = ref("");
 const backdropEnabled = ref((() => { try { return window.localStorage.getItem("rh-backdrop") !== "0"; } catch { return true; } })());
 function setBackdropEnabled(on) {
@@ -2904,7 +2902,7 @@ function homeExtraItem(raw) {
   const id = raw.id || raw.itemId;
   const kind = raw.kind || raw.type;
   if (!id || !["series", "movie", "channel"].includes(kind)) return null;
-  // A saved favourite / continue-watching entry can carry a stale sourceId -
+  // A saved / continue-watching entry can carry a stale sourceId -
   // the provider is recreated with a fresh _id per profile. When it no longer
   // resolves, fall back to a source we can actually reach (the only one, or
   // the currently selected provider) so its episodes/playback still work.
@@ -2938,73 +2936,13 @@ function homeExtraItem(raw) {
   }, kind);
 }
 
-function favoriteKeyOf(item) {
-  return `${item?.sourceId || sourceId.value || ""}:${item?.kind || "item"}:${item?.id || item?.itemId || ""}`;
-}
-
 async function loadHomeExtras() {
-  if (!deviceToken.value) { homeFavorites.value = []; homeContinueWatching.value = []; return; }
-  const [favResult, contResult] = await Promise.allSettled([
-    request("/api/favorites", { cache: "no-store" }),
+  if (!deviceToken.value) { homeContinueWatching.value = []; return; }
+  const contResult = await Promise.allSettled([
     request("/api/streaming-history/continue-watching?limit=20", { cache: "no-store" }),
   ]);
-  const favItems = favResult.status === "fulfilled" ? favResult.value.items || [] : [];
-  homeFavoriteKeys.value = new Set(favItems.map(favoriteKeyOf));
-  homeFavorites.value = favItems.map(homeExtraItem).filter(Boolean);
-  const contItems = contResult.status === "fulfilled" ? contResult.value.items || [] : [];
+  const contItems = contResult[0].status === "fulfilled" ? contResult[0].value.items || [] : [];
   homeContinueWatching.value = contItems.map(homeExtraItem).filter(Boolean);
-}
-
-// The player's favourite button acts on a series episode's SERIES, never the
-// single episode - the button just happens to live in the episode player.
-function favoriteTargetOf(item) {
-  if (item?.kind === "series" && item.isEpisode && item.seriesId) {
-    return {
-      id: String(item.seriesId),
-      kind: "series",
-      sourceId: item.sourceId || "",
-      title: item.seriesTitle
-        || (selectedSeries.value?.id === item.seriesId ? selectedSeries.value.title : "")
-        || String(item.title || "").split(" · ")[0]
-        || "",
-      logo: selectedSeries.value?.logo || item.logo || "",
-      category: item.category || "",
-    };
-  }
-  return item;
-}
-
-function isHomeFavorite(item) {
-  return homeFavoriteKeys.value.has(favoriteKeyOf(favoriteTargetOf(item)));
-}
-
-async function toggleHomeFavorite(rawItem) {
-  const item = favoriteTargetOf(rawItem);
-  if (!item?.id || !item?.kind) return;
-  const key = favoriteKeyOf(item);
-  const next = new Set(homeFavoriteKeys.value);
-  const wasFavorite = next.has(key);
-  if (wasFavorite) next.delete(key); else next.add(key);
-  homeFavoriteKeys.value = next;
-  if (wasFavorite) homeFavorites.value = homeFavorites.value.filter(entry => favoriteKeyOf(entry) !== key);
-  else if (!homeFavorites.value.some(entry => favoriteKeyOf(entry) === key)) homeFavorites.value = [item, ...homeFavorites.value];
-  try {
-    await request("/api/favorites/toggle", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        id: item.id, title: item.title || "", kind: item.kind,
-        sourceId: item.sourceId || "", logo: item.logo || "",
-        category: item.category || item.categoryId || "", extension: item.extension || "",
-        favorite: !wasFavorite,
-      }),
-    });
-  } catch (error) {
-    homeFavoriteKeys.value = wasFavorite ? new Set([...homeFavoriteKeys.value, key]) : (() => { const s = new Set(homeFavoriteKeys.value); s.delete(key); return s; })();
-    messageType.value = "error";
-    message.value = error.message || "Could not update favorites.";
-    void loadHomeExtras();
-  }
 }
 
 const homeRails = computed(() => {
@@ -3013,9 +2951,7 @@ const homeRails = computed(() => {
   // profile scoping is already done server-side by the device token).
   const currentSource = String(sourceId.value || "");
   const forProvider = list => currentSource ? list.filter(entry => String(entry?.sourceId || "") === currentSource) : list;
-  const favorites = forProvider(homeFavorites.value);
   const continueWatching = forProvider(homeContinueWatching.value);
-  if (favorites.length) rails.push({ id: "favorites", eyebrow: "FAVORITES", title: "Your favorites", items: favorites });
   if (continueWatching.length) rails.push({ id: "continue", eyebrow: "CONTINUE WATCHING", title: "Jump back in", items: continueWatching });
   for (const rail of [{ kind: "series", label: "New series" }, { kind: "movie", label: "New movies" }, { kind: "channel", label: "New live channels" }]) {
     const items = welcomeProviderItems.value[rail.kind] || [];
@@ -3495,29 +3431,6 @@ async function selectWeatherLocation(slot, selectedIndex) {
   }
 }
 
-const favorites = ref([]);
-const favoritesLoading = ref(false);
-async function loadFavorites() {
-  favoritesLoading.value = true;
-  try {
-    const data = await request("/api/favorites");
-    favorites.value = Array.isArray(data?.items) ? data.items : [];
-  } catch {
-    favorites.value = [];
-  } finally {
-    favoritesLoading.value = false;
-  }
-}
-async function removeFavorite(item) {
-  try {
-    await request("/api/favorites/toggle", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: item.id, kind: item.kind, sourceId: item.sourceId, favorite: false }),
-    });
-    favorites.value = favorites.value.filter(entry => entry.id !== item.id);
-  } catch { /* leave the item in place if the server rejects the removal */ }
-}
 
 let catalogRequestId = 0;
 let catalogController = null;
@@ -3636,7 +3549,6 @@ watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value =
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
   if (!deviceToken.value) return;
-  if (value === "watchlater") { loadFavorites(); return; }
   if (value === "playlist") loadPlaylistCategories();
   // Welcome needs its provider rails refreshed too - loadSources() fans out to
   // loadManagedLibrary() + loadWelcomeProvider() when the Welcome page is open,
@@ -3751,7 +3663,6 @@ onMounted(async () => {
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
     }).catch(() => {});
     void loadHomeData();
-    if (safariPage.value === "watchlater") void loadFavorites();
     // Warm the lazy HLS.js chunk (~185 KB gzip) while the catalog renders, so
     // the first Play does not wait on that download over the slow tunnel.
     void loadHlsConstructor().catch(() => {});
@@ -3777,22 +3688,22 @@ onMounted(async () => {
         <h1 :id="`${legalPage}-title`">{{ legalPage === 'terms' ? 'Terms of use' : legalPage === 'delete-account' ? 'Delete your account' : (legalPage === 'android-privacy' ? 'Android privacy policy' : 'Privacy policy') }}</h1>
         <p class="legal-updated">Effective September 11, 2026</p>
         <template v-if="legalPage === 'delete-account'">
-          <p>You can request permanent deletion of your RH IPTV Player account, profiles, library, favourites, and playback history without keeping the app installed.</p>
+          <p>You can request permanent deletion of your RH IPTV Player account, profiles, library, and playback history without keeping the app installed.</p>
           <h2>Request account deletion</h2>
           <p>Email <a href="mailto:rudyhamameca@gmail.com?subject=Delete%20my%20RH%20IPTV%20Player%20account">rudyhamameca@gmail.com</a> from the address on your account and we will delete it for you, usually within a few days.</p>
           <h2>What gets deleted</h2>
-          <p>Your account credentials, profiles, linked devices, favourites, watch history and resume positions, and any Watch-with-Partner pairing are all permanently removed. Provider/playlist credentials you connected are deleted along with the account, not retained separately.</p>
+          <p>Your account credentials, profiles, linked devices, watch history and resume positions, and any Watch-with-Partner pairing are all permanently removed. Provider/playlist credentials you connected are deleted along with the account, not retained separately.</p>
           <h2>Delete only some of your data</h2>
-          <p>You don't have to delete your whole account to remove specific data. From the app or <a :href="browserOrigin">{{ browserOrigin }}</a> you can: remove individual titles from Favourites or your Library, and delete a connected playlist/provider (Settings &rarr; Sources) to erase its catalogue and credentials while keeping the rest of your account.</p>
+          <p>You don't have to delete your whole account to remove specific data. From the app or <a :href="browserOrigin">{{ browserOrigin }}</a> you can: remove individual titles from your Library, and delete a connected playlist/provider (Settings &rarr; Sources) to erase its catalogue and credentials while keeping the rest of your account.</p>
         </template>
         <template v-else-if="legalPage === 'privacy' || legalPage === 'android-privacy'">
           <p v-if="legalPage === 'android-privacy'">RH IPTV Player for Android is a personal streaming library that lets you connect an authorised provider, organise content by profile, and continue watching across linked devices. This policy explains what information the Android app uses and how it is protected.</p>
           <p v-else>RH IPTV Player is a personal streaming library that lets you connect an authorised provider, organise content by profile, and continue watching across linked devices. This policy explains what information we use to provide those features.</p>
           <h2>Information we collect</h2>
-          <p>We collect your email address and password when you create an account, profile names and preferences you choose, linked-device and pairing information, favourites, playback history, and resume positions. Provider credentials and catalogue data are used only to connect your authorised playlist and deliver requested media.</p>
+          <p>We collect your email address and password when you create an account, profile names and preferences you choose, linked-device and pairing information, playback history, and resume positions. Provider credentials and catalogue data are used only to connect your authorised playlist and deliver requested media.</p>
           <p v-if="legalPage === 'android-privacy'"><strong>Android beta tester list:</strong> If you register on the Download App page, we store the email address you submit so we can add you to the RH IPTV Player beta invitation list and contact you about testing. We keep it for the beta programme and remove it on request. To withdraw, email <a href="mailto:rudyhamameca@gmail.com?subject=Remove%20me%20from%20the%20Android%20beta%20list">rudyhamameca@gmail.com</a>.</p>
           <h2>How we use information</h2>
-          <p>We use this information to authenticate you, keep your library isolated to your account and profiles, synchronise playback and favourites, operate subscriptions, prevent abuse, and provide support. We do not sell personal information or use it for third-party advertising.</p>
+          <p>We use this information to authenticate you, keep your library isolated to your account and profiles, synchronise playback, operate subscriptions, prevent abuse, and provide support. We do not sell personal information or use it for third-party advertising.</p>
           <h2>Sharing and retention</h2>
           <p>Information is shared only with the service providers needed to host the app, store account data, process Roku subscriptions, and deliver media you request. We retain account data while your account is active or as needed for security and legal obligations. You may <a href="/delete-account">delete your account and all associated data</a> at any time.</p>
           <h2>Security and your choices</h2>
@@ -3849,7 +3760,7 @@ onMounted(async () => {
           <div class="download-detail-heading"><p class="download-eyebrow">MADE FOR YOUR LIBRARY</p><h2>Your playlists, organized around you.</h2></div>
           <div class="download-feature-grid">
             <article><span class="download-feature-index">01</span><h3>Bring your own source</h3><p>Connect a playlist or provider you’re authorized to use. RH IPTV Player is a player and library manager; it doesn’t supply channels or media.</p></article>
-            <article><span class="download-feature-index">02</span><h3>Pick up where you left off</h3><p>Keep favourites, viewing history, and resume progress together across your linked devices and profiles.</p></article>
+            <article><span class="download-feature-index">02</span><h3>Pick up where you left off</h3><p>Keep viewing history and resume progress together across your linked devices and profiles.</p></article>
             <article><span class="download-feature-index">03</span><h3>Help us get it ready</h3><p>The beta is still being refined. Tester feedback helps us find issues and improve the app before the wider Play Store release.</p></article>
           </div>
         </section>
@@ -3991,11 +3902,6 @@ onMounted(async () => {
                 <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
                 <span v-else class="home-card-fallback"><b>RH</b><em>{{ item.title }}</em></span>
                 <transition name="card-fade">
-                  <button v-if="openCardKey === homeItemKey(item)" type="button" class="home-fav-action" :class="{on:isHomeFavorite(item)}" :aria-label="isHomeFavorite(item) ? 'Remove from favorites' : 'Add to favorites'" @click.stop="toggleHomeFavorite(item)">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" :fill="isHomeFavorite(item) ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2"><path d="m12 17.3-6.2 3.7 1.6-7L2 9.2l7.1-.6L12 2l2.9 6.6 7.1.6-5.4 4.8 1.6 7z"/></svg>
-                  </button>
-                </transition>
-                <transition name="card-fade">
                   <span v-if="openCardKey === homeItemKey(item)" class="card-actions">
                     <button type="button" class="card-action-btn" aria-label="Play" title="Play" @click.stop="playLibraryItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
                     <button type="button" class="card-action-btn" :class="{on:welcomeItemEnabled(item)}" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" :title="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" @click.stop="toggleWelcomeItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path :d="welcomeItemEnabled(item) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"/></svg></button>
@@ -4129,21 +4035,6 @@ onMounted(async () => {
         <p v-else class="web-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
       </article>
 
-      <article v-if="safariPage === 'watchlater'" class="safari-page safari-library-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">SAVED FOR LATER</p><h1>Watch Later</h1></div><div class="library-heading-actions"><span>{{ favorites.length }} items</span></div></div>
-        <div v-if="favoritesLoading" class="loading">Loading&hellip;</div>
-        <div v-else-if="favorites.length" class="safari-library-rails">
-          <section class="safari-library-rail">
-            <div class="safari-library-rail-track">
-              <div v-for="item in favorites" :key="item.id" class="is-add-item is-playable watch-later-item">
-                <button type="button" :aria-label="`Play ${item.title}`" @click="playLibraryItem(item)"><span class="safari-library-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title"><template v-else><span class="safari-library-fallback"></span><b>{{ typeIcon(item.kind) }}</b></template></span><span><strong>{{ item.title }}</strong></span><em>Play</em></button>
-                <button type="button" class="watch-later-remove" :aria-label="`Remove ${item.title} from Watch Later`" @click="removeFavorite(item)">&times;</button>
-              </div>
-            </div>
-          </section>
-        </div>
-        <p v-else class="web-empty safari-library-empty">Nothing saved yet. Tap the bookmark on a Series, Movie, or Channel to add it here.</p>
-      </article>
 
       <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
         <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
