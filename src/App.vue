@@ -1101,7 +1101,7 @@ const webCompatibilityChecks = computed(() => {
     { label: "Copy-only HLS eligibility", result: result(Boolean(decision.remuxCompatible)), detail: decision.remuxCompatible ? "No video or audio transcode required" : "A codec transcode would be required" },
     { label: "HLS Remux strategy enabled", result: result(decision.remuxEnabled !== false), detail: decision.remuxEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
     { label: "HLS Remux playback test", result: webHlsTestResult.value, detail: webForceHls.value ? "Testing the copy-only HLS stream" : "Used only if Direct is rejected" },
-    { label: "Current transport", result: webEncodeStrategy.value || webPendingEncodeStrategy.value || decision.transport || "Pending", detail: decision.reason || "" },
+    { label: "Streaming strategy", result: webEncodeStrategy.value || webPendingEncodeStrategy.value || decision.transport || "Pending", detail: decision.reason || "" },
   ];
 });
 const webStreamFormatLabel = computed(() => {
@@ -1878,6 +1878,9 @@ function unmuteWebPlayback() {
 function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "DIRECT") return "DIRECT";
   if (strategy === "HLS_REMUX") return "HLS REMUX";
+  if (strategy === "HLS_AUDIO_TRANSCODE") return "HLS AUDIO TRANSCODE";
+  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
+  if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
   if (strategy === "HLS_TIMING_REPAIR") return "TIMING REPAIR → HLS";
   if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
   void videoMode;
