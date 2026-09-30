@@ -153,12 +153,45 @@ function focusMainMenu() {
   active?.focus({ preventScroll: true });
 }
 function handleNavigationKeydown(event) {
-  if (event.key !== "ArrowLeft" || pairing.value || webNowPlaying.value) return;
+  if (pairing.value || webNowPlaying.value || legalPage.value || downloadPage.value) return;
   const page = safariPage.value;
+  const key = event.key;
+  const isBack = ["Escape", "Backspace", "BrowserBack", "GoBack"].includes(key)
+    || (key === "ArrowLeft" && event.altKey);
+  if (isBack && page === "settings") {
+    event.preventDefault();
+    event.stopPropagation();
+    openSafariPage("welcome");
+    return;
+  }
+  if (!["ArrowLeft", "ArrowRight"].includes(key)) return;
+  if (page === "settings") {
+    const tabs = [...document.querySelectorAll(".settings-tabs button")];
+    const tabIndex = tabs.indexOf(document.activeElement);
+    if (tabIndex >= 0) {
+      event.preventDefault();
+      tabs[(tabIndex + (key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length]?.focus({ preventScroll: true });
+      return;
+    }
+    if (key === "ArrowLeft") {
+      event.preventDefault();
+      focusMainMenu();
+    }
+    return;
+  }
   if (page !== "welcome") return;
-  event.preventDefault();
-  focusMainMenu();
+  const buttons = [...(document.querySelector(".browser-sidebar nav")?.querySelectorAll("button") || [])];
+  if (!buttons.length) return;
+  const activeIndex = buttons.indexOf(document.activeElement);
+  if (activeIndex >= 0) {
+    event.preventDefault();
+    buttons[(activeIndex + (key === "ArrowRight" ? 1 : buttons.length - 1)) % buttons.length]?.focus({ preventScroll: true });
+  } else if (key === "ArrowLeft") {
+    event.preventDefault();
+    focusMainMenu();
+  }
 }
+
 const webVideo = ref(null);
 const webVideoElementKey = ref(0);
 const liveTvVideo = ref(null);
