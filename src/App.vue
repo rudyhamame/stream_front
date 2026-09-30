@@ -319,6 +319,12 @@ async function loadHlsConstructor() {
 }
 const storedToken = () => window.localStorage.getItem("rh-device-token") || "";
 const profileSelectionKey = "rh-profile-selection-pending";
+const settingsQrRedirectKey = "rh-settings-qr-redirect";
+function openSettingsAfterQr() {
+  safariPage.value = "settings";
+  window.history.replaceState({ appPage: "settings" }, "", "/settings");
+  window.sessionStorage.removeItem(settingsQrRedirectKey);
+}
 const deviceToken = ref(storedToken());
 function tokenRealm(token) {
   try {
@@ -474,8 +480,11 @@ async function chooseProfile(profile) {
     online.value = true;
     window.sessionStorage.removeItem(profileSelectionKey);
     profileChooser.value = false;
-    safariPage.value = "welcome";
-    window.history.replaceState({ appPage: "welcome" }, "", "/home");
+    if (window.sessionStorage.getItem(settingsQrRedirectKey)) openSettingsAfterQr();
+    else {
+      safariPage.value = "welcome";
+      window.history.replaceState({ appPage: "welcome" }, "", "/home");
+    }
     appReady.value = true;
     // The profile is active as soon as the server returns its token. Show
     // Welcome immediately; provider and weather requests must not hold the
@@ -671,6 +680,7 @@ function logout() {
   appReady.value = true;
   window.localStorage.removeItem("rh-device-token");
   window.sessionStorage.removeItem(profileSelectionKey);
+  window.sessionStorage.removeItem(settingsQrRedirectKey);
   pairing.value = true;
     pairingMode.value = "login";
     loginStarted.value = false;
@@ -3594,6 +3604,7 @@ onMounted(async () => {
     // scanning it is treated as sufficient proof here too - no password.
     const pairCode = new URLSearchParams(window.location.search).get("pair");
     if (pairCode) {
+      window.sessionStorage.setItem(settingsQrRedirectKey, "1");
       const url = new URL(window.location.href);
       url.searchParams.delete("pair");
       window.history.replaceState({}, "", url);
@@ -3616,10 +3627,7 @@ onMounted(async () => {
           if (paired?.item?.id) window.localStorage.setItem("rh-profile-id", paired.item.id);
           else window.localStorage.removeItem("rh-profile-id");
           activeProfileId.value = paired?.item?.id || "";
-          if (!downloadPage.value) {
-            safariPage.value = "settings";
-            window.history.replaceState({ appPage: "settings" }, "", "/settings");
-          }
+          if (!downloadPage.value && paired?.item?.id) openSettingsAfterQr();
         }
       } catch (error) {
         messageType.value = "error";
@@ -3650,6 +3658,7 @@ onMounted(async () => {
       appReady.value = false;
       return;
     }
+    if (window.sessionStorage.getItem(settingsQrRedirectKey)) openSettingsAfterQr();
     // Only the health check and the provider catalog gate the boot loader.
     // Everything else enriches an already usable page and loads in the
     // background so a slow response cannot keep the spinner on screen.
