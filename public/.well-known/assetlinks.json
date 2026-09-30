@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.rhstream.library",
+      "sha256_cert_fingerprints": [
+        "59:70:5A:03:65:3F:23:3A:2F:9E:FE:53:2F:AF:7D:BD:68:7C:AE:D0:FC:4A:3A:6A:F9:B0:6D:78:5D:CE:50:0A",
+        "DB:55:DC:A6:28:A8:A2:46:B5:57:ED:7B:15:6C:41:CD:95:BB:CB:F5:D4:03:C9:08:88:AA:68:2A:F5:3F:97:09"
+      ]
+    }
+  }
+]

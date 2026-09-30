@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Open RH IPTV Player</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; color: #f4f7f8; background: #141d26; min-height: 100vh; margin: 0; display: grid; place-items: center; }
+    main { box-sizing: border-box; width: min(420px, 100%); padding: 32px; text-align: center; }
+    a { display: block; margin: 18px auto; padding: 14px; border-radius: 12px; color: #141d26; background: #f2c436; font-weight: 700; text-decoration: none; }
+    a.secondary { color: #f2c436; background: transparent; border: 1px solid #f2c436; }
+    p { color: #a5b4c2; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Open RH IPTV Player</h1>
+    <p>Tap below if your camera opened this page instead of the installed Android app.</p>
+    <a id="open" href="/download-app">Open installed app</a>
+    <a class="secondary" href="/download-app">Download or update app</a>
+    <p>The Roku sign-in code expires after 15 minutes.</p>
+  </main>
+  <script>
+    const code = new URLSearchParams(location.search).get('pair') || '';
+    if (/^[A-Za-z0-9_-]{20,80}$/.test(code)) {
+      document.getElementById('open').href = `intent://pair?pair=${encodeURIComponent(code)}#Intent;scheme=rhstream;package=com.rhstream.library;end`;
+    } else {
+      document.querySelector('p').textContent = 'This Roku sign-in link is invalid. Scan a fresh QR code on your Roku.';
+    }
+  </script>
+</body>
+</html>
