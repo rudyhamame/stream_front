@@ -20,12 +20,12 @@ test('delivery protocol changes only the delivery method for compatible media', 
 test('server timing decision gates Direct even when Browser reports MKV support', () => {
   const local = decideBrowserTransport(source(), supported, 'http:');
   assert.equal(local.transport, 'DIRECT_PROXY');
-  const policy = applyServerPlaybackPolicy(local, { directEnabled: false, directCompatible: false, playbackStrategy: 'HLS_REMUX', reason: 'Direct disabled in RH control panel.' });
+  const policy = applyServerPlaybackPolicy(local, { directEnabled: false, directCompatible: false, playbackStrategy: 'HLS_REMUX', playable: true, reason: 'Direct disabled in RH control panel.' });
   assert.equal(policy.transport, 'HLS_REMUX');
   assert.equal(policy.directCompatible, false);
   assert.equal(policy.playable, true);
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT' }).transport, 'HLS_REMUX');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'HLS_REMUX', playable: true }).transport, 'HLS_REMUX');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', playable: true, hlsFallbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', sourceProtocol: 'http:', media: { timing: { checked: true, decodedPtsMonotonic: true } } }).transport, 'DIRECT_PROXY');
 });
 
@@ -113,9 +113,20 @@ test('Provider HLS is Direct when the browser has native or MSE HLS support', ()
 
 test('Browser cannot override an HLS or unsupported server decision with Direct', () => {
   const local = decideBrowserTransport(source('legacybox'), supported, 'http:');
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX', playable: true }).transport, 'HLS_REMUX');
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: false, remuxEnabled: false }).playable, false);
   const incompatible = decideBrowserTransport(source('mp4', 'dts'), supported, 'http:');
-  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX' }).transport, 'UNSUPPORTED');
+  assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: true, sourceProtocol: 'http:', playbackStrategy: 'HLS_REMUX', playable: true }).transport, 'UNSUPPORTED');
   assert.equal(applyServerPlaybackPolicy(incompatible, { directEnabled: false, remuxEnabled: true }).playable, false);
+});
+
+test('server approved codec conversions are accepted only with the preserved decoder', () => {
+  const audioUnsupported = decideBrowserTransport(source('mp4', 'dts'), supported, 'https:');
+  assert.equal(applyServerPlaybackPolicy(audioUnsupported, { playbackStrategy: 'HLS_AUDIO_TRANSCODE', playable: true }).transport, 'HLS_AUDIO_TRANSCODE');
+  assert.equal(applyServerPlaybackPolicy(audioUnsupported, { playbackStrategy: 'HLS_VIDEO_TRANSCODE', playable: true }).transport, 'UNSUPPORTED');
+  assert.equal(applyServerPlaybackPolicy(audioUnsupported, { playbackStrategy: 'HLS_FULL_TRANSCODE', playable: true }).transport, 'HLS_FULL_TRANSCODE');
+  assert.equal(applyServerPlaybackPolicy(audioUnsupported, { playbackStrategy: 'HLS_AUDIO_TRANSCODE', playable: false }).transport, 'UNSUPPORTED');
+  const videoUnsupported = decideBrowserTransport(source('mp4', 'aac', 'mpeg2video'), supported, 'https:');
+  assert.equal(applyServerPlaybackPolicy(videoUnsupported, { playbackStrategy: 'HLS_VIDEO_TRANSCODE', playable: true }).transport, 'HLS_VIDEO_TRANSCODE');
+  assert.equal(applyServerPlaybackPolicy(videoUnsupported, { playbackStrategy: 'HLS_AUDIO_TRANSCODE', playable: true }).transport, 'UNSUPPORTED');
 });

@@ -155,7 +155,10 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
   const directEnabled = serverDecision?.directEnabled !== false;
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
   const serverTransport = String(serverDecision?.playbackStrategy || '');
+  const approvedHlsFallbackStrategy = String(serverDecision?.hlsFallbackStrategy || '');
   const timing = serverDecision?.media?.timing || serverDecision?.timing || {};
+  if (serverDecision?.playable === false) return { ...decision, transport: 'UNSUPPORTED', playable: false,
+    directCompatible: false, remuxEnabled, reason: serverDecision.incompatibleReason || 'No checked compatible streaming strategy.' };
   if ((serverDecision?.timingRepair === true || serverDecision?.playbackStrategy === 'HLS_TIMING_REPAIR')
       && decision.videoCompatible && decision.audioCompatible) {
     return { ...decision, transport: 'HLS_TIMING_REPAIR', directCompatible: false,
@@ -171,12 +174,18 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
     const transport = protocol === 'http:' ? 'DIRECT_PROXY'
       : protocol === 'https:' ? 'DIRECT_PROVIDER'
         : decision.transport.startsWith('DIRECT') ? decision.transport : 'DIRECT';
-    return { ...decision, transport, playable: true, remuxEnabled,
+    return { ...decision, transport, playable: true, remuxEnabled, approvedHlsFallbackStrategy,
       reason: 'Trying native Direct playback; the player determines acceptance.' };
   }
-  if (remuxEnabled && decision.remuxCompatible) {
-    return { ...decision, transport: 'HLS_REMUX', directCompatible: false,
-      remuxEnabled, playable: true, reason: 'The backend selected HLS; copying compatible streams into HLS.' };
+  const checkedHls = ['HLS_REMUX', 'HLS_VIDEO_TRANSCODE', 'HLS_AUDIO_TRANSCODE', 'HLS_FULL_TRANSCODE'];
+  const selectedHls = checkedHls.includes(serverTransport) ? serverTransport
+    : checkedHls.includes(serverDecision?.hlsFallbackStrategy) ? serverDecision.hlsFallbackStrategy : '';
+  if (selectedHls && serverDecision?.playable === true
+      && (selectedHls !== 'HLS_REMUX' || decision.remuxCompatible)
+      && (selectedHls !== 'HLS_VIDEO_TRANSCODE' || decision.audioCompatible)
+      && (selectedHls !== 'HLS_AUDIO_TRANSCODE' || decision.videoCompatible)) {
+    return { ...decision, transport: selectedHls, directCompatible: false,
+      remuxEnabled, approvedHlsFallbackStrategy, playable: true, reason: `The backend selected checked ${selectedHls} for this item.` };
   }
   return { ...decision, transport: 'UNSUPPORTED', playable: false, remuxEnabled,
     reason: 'No enabled strategy can play this item without transcoding.' };

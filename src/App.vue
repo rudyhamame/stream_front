@@ -233,6 +233,7 @@ const webServerPlaybackUrl = ref("");
 const webPlaybackSourceHash = ref("");
 let webPlaybackTraceId = "";
 const webForceHls = ref(false);
+const webLiveHlsStrategy = ref("");
 const webWwpSessionId = ref("");
 // True only for the INVITED partner (joined via an invite's stream ticket, no
 // ownership of the host's source). The host keeps false and authenticates with
@@ -1015,6 +1016,10 @@ const webPlayerSrc = computed(() => {
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
     if (webCompatibility.value?.transport === "HLS_TIMING_REPAIR") target.searchParams.set("timingRepair", "1");
+    const selectedHls = webCompatibility.value?.transport || webLiveHlsStrategy.value || "";
+    if (["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"].includes(selectedHls)) {
+      target.searchParams.set("hlsFallback", selectedHls.replace("HLS_", "").replace("_TRANSCODE", "").toLowerCase());
+    }
     if (webPlaybackSourceHash.value) target.searchParams.set("sourceHash", webPlaybackSourceHash.value);
     if (webPlaybackTraceId) target.searchParams.set("traceId", webPlaybackTraceId);
   }
@@ -1222,7 +1227,7 @@ async function decideWebPlayback(item) {
   webForceHls.value = useTimingRepair || transport.transport.startsWith("HLS");
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
-    : useTimingRepair ? 'TIMING REPAIR → HLS' : (transport.remuxCompatible ? 'HLS REMUX' : 'UNSUPPORTED');
+    : useTimingRepair ? 'TIMING REPAIR → HLS' : describeEncodeStrategy(transport.transport) || 'UNSUPPORTED';
   if (transport.transport === "UNSUPPORTED") {
     webEncodeStrategy.value = "UNSUPPORTED";
     throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });
@@ -1618,12 +1623,14 @@ let webHlsStrategy = "";
 function resetWebHlsLadder() { webHlsStrategy = ""; }
 
 function switchRejectedDirectToRemux(reason) {
+  const live = webNowPlaying.value?.kind === "channel";
+  const approved = live ? webLiveHlsStrategy.value : webCompatibility.value?.approvedHlsFallbackStrategy;
   if (!webNowPlaying.value || webForceHls.value || webWwpSessionId.value
-      || !webCompatibility.value?.remuxCompatible || webCompatibility.value?.remuxEnabled === false) return false;
+      || !["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"].includes(approved)) return false;
   webDirectTestResult.value = "Rejected";
   webHlsTestResult.value = "Preparing";
   const target = webAbsolutePosition();
-  webCompatibility.value = { ...webCompatibility.value, transport: "HLS_REMUX", reason };
+  if (!live) webCompatibility.value = { ...webCompatibility.value, transport: approved, reason };
   webForceHls.value = true;
   webHlsAwaitingMediaAttach = true;
   // A detached Direct <video> can keep the provider HTTP request open for
@@ -1637,7 +1644,7 @@ function switchRejectedDirectToRemux(reason) {
   webPlaybackOffset.value = target;
   webCurrentTime.value = target;
   webMediaReady.value = false;
-  webPendingEncodeStrategy.value = "HLS REMUX";
+  webPendingEncodeStrategy.value = describeEncodeStrategy(approved);
   setWebStartupProgress(40, "Preparing HLS segments");
   configureMoviePlayback(target);
   return true;
@@ -1657,8 +1664,9 @@ function handleWebVideoError(event) {
     // with backoff. Switching containers would not repair a lost connection.
     if (mediaErrorCode === 2) {
       scheduleWebReconnect(webAbsolutePosition());
-    } else if (shouldFallbackFromDirect(mediaErrorCode, webCompatibility.value?.remuxCompatible)
-        && switchRejectedDirectToRemux("Native Direct playback rejected the media; trying stream-copy HLS.")) {
+    } else if (shouldFallbackFromDirect(mediaErrorCode, Boolean(webNowPlaying.value?.kind === "channel"
+          ? webLiveHlsStrategy.value : webCompatibility.value?.approvedHlsFallbackStrategy))
+        && switchRejectedDirectToRemux("Native Direct playback rejected the media; trying the checked HLS strategy.")) {
     } else {
       webPlayerError.value = `Direct playback failed (media error ${mediaErrorCode || "unknown"}). The selected Direct strategy has been preserved. Retry playback.`;
       webBuffering.value = false;
@@ -2124,6 +2132,7 @@ async function playWebMovie(item) {
   // A bounded server probe selects Direct or the exact HLS codec matrix before
   // assigning a source to the browser media element.
   webForceHls.value = false;
+  webLiveHlsStrategy.value = "";
   resetWebHlsLadder();
   wwpUserPaused = false;
   webEncodeStrategy.value = "";
@@ -2160,8 +2169,20 @@ async function playWebMovie(item) {
     // is https and the provider URL is plain http (mixed content).
     const providerURL = webNowPlaying.value?.providerURL || webNowPlaying.value?.providerUrl || '';
     const mixedContent = window.location.protocol === "https:" && /^http:/i.test(providerURL);
-    webForceHls.value = mixedContent;
-    webPendingEncodeStrategy.value = mixedContent ? "" : "DIRECT";
+    const response = await fetch(`${browserStreamer}/api/xtream/strategy-policy?client=browser`, {
+      cache: "no-store", headers: deviceToken.value ? { "x-device-token": deviceToken.value } : {},
+    });
+    const policy = await response.json().catch(() => ({}));
+    if (sessionId !== webPlaybackSessionId) return;
+    if (!response.ok || !policy.enabled) throw new Error(policy.error || "Live strategy settings are unavailable.");
+    webLiveHlsStrategy.value = ["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"]
+      .find(strategy => policy.enabled[strategy]) || "";
+    webForceHls.value = mixedContent || !policy.enabled.DIRECT;
+    if (webForceHls.value && !webLiveHlsStrategy.value) {
+      throw Object.assign(new Error("No checked HLS strategy can deliver this live channel."), { incompatible: true });
+    }
+    webPendingEncodeStrategy.value = webForceHls.value
+      ? describeEncodeStrategy(webLiveHlsStrategy.value) : "DIRECT";
   } else {
     const decision = await decideWebPlayback(webNowPlaying.value);
     if (sessionId !== webPlaybackSessionId) return;

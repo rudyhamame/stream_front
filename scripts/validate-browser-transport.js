@@ -4,10 +4,12 @@ import assert from 'node:assert/strict';
 const app = readFileSync(new URL('../src/App.vue', import.meta.url), 'utf8');
 const selector = readFileSync(new URL('../src/browser-transport.js', import.meta.url), 'utf8');
 const runtime = `${app}\n${selector}`;
-assert.doesNotMatch(runtime, /HLS_(?:AUDIO|VIDEO|FULL|PARTIAL)_TRANSCODE/,
-  'Browser runtime must not mention or invoke a transcode transport');
-assert.doesNotMatch(app, /hlsFallback|advanceWebHlsFallback/,
-  'Browser must not request or advance a server fallback ladder');
+assert.match(selector, /serverDecision\?\.playable === false/,
+  'Browser must reject a server decision with no checked playable strategy');
+assert.match(selector, /serverDecision\?\.hlsFallbackStrategy/,
+  'Browser Direct recovery must use the backend-approved fallback');
+assert.match(app, /selectedHls\.replace\("HLS_"/,
+  'Browser HLS requests must carry the selected exact strategy');
 assert.match(selector, /mkvVerified/,
   'MKV Direct support must be capability-gated');
 assert.match(selector, /browser\.name === 'chrome' && browser\.version >= 145/,
