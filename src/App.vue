@@ -1104,8 +1104,12 @@ const webCompatibilityChecks = computed(() => {
     { label: "Direct strategy enabled", result: result(decision.directEnabled !== false), detail: decision.directEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
     { label: "Direct browser acceptance test", result: webDirectTestResult.value, detail: directSelected ? "Waiting for a decoded frame or native media error; the browser gives no final answer while silent" : "The browser did not present a Direct video frame" },
     { label: "Copy-only HLS eligibility", result: result(Boolean(decision.remuxCompatible)), detail: decision.remuxCompatible ? "No video or audio transcode required" : "A codec transcode would be required" },
-    { label: "HLS Remux strategy enabled", result: result(decision.remuxEnabled !== false), detail: decision.remuxEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
-    { label: "HLS Remux playback test", result: webHlsTestResult.value, detail: webForceHls.value ? "Testing the copy-only HLS stream" : "Used only if Direct is rejected" },
+    { label: "HLS Remux strategy enabled", result: result(Boolean(decision.enabledStrategies?.HLS_REMUX)), detail: decision.enabledStrategies?.HLS_REMUX ? "Checked in RH Player Control Panel" : "Unchecked in RH Player Control Panel" },
+    ...[["HLS_VIDEO_TRANSCODE", "HLS Video Transcode"], ["HLS_AUDIO_TRANSCODE", "HLS Audio Transcode"], ["HLS_FULL_TRANSCODE", "HLS Full Transcode"]].map(([key, label]) => ({
+      label: `${label} enabled`, result: result(Boolean(decision.enabledStrategies?.[key])),
+      detail: decision.enabledStrategies?.[key] ? "Checked in RH Player Control Panel" : "Unchecked in RH Player Control Panel",
+    })),
+    { label: "Selected HLS playback test", result: webHlsTestResult.value, detail: webForceHls.value ? `Testing ${describeEncodeStrategy(decision.transport) || decision.transport}` : "Used only if Direct is rejected" },
     { label: "Streaming strategy", result: webEncodeStrategy.value || webPendingEncodeStrategy.value || decision.transport || "Pending", detail: decision.reason || "" },
   ];
 });

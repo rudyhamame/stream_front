@@ -152,6 +152,7 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
 }
 
 export function applyServerPlaybackPolicy(decision, serverDecision) {
+  decision = { ...decision, enabledStrategies: serverDecision?.enabledStrategies || {} };
   const directEnabled = serverDecision?.directEnabled !== false;
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
   const serverTransport = String(serverDecision?.playbackStrategy || '');
