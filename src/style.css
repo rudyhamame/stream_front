@@ -682,8 +682,12 @@ html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; 
  .web-player-error-icon svg { width:24px; height:24px; }
  .web-player-error-card strong { color:#f5f2ea; font:600 19px 'Space Grotesk'; letter-spacing:-.01em; }
  .web-player-error-card p { margin:0; color:#a9b4c8; font:400 13px/1.55 'DM Sans'; }
- .web-player-error-card .primary-action { margin-top:8px; min-width:132px; border:0; border-radius:999px; background:#ffc43d; color:#1b1608; font:700 14px 'DM Sans'; box-shadow:0 8px 22px rgba(255,196,61,.28); cursor:pointer; transition:transform .12s ease,box-shadow .15s ease,background .15s ease; }
+ .web-player-error-actions { display:flex; flex-wrap:wrap; justify-content:center; gap:10px; margin-top:8px; }
+ .web-player-error-card .primary-action,.web-player-error-card .secondary-action { margin-top:0; min-width:132px; border-radius:999px; padding:11px 18px; font:700 14px 'DM Sans'; cursor:pointer; transition:transform .12s ease,box-shadow .15s ease,background .15s ease,border-color .15s ease; }
+ .web-player-error-card .primary-action { border:0; background:#ffc43d; color:#1b1608; box-shadow:0 8px 22px rgba(255,196,61,.28); }
+ .web-player-error-card .secondary-action { border:1px solid rgba(255,255,255,.2); background:rgba(255,255,255,.06); color:#f5f2ea; }
  .web-player-error-card .primary-action:hover,.web-player-error-card .primary-action:focus-visible { background:#ffd25e; transform:translateY(-1px); box-shadow:0 12px 28px rgba(255,196,61,.4); outline:none; }
+ .web-player-error-card .secondary-action:hover,.web-player-error-card .secondary-action:focus-visible { border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.12); transform:translateY(-1px); outline:none; }
  .web-player-controls { padding-top:18px; }
  .web-player-controls input[type='range'] { width:100%; accent-color:#ffc107; }
  .web-player-control-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; color:#aeb7a0; font-size:12px; }

@@ -2187,6 +2187,21 @@ async function playLibraryItem(item) {
   }
 }
 
+async function retryWebPlayback() {
+  const item = webNowPlaying.value;
+  if (!item) return;
+  const playbackTask = playWebMovie(item);
+  const taskSessionId = webPlaybackSessionId;
+  try {
+    await playbackTask;
+  } catch (error) {
+    if (taskSessionId !== webPlaybackSessionId || !webNowPlaying.value) return;
+    webBuffering.value = false;
+    webPlayerError.value = error?.message || "This item could not be played right now.";
+    showWebControls();
+  }
+}
+
 async function openSeriesEpisodes(item, { updateHistory = true } = {}) {
   const requestSeriesKey = `${item?.sourceId || ""}:${item?.id || ""}`;
   episodesFrom.value = ["welcome", "series", "movies", "channels"].includes(safariPage.value) ? safariPage.value : "series";
@@ -4153,7 +4168,10 @@ onMounted(async () => {
             <span class="web-player-error-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
             <strong>Playback unavailable</strong>
               <p>{{ webPlayerError }}</p>
-            <button type="button" class="primary-action" @click.stop="playWebMovie(webNowPlaying)">Try again</button>
+            <div class="web-player-error-actions">
+              <button type="button" class="primary-action" @click.stop="retryWebPlayback">Try again</button>
+              <button type="button" class="secondary-action" @click.stop="closeWebPlayer">Go back</button>
+            </div>
           </div>
         </div>
       </div>
