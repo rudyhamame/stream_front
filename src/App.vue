@@ -279,6 +279,8 @@ let webBufferingTimer = null;
 let webStartupGapAligned = false;
 let webPlaybackToken = 0;
 let webStartupPollTimer = null;
+let webHlsStartupWatchdog = null;
+let webHlsRecoveryIndex = 0;
 let liveTvRecoveryTimer = null;
 let liveTvRecoveryAttempts = 0;
 let playlistPreviewRecoveryTimer = null;
@@ -296,6 +298,10 @@ function advanceWebStartupProgress(percent, hint) {
 function stopWebStartupPoll() {
   clearTimeout(webStartupPollTimer);
   webStartupPollTimer = null;
+}
+function clearWebHlsStartupWatchdog() {
+  clearTimeout(webHlsStartupWatchdog);
+  webHlsStartupWatchdog = null;
 }
 function pollWebHlsStartup(source, token) {
   stopWebStartupPoll();
@@ -1602,6 +1608,31 @@ function switchRejectedDirectToRemux(reason) {
   webCurrentTime.value = target;
   webMediaReady.value = false;
   webPendingEncodeStrategy.value = describeEncodeStrategy(approved);
+  setWebStartupProgress(40, "Preparing HLS segments");
+  configureMoviePlayback(target);
+  return true;
+}
+
+function advanceWebHlsStartupStrategy(reason) {
+  const strategies = webCompatibility.value?.approvedHlsRecoveryStrategies || [];
+  const next = strategies[webHlsRecoveryIndex++];
+  if (!webNowPlaying.value || !webForceHls.value || !next) {
+    webHlsTestResult.value = "Failed";
+    webBuffering.value = false;
+    webPlayerError.value = "The selected HLS strategy did not produce a video frame, and no further checked strategy is available.";
+    return false;
+  }
+  console.warn(`[BrowserHls] startup stalled; requesting backend-approved strategy=${next} reason=${reason}`);
+  webCompatibility.value = { ...webCompatibility.value, transport: next };
+  webHlsTestResult.value = "Preparing";
+  webPendingEncodeStrategy.value = describeEncodeStrategy(next);
+  webPlayerError.value = "";
+  webMediaReady.value = false;
+  webBuffering.value = true;
+  webPlaybackRetryCount.value = 0;
+  const target = webAbsolutePosition();
+  webPlaybackOffset.value = target;
+  webCurrentTime.value = target;
   setWebStartupProgress(40, "Preparing HLS segments");
   configureMoviePlayback(target);
   return true;

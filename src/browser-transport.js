@@ -157,6 +157,9 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
   const serverTransport = String(serverDecision?.playbackStrategy || '');
   const approvedHlsFallbackStrategy = String(serverDecision?.hlsFallbackStrategy || '');
+  const approvedHlsRecoveryStrategies = Array.isArray(serverDecision?.hlsRecoveryStrategies)
+    ? serverDecision.hlsRecoveryStrategies.filter(strategy => ['HLS_REMUX', 'HLS_VIDEO_TRANSCODE', 'HLS_AUDIO_TRANSCODE', 'HLS_FULL_TRANSCODE'].includes(strategy))
+    : [];
   if (serverDecision?.playable === false) return { ...decision, transport: 'UNSUPPORTED', playable: false,
     directCompatible: false, remuxEnabled, reason: serverDecision.incompatibleReason || 'No checked compatible streaming strategy.' };
   // Browser capability can veto DIRECT, but cannot override the backend's
@@ -167,7 +170,7 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
     const transport = protocol === 'http:' ? 'DIRECT_PROXY'
       : protocol === 'https:' ? 'DIRECT_PROVIDER'
         : decision.transport.startsWith('DIRECT') ? decision.transport : 'DIRECT';
-    return { ...decision, transport, playable: true, remuxEnabled, approvedHlsFallbackStrategy,
+    return { ...decision, transport, playable: true, remuxEnabled, approvedHlsFallbackStrategy, approvedHlsRecoveryStrategies,
       reason: 'Trying native Direct playback; the player determines acceptance.' };
   }
   const checkedHls = ['HLS_REMUX', 'HLS_VIDEO_TRANSCODE', 'HLS_AUDIO_TRANSCODE', 'HLS_FULL_TRANSCODE'];
@@ -178,7 +181,7 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
       && (selectedHls !== 'HLS_VIDEO_TRANSCODE' || decision.audioCompatible)
       && (selectedHls !== 'HLS_AUDIO_TRANSCODE' || decision.videoCompatible)) {
     return { ...decision, transport: selectedHls, directCompatible: false,
-      remuxEnabled, approvedHlsFallbackStrategy, playable: true, reason: `The backend selected checked ${selectedHls} for this item.` };
+      remuxEnabled, approvedHlsFallbackStrategy, approvedHlsRecoveryStrategies, playable: true, reason: `The backend selected checked ${selectedHls} for this item.` };
   }
   return { ...decision, transport: 'UNSUPPORTED', playable: false, remuxEnabled,
     reason: 'No enabled strategy can play this item without transcoding.' };
