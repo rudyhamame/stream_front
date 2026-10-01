@@ -1729,6 +1729,7 @@ function startWebVideoWedgeWatchdog(video) {
       else webDirectTestResult.value = "Passed";
       video.style.opacity = "1";
       webMediaReady.value = true;
+      clearWebHlsStartupWatchdog();
       webBuffering.value = false;
       webPlayerError.value = "";
       webPlaybackRetryCount.value = 0;
@@ -1797,6 +1798,7 @@ function onWebFirstFrame() {
   if (webForceHls.value) webHlsTestResult.value = "Passed";
   else webDirectTestResult.value = "Passed";
   webMediaReady.value = true;
+  clearWebHlsStartupWatchdog();
   if (webPendingEncodeStrategy.value) webEncodeStrategy.value = webPendingEncodeStrategy.value;
   onWebReady();
 }
@@ -1889,6 +1891,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   }
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;
+  clearWebHlsStartupWatchdog();
   stopWebStartupPoll();
   webHlsAwaitingMediaAttach = webForceHls.value;
   webStartupGapAligned = false;
@@ -2060,7 +2063,17 @@ async function configureMoviePlayback(startSeconds = 0) {
           if (playbackToken === webPlaybackToken) advanceWebStartupProgress(84, 'Preparing HLS segments');
         });
         webHls.on(Hls.Events.FRAG_PARSED, () => {
-          if (playbackToken === webPlaybackToken) advanceWebStartupProgress(88, 'Preparing HLS segments');
+          if (playbackToken !== webPlaybackToken) return;
+          advanceWebStartupProgress(88, 'Preparing HLS segments');
+          // Parsing has completed, but MSE can stall before appending or
+          // presenting a frame without emitting a fatal hls.js error.
+          if (!webMediaReady.value && !webHlsStartupWatchdog) {
+            webHlsStartupWatchdog = setTimeout(() => {
+              webHlsStartupWatchdog = null;
+              if (playbackToken === webPlaybackToken && !webMediaReady.value)
+                advanceWebHlsStartupStrategy('parsed fragment did not produce a presented video frame within 20 seconds');
+            }, 20_000);
+          }
         });
         for (const eventName of [Hls.Events.MEDIA_ATTACHING, Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
           webHls.on(eventName, (_event, data) => {
