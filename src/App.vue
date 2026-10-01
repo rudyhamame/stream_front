@@ -1617,6 +1617,10 @@ function advanceWebHlsStartupStrategy(reason) {
   const strategies = webCompatibility.value?.approvedHlsRecoveryStrategies || [];
   const next = strategies[webHlsRecoveryIndex++];
   if (!webNowPlaying.value || !webForceHls.value || !next) {
+    if (webHls) {
+      webHls.destroy();
+      webHls = null;
+    }
     webHlsTestResult.value = "Failed";
     webBuffering.value = false;
     webPlayerError.value = "The selected HLS strategy did not produce a video frame, and no further checked strategy is available.";
@@ -2018,6 +2022,10 @@ async function configureMoviePlayback(startSeconds = 0) {
             responseCode: data.response?.code || data.response?.status || 0,
           }));
           if (!data.fatal) return;
+          if (!webMediaReady.value) {
+            advanceWebHlsStartupStrategy(`fatal startup error: ${data.details || data.type || 'unknown'}`);
+            return;
+          }
           if (data.type === Hls.ErrorTypes.MEDIA_ERROR && webPlaybackRetryCount.value < 2) {
             webPlaybackRetryCount.value += 1;
             webHls.recoverMediaError();
@@ -2113,6 +2121,7 @@ async function playWebMovie(item) {
   webPlayerMenuOpen.value = false;
   webDirectTestResult.value = "Pending";
   webHlsTestResult.value = "Not attempted";
+  webHlsRecoveryIndex = 0;
   webStreamTicket.value = "";
   webDirectProxyToken.value = "";
   webDirectProxyUrl.value = "";
