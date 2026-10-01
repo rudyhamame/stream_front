@@ -50,7 +50,6 @@ export function describeEncodeStrategy(strategy, videoMode) {
   if (strategy === "HLS_AUDIO_TRANSCODE") return "HLS AUDIO TRANSCODE";
   if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
   if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
-  if (strategy === "HLS_TIMING_REPAIR") return "TIMING REPAIR → HLS";
   if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
   void videoMode;
   return "";

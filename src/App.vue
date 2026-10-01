@@ -992,7 +992,6 @@ const webPlayerSrc = computed(() => {
   if (isDirectProxy) target.searchParams.set("playbackClientId", browserPlaybackClientId);
   if (target.pathname.includes('/api/xtream/hls/')) {
     target.searchParams.set("client", "browser");
-    if (webCompatibility.value?.transport === "HLS_TIMING_REPAIR") target.searchParams.set("timingRepair", "1");
     const selectedHls = webCompatibility.value?.transport || webLiveHlsStrategy.value || "";
     if (["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"].includes(selectedHls)) {
       target.searchParams.set("hlsFallback", selectedHls.replace("HLS_", "").replace("_TRANSCODE", "").toLowerCase());
@@ -1169,18 +1168,7 @@ async function decideWebPlayback(item) {
   const compatibility = applyServerPlaybackPolicy(
     decideBrowserTransport(mediaForBrowser, capabilities, sourceProtocol), decision,
   );
-  const serverRequiresTimingRepair = decision.playbackStrategy === "HLS_TIMING_REPAIR" || decision.timingRepair === true;
-  if (serverRequiresTimingRepair) {
-    const serverSource = new URL(decision.playbackUrl, browserStreamer);
-    if (!serverSource.pathname.includes("/api/xtream/hls/") || serverSource.searchParams.get("timingRepair") !== "1") {
-      throw new Error("BUG: timing repair decision did not return a repair HLS playlist.");
-    }
-  }
-  const transport = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible ? {
-    ...compatibility,
-    transport: "HLS_TIMING_REPAIR",
-    reason: "Decoded frame presentation timestamps move backward; RH will rebuild the video timeline.",
-  } : {
+  const transport = {
     ...compatibility,
     sourceProtocol,
     ...(compatibility.transport === "DIRECT_PROXY" ? { reason: "Browser mixed-content protection; media bytes are relayed unchanged over HTTPS." } : {}),
@@ -1855,9 +1843,6 @@ async function configureMoviePlayback(startSeconds = 0) {
   if (source) {
     const transport = webCompatibility.value?.transport || (webForceHls.value ? "HLS" : "DIRECT");
     console.info(`[RH-TRACE-8] traceId=${webPlaybackTraceId} transport=${transport} actualVideoSource=${traceMediaUrl(source)}`);
-    if (transport === "HLS_TIMING_REPAIR" && !isHlsPlaybackUrl(source)) {
-      throw new Error("BUG: malformed video timing cannot use DIRECT or HLS remux.");
-    }
   }
   webEncodeStrategy.value = "";
   const playbackToken = ++webPlaybackToken;

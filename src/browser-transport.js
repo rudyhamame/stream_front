@@ -157,19 +157,11 @@ export function applyServerPlaybackPolicy(decision, serverDecision) {
   const remuxEnabled = serverDecision?.remuxEnabled !== false;
   const serverTransport = String(serverDecision?.playbackStrategy || '');
   const approvedHlsFallbackStrategy = String(serverDecision?.hlsFallbackStrategy || '');
-  const timing = serverDecision?.media?.timing || serverDecision?.timing || {};
   if (serverDecision?.playable === false) return { ...decision, transport: 'UNSUPPORTED', playable: false,
     directCompatible: false, remuxEnabled, reason: serverDecision.incompatibleReason || 'No checked compatible streaming strategy.' };
-  if ((serverDecision?.timingRepair === true || serverDecision?.playbackStrategy === 'HLS_TIMING_REPAIR')
-      && decision.videoCompatible && decision.audioCompatible) {
-    return { ...decision, transport: 'HLS_TIMING_REPAIR', directCompatible: false,
-      remuxEnabled, playable: true, reason: 'Decoded frame presentation timestamps regress; RH will rebuild the video timeline.' };
-  }
   // Browser capability can veto DIRECT, but cannot override the backend's
-  // timing result or its selected HLS route. Older decisions without a
-  // completed healthy timing check cannot authorize a native media URL.
+  // selected strategy.
   if (directEnabled && serverTransport === 'DIRECT'
-      && timing.checked === true && timing.decodedPtsMonotonic === true
       && decision.directCompatible) {
     const protocol = serverDecision?.sourceProtocol || '';
     const transport = protocol === 'http:' ? 'DIRECT_PROXY'
