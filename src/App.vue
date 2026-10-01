@@ -1993,13 +1993,18 @@ async function configureMoviePlayback(startSeconds = 0) {
           // fatal error, leaving startup frozen at the manifest step.
           enableWorker: false,
           lowLatencyMode: false,
+          // Start only after Chrome has opened MediaSource. Prefetching the
+          // first fragment before sourceopen leaves SourceBuffer operations
+          // queued indefinitely on this browser (FRAG_PARSED without
+          // MEDIA_ATTACHED or BUFFER_APPENDED).
+          autoStartLoad: false,
           // Normally start at segment 0 - the ffmpeg job's -ss offset IS the
           // resume point. A Watch-with-Partner participant instead rides the
           // live edge of the shared, already-running job so it lands where the
           // partner is, not ~20-30s back at the start of the rolling window.
           startPosition: webWwpSessionId.value ? -1 : 0,
           testBandwidth: false,
-          startFragPrefetch: true,
+          startFragPrefetch: false,
           // Buffer far ahead so a provider hiccup mid-stream rides out on the
           // cushion instead of stalling; keep a longer back-buffer for rewinds.
           // (The server keeps ~HLS_VOD_LIST_SIZE*2s of segments on disk.)
@@ -2098,11 +2103,16 @@ async function configureMoviePlayback(startSeconds = 0) {
         webHls.on(Hls.Events.MEDIA_ATTACHED, () => {
           if (playbackToken !== webPlaybackToken) return;
           webHlsAwaitingMediaAttach = false;
+          webHls?.loadSource(source);
         });
-        // Queue the manifest before attaching MediaSource. hls.js will begin
-        // loading immediately and complete the attachment asynchronously.
-        webHls.loadSource(source);
+        // SourceBuffer creation requires sourceopen. Load the manifest only
+        // after MEDIA_ATTACHED so fragment parsing cannot outrun attachment.
+        video.preload = "auto";
         webHls.attachMedia(video);
+        // Chrome can leave a paused, metadata-preload element at HAVE_NOTHING
+        // after a blob MediaSource is assigned. Force its load algorithm now
+        // so MediaSource emits sourceopen before HLS fragment requests begin.
+        video.load();
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
