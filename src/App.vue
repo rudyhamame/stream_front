@@ -2856,9 +2856,41 @@ async function loadWelcomeProvider(provider = sources.value.find(source => sourc
   // The backdrop montage is per playlist provider - refresh it for this one.
 }
 
+const homeRailScrollState = ref({});
+
+function updateHomeRailScrollState(railId, eventOrTrack) {
+  const track = eventOrTrack?.currentTarget?.classList?.contains("home-rail-track")
+    ? eventOrTrack.currentTarget
+    : eventOrTrack?.currentTarget?.closest?.(".home-rail-body")?.querySelector(".home-rail-track")
+      || eventOrTrack;
+  if (!track?.classList?.contains("home-rail-track")) return;
+  const maxScroll = Math.max(0, track.scrollWidth - track.clientWidth);
+  const rtl = getComputedStyle(track).direction === "rtl";
+  const left = track.scrollLeft;
+  const canScrollLeft = maxScroll > 1 && (rtl ? left > -maxScroll + 1 : left > 1);
+  const canScrollRight = maxScroll > 1 && (rtl ? left < -1 : left < maxScroll - 1);
+  const previous = homeRailScrollState.value[railId];
+  if (!previous || previous.canScrollLeft !== canScrollLeft || previous.canScrollRight !== canScrollRight) {
+    homeRailScrollState.value = { ...homeRailScrollState.value, [railId]: { canScrollLeft, canScrollRight } };
+  }
+}
+
+function homeRailCanScroll(railId, direction) {
+  const state = homeRailScrollState.value[railId];
+  return direction < 0 ? Boolean(state?.canScrollLeft) : Boolean(state?.canScrollRight);
+}
+
+function refreshHomeRailScrollStates() {
+  document.querySelectorAll(".home-rail-track[data-rail-id]").forEach(track => {
+    updateHomeRailScrollState(track.dataset.railId, track);
+  });
+}
+
 function scrollHomeRail(event, direction) {
   const track = event.currentTarget.closest(".home-rail-body")?.querySelector(".home-rail-track");
-  if (track) track.scrollBy({ left: direction * track.clientWidth * 0.85, behavior: "smooth" });
+  const railId = track?.dataset.railId;
+  if (!track || !railId || !homeRailCanScroll(railId, direction)) return;
+  track.scrollBy({ left: direction * track.clientWidth * 0.85, behavior: "smooth" });
 }
 
 function welcomeItemEnabled(item) {
@@ -2959,6 +2991,12 @@ const homeRails = computed(() => {
   }
   return rails;
 });
+watch(homeRails, () => nextTick(refreshHomeRailScrollStates), { deep: true, flush: "post" });
+onMounted(() => {
+  nextTick(refreshHomeRailScrollStates);
+  window.addEventListener("resize", refreshHomeRailScrollStates);
+});
+onBeforeUnmount(() => window.removeEventListener("resize", refreshHomeRailScrollStates));
 const homeHeroItem = computed(() => homeRails.value.flatMap(rail => rail.items || [])[0] || null);
 
 async function loadHomeData(force = false) {
@@ -3893,9 +3931,9 @@ onMounted(async () => {
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div>
           </header>
           <div class="home-rail-body">
-          <button type="button" class="home-rail-arrow is-prev" aria-label="Scroll left" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button>
-          <button type="button" class="home-rail-arrow is-next" aria-label="Scroll right" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button>
-          <div class="home-rail-track">
+          <button type="button" class="home-rail-arrow is-prev" aria-label="Scroll left" :disabled="!homeRailCanScroll(rail.id, -1)" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button>
+          <button type="button" class="home-rail-arrow is-next" aria-label="Scroll right" :disabled="!homeRailCanScroll(rail.id, 1)" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button>
+          <div class="home-rail-track" :data-rail-id="rail.id" @scroll.passive="updateHomeRailScrollState(rail.id, $event)">
             <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
               <span class="home-card-art">
                 <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
