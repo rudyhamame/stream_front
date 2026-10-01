@@ -1783,7 +1783,14 @@ function startWebVideoWedgeWatchdog(video) {
       monitor.lastTimelineTime = currentTime;
       monitor.lastTimelineAt = timestamp;
     }
-    if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
+    if (timestamp - monitor.lastTimelineAt < 2500 || timestamp - monitor.lastFrameAt < 5000) return;
+    if (!webForceHls.value && !webWwpSessionId.value) {
+      clearWebVideoWedgeWatchdog();
+      if (switchRejectedDirectToRemux('Direct playback stopped presenting frames; trying the backend-selected checked HLS strategy.')) return;
+      webBuffering.value = false;
+      webPlayerError.value = 'Direct playback stopped presenting frames, and no checked HLS strategy is available.';
+      return;
+    }
     if (monitor.recoveryStage === 0 && webHls) {
       monitor.recoveryStage = 1;
       monitor.lastFrameAt = timestamp;
@@ -1912,11 +1919,8 @@ async function configureMoviePlayback(startSeconds = 0) {
   clearTimeout(webBufferingTimer);
   clearTimeout(webStallTimer);
   webStallTimer = null;
-  video.removeAttribute("src");
-  // Drop any object source and force a full element reset so the previous
-  // decoder never carries over (the cause of a black frame with live audio
-  // after an error-recovery reload).
-  try { video.srcObject = null; } catch { /* not all browsers */ }
+  // The keyed video above is new on every attempt. Do not reset its empty
+  // source: doing so starts an extra resource selection during MSE attach.
   // Keep video renderable while observing its first frame.
   video.style.opacity = "1";
   // Carry the current mute choice onto the (re)loaded element so a pre-muted
@@ -2109,10 +2113,10 @@ async function configureMoviePlayback(startSeconds = 0) {
         // after MEDIA_ATTACHED so fragment parsing cannot outrun attachment.
         video.preload = "auto";
         webHls.attachMedia(video);
-        // Chrome can leave a paused, metadata-preload element at HAVE_NOTHING
-        // after a blob MediaSource is assigned. Force its load algorithm now
-        // so MediaSource emits sourceopen before HLS fragment requests begin.
-        video.load();
+        const attachedHls = webHls;
+        for (const delay of [500, 3000]) setTimeout(() => {
+          console.info(`[BrowserHlsAttach] token=${playbackToken}/${webPlaybackToken} active=${attachedHls === webHls} source=${attachedHls.mediaSource?.readyState || 'none'} media=${attachedHls.media === video} connected=${video.isConnected} network=${video.networkState} ready=${video.readyState} paused=${video.paused} preload=${video.preload} currentSrc=${video.currentSrc.slice(0, 18)}`);
+        }, delay);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);

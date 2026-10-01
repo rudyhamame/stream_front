@@ -120,13 +120,13 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
   const videoSupported = !videoKnown || (videoSignal === false ? false : (videoSignal === true || codecSupport(media.video.codec, capabilities?.videoCodecs)) && videoParametersSupported(media.video).ok);
   const audioSupported = !media.audio.codec || (audioSignal === false ? false : (audioSignal === true || codecSupport(media.audio.codec, capabilities?.audioCodecs)));
   const audioParametersSupported = !media.audio.codec || ((media.audio.channels <= 8 || !media.audio.channels) && (media.audio.sampleRate <= 96000 || !media.audio.sampleRate));
-  // Firefox can report Matroska as possibly playable but still scans a large
-  // file for cues at the end before presenting the first frame. Treat only
-  // verified Chrome/Edge Matroska support as Direct-capable; copy-compatible
-  // Firefox MKV sources go through HLS Remux for prompt startup.
+  // Chrome can advertise Matroska support and render its first frame, then
+  // stop reading a large ranged MKV. The failed native load also leaves MSE
+  // unable to open in that tab, so a later HLS recovery cannot start. Treat
+  // Chrome MKV as incompatible with Direct and use the backend-approved HLS
+  // mode when present. Edge retains its separate native support check.
   const browserMkvDirect = container === 'mkv'
-    && ((browser.name === 'chrome' && browser.version >= 145)
-      || (browser.name === 'edge' && browser.version >= 145));
+    && browser.name === 'edge' && browser.version >= 145;
   const containerDirect = container === 'hls' ? Boolean(capabilities?.containers?.hls)
     : container === 'mp4' ? Boolean(capabilities?.containers?.mp4)
     : container === 'webm' ? Boolean(capabilities?.containers?.webm)
@@ -136,8 +136,7 @@ export function decideBrowserTransport(rawMedia, capabilities, sourceProtocol = 
   const remuxAudioCopy = !media.audio.codec || ['aac', 'mp3', 'mp2', 'ac3', 'eac3'].includes(media.audio.codec);
   const remuxCompatible = videoSupported && audioSupported && audioParametersSupported && remuxVideoCopy && remuxAudioCopy;
   let reason = '';
-  if (direct && container === 'mkv' && browser.name === 'chrome') reason = `Chrome ${browser.version} (145+) supports direct Matroska playback and the probed codecs.`;
-  else if (direct && container === 'mkv' && browser.name === 'edge') reason = `Edge ${browser.version || ''} has verified Matroska support and the probed codecs are supported.`.trim();
+  if (direct && container === 'mkv' && browser.name === 'edge') reason = `Edge ${browser.version || ''} has verified Matroska support and the probed codecs are supported.`.trim();
   else if (direct) reason = `${browser.name} ${browser.version || ''} supports the source container and both probed codecs.`.trim();
   else if (!videoSupported) reason = `Video codec ${media.video.codec} or its parameters are unsupported; stream copy cannot change it.`;
   else if (!videoKnown) reason = 'Video codec could not be identified; trying the source through HLS.';
