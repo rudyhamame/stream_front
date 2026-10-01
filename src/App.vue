@@ -2092,12 +2092,6 @@ async function configureMoviePlayback(startSeconds = 0) {
             }, 20_000);
           }
         });
-        for (const eventName of [Hls.Events.MEDIA_ATTACHING, Hls.Events.MEDIA_ATTACHED, Hls.Events.BUFFER_CREATED, Hls.Events.FRAG_LOADED, Hls.Events.FRAG_PARSED, Hls.Events.BUFFER_CODECS, Hls.Events.BUFFER_APPENDING, Hls.Events.BUFFER_APPENDED]) {
-          webHls.on(eventName, (_event, data) => {
-            if (playbackToken !== webPlaybackToken) return;
-            console.info(`[BrowserHls] ${eventName} sn=${data?.frag?.sn ?? ''} type=${data?.type ?? ''} bytes=${data?.data?.byteLength ?? data?.payload?.byteLength ?? 0} tracks=${Object.keys(data?.tracks || data || {}).join(',')} media=${webHls?.media === video} video=${video.readyState}/${video.networkState} src=${video.currentSrc?.slice(0, 18) || 'none'}`);
-          });
-        }
         webHls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
           if (playbackToken !== webPlaybackToken) return;
           advanceWebStartupProgress(92, 'Preparing HLS segments');
@@ -2113,10 +2107,6 @@ async function configureMoviePlayback(startSeconds = 0) {
         // after MEDIA_ATTACHED so fragment parsing cannot outrun attachment.
         video.preload = "auto";
         webHls.attachMedia(video);
-        const attachedHls = webHls;
-        for (const delay of [500, 3000]) setTimeout(() => {
-          console.info(`[BrowserHlsAttach] token=${playbackToken}/${webPlaybackToken} active=${attachedHls === webHls} source=${attachedHls.mediaSource?.readyState || 'none'} media=${attachedHls.media === video} connected=${video.isConnected} network=${video.networkState} ready=${video.readyState} paused=${video.paused} preload=${video.preload} currentSrc=${video.currentSrc.slice(0, 18)}`);
-        }, delay);
       } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
         video.src = source;
         await startWebPlayback(video);
