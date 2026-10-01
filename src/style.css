@@ -1367,4 +1367,8 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 @media (min-width:701px) {
   .safari-app-mode:not(.login-shell) { width:111.111vw; height:111.111svh; min-height:111.111svh; zoom:.9; }
   .safari-app-mode:not(.login-shell) .browser-app-shell { height:111.111svh; }
+  /* The app is zoomed to 90%, so a literal 100vw/100dvh inside it renders at 90% of the window (the player filled only the left 90% and the page showed through). Compensate exactly like the shell above. */
+  .safari-app-mode:not(.login-shell) .web-player:not(.is-fullscreen):not(.is-mini) { width:111.111vw; min-width:111.111vw; }
+  .safari-app-mode:not(.login-shell) .web-player.is-fullscreen { width:111.111vw; height:111.111dvh; }
+  .safari-app-mode:not(.login-shell) .web-player.is-fullscreen .web-video-frame { width:111.111vw; height:111.111dvh; }
 }
