@@ -1355,3 +1355,10 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
   .download-footer { align-items:flex-start; min-height:86px; margin-top:48px; padding:20px 0 max(20px,env(safe-area-inset-bottom)); }
   .download-footer nav { gap:15px; }
 }
+
+/* Welcome rails mount by growing in height (grid 0fr -> 1fr) with a small per-rail stagger; rails that persist across refreshes never replay it. */
+.home-rail { display:grid; animation:homeRailGrow .5s cubic-bezier(.2,.8,.2,1) backwards; animation-delay:calc(var(--tier, 0) * 90ms); }
+.home-rail > .home-rail-inner { min-height:0; animation:homeRailClip .5s backwards; animation-delay:calc(var(--tier, 0) * 90ms); }
+@keyframes homeRailGrow { from { grid-template-rows:0fr; opacity:0; margin-bottom:0; } to { grid-template-rows:1fr; opacity:1; } }
+@keyframes homeRailClip { from, to { overflow:hidden; } }
+@media (prefers-reduced-motion: reduce) { .home-rail, .home-rail > .home-rail-inner { animation:none; } }

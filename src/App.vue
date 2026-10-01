@@ -3884,12 +3884,12 @@ onMounted(async () => {
 
         <p v-else-if="homeError" class="home-error" role="status">{{ homeError }}</p>
 
-        <div v-if="welcomeCatalogBusy" class="welcome-catalog-loading" role="status" aria-live="polite" aria-label="Loading catalog">
+        <div v-if="welcomeCatalogBusy && !homeRails.length" class="welcome-catalog-loading" role="status" aria-live="polite" aria-label="Loading catalog">
           <span class="welcome-catalog-spinner" aria-hidden="true"></span>
           <span>Loading catalog…</span>
         </div>
 
-        <section v-for="(rail, railIndex) in (welcomeCatalogBusy ? [] : homeRails)" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`" :style="{ '--tier': railIndex }"><div class="home-rail-inner">
+        <section v-for="(rail, railIndex) in homeRails" :key="rail.id" class="home-rail" :class="`home-rail-${rail.id}`" :style="{ '--tier': railIndex }"><div class="home-rail-inner">
           <header><div><p class="eyebrow">{{ rail.eyebrow }}</p><h2>{{ rail.title }}</h2></div>
           </header>
           <div class="home-rail-body">
