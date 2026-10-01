@@ -1648,10 +1648,6 @@ function onWebReady(event) {
     webPlaying.value = true;
   }
   if (["loadeddata", "canplay", "playing"].includes(event?.type)) startWebVideoWedgeWatchdog(event.target);
-  if (!webForceHls.value && !webWwpSessionId.value
-      && ["loadeddata", "canplay", "playing"].includes(event?.type)) {
-    webDirectTestResult.value = "Passed";
-  }
   // Audio can trigger "playing" before the video decoder recovers. Wait for a
   // newly presented frame before hiding the recovery state or revealing video.
   if (webMediaReady.value) {
@@ -1686,6 +1682,7 @@ function startWebVideoWedgeWatchdog(video) {
   const initialFrameCount = Number(initialQuality?.totalVideoFrames ?? video.webkitDecodedFrameCount) || 0;
   const monitor = {
     video, token, active: true, interval: null, frameCallbackId: null,
+    startedAt: now,
     lastFrameAt: now, lastTimelineAt: now, lastTimelineTime: video.currentTime,
     lastPresentedFrames: -1, fallbackFrameCount: initialFrameCount, recoveryStage: 0,
   };
@@ -1717,7 +1714,6 @@ function startWebVideoWedgeWatchdog(video) {
       requestFrame();
     });
   };
-  if (initialFrameCount > 0) confirmFrame(initialFrameCount);
   requestFrame();
   monitor.interval = setInterval(() => {
     if (!monitor.active || webWedgeWatchdog !== monitor || video !== webVideo.value || token !== webPlaybackToken) {
@@ -1734,16 +1730,24 @@ function startWebVideoWedgeWatchdog(video) {
         confirmFrame(frames);
       }
     }
-    if (video.paused) return;
     const currentTime = video.currentTime;
     const timestamp = Date.now();
+    if (!webMediaReady.value && webNowPlaying.value && webPlaying.value && !wwpUserPaused
+        && timestamp - monitor.startedAt >= 15_000) {
+      clearWebVideoWedgeWatchdog();
+      if (!webForceHls.value && !webWwpSessionId.value
+          && switchRejectedDirectToRemux("Direct playback produced no video frame during startup; trying the backend-selected checked HLS strategy.")) return;
+      webDirectTestResult.value = "Rejected";
+      webBuffering.value = false;
+      webPlayerError.value = "No video frame arrived from the selected playback strategy. Retry playback.";
+      return;
+    }
+    if (video.paused) return;
     if (currentTime > monitor.lastTimelineTime + 0.05) {
       monitor.lastTimelineTime = currentTime;
       monitor.lastTimelineAt = timestamp;
     }
     if (timestamp - monitor.lastTimelineAt >= 2500 || timestamp - monitor.lastFrameAt < 5000) return;
-    // Elapsed time never rejects or restarts a Direct attempt.
-    if (!webForceHls.value && !webWwpSessionId.value) return;
     if (monitor.recoveryStage === 0 && webHls) {
       monitor.recoveryStage = 1;
       monitor.lastFrameAt = timestamp;
@@ -1931,6 +1935,7 @@ async function configureMoviePlayback(startSeconds = 0) {
         } else webPlayerError.value = "This browser cannot play the provider HLS stream directly.";
       } else {
         video.src = source;
+        startWebVideoWedgeWatchdog(video);
         // A native media error or a decoded frame supplies the Direct result.
         await startWebPlayback(video);
       }
