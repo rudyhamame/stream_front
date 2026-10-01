@@ -1168,7 +1168,8 @@ async function decideWebPlayback(item) {
   if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
   if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
   const headers = deviceToken.value ? { 'x-device-token': deviceToken.value } : {};
-  const response = await fetch(url, { cache: 'no-store', headers, signal: AbortSignal.timeout(30_000) });
+  // The shared compatibility scan can take 15s + 65s before network/queue time.
+  const response = await fetch(url, { cache: 'no-store', headers, signal: AbortSignal.timeout(120_000) });
   const decision = await response.json().catch(() => ({}));
   if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
