@@ -1032,6 +1032,11 @@ const webTransportDetails = computed(() => {
   const decision = webCompatibility.value;
   if (!decision) return "";
   const { media, browser } = decision;
+  const directWasSelected = decision.transport === "DIRECT_PROVIDER"
+    || decision.transport === "DIRECT_PROXY" || decision.transport === "DIRECT";
+  const directAcceptance = webDirectTestResult.value === "Passed" ? "accepted"
+    : webDirectTestResult.value === "Rejected" ? "rejected"
+      : directWasSelected ? "pending browser result" : `not attempted (backend selected ${decision.transport})`;
   const level = media.video.level ? `@${media.video.level}` : "";
   const direct = decision.transport === "DIRECT_PROVIDER" || decision.transport === "DIRECT_PROXY" || decision.transport === "DIRECT";
   const delivery = decision.transport === "DIRECT_PROXY" ? "HTTPS Proxy" : decision.transport === "DIRECT_PROVIDER" ? "Provider HTTPS" : "";
@@ -1042,8 +1047,8 @@ const webTransportDetails = computed(() => {
     `Video: ${media.video.codec || "unknown"} ${media.video.profile || ""}${level} ${media.video.width || "?"}×${media.video.height || "?"} ${media.video.frameRate || "?"} fps ${media.video.bitDepth || "?"}-bit ${media.video.pixelFormat || ""}`.trim(),
     `Audio: ${media.audio.codec || "none"} ${media.audio.profile || ""} ${media.audio.channels || "?"} channels ${media.audio.sampleRate || "?"} Hz`.trim(),
     `Browser: ${browser.name} ${browser.version || "unknown"}`,
-    `Browser-reported support — container: ${decision.containerCompatible ? "yes" : "no"}; video: ${decision.videoCompatible ? "yes" : "no"}; audio: ${decision.audioCompatible ? "yes" : "no"}`,
-    `Actual Direct playback: ${webDirectTestResult.value === "Passed" ? "accepted" : webDirectTestResult.value === "Rejected" ? "rejected" : "pending browser result"}`,
+    `Browser-reported support — container: ${decision.containerCompatible ? "yes" : "no"}; video: ${media.video.codec ? (decision.videoCompatible ? "yes" : "no") : "unknown codec"}; audio: ${media.audio.codec ? (decision.audioCompatible ? "yes" : "no") : "no audio track"}`,
+    `Actual Direct playback: ${directAcceptance}`,
     `Remux compatible: ${decision.remuxCompatible ? "yes" : "no"}`,
     `Decision: ${decision.reason}`,
   ].join("\n");
@@ -1068,24 +1073,28 @@ const webCompatibilityChecks = computed(() => {
   if (!decision) return [];
   const media = decision.media || {};
   const result = value => value ? "Passed" : "Failed";
-  const directSelected = !webForceHls.value && !webWwpSessionId.value;
+  const directSelected = decision.transport === "DIRECT_PROVIDER"
+    || decision.transport === "DIRECT_PROXY" || decision.transport === "DIRECT";
+  const directNotAttempted = !directSelected && webDirectTestResult.value.toLowerCase() === "pending";
+  const backendHlsStrategy = ["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"].includes(decision.playbackStrategy)
+    ? decision.playbackStrategy : decision.transport;
   return [
     { label: "Fetch item URL from provider", result: "Passed", detail: `${decision.sourceProtocol || "unknown"} source resolved` },
     { label: "Probe media container", result: result(Boolean(media.container && media.container !== "unknown")), detail: media.container || "unknown" },
     { label: "Check container compatibility", result: result(Boolean(decision.containerCompatible)), detail: decision.containerCompatible ? "Browser reports possible native support; actual playback is checked separately" : "Browser reports no native support" },
     { label: "Probe video codec", result: result(Boolean(media.video?.codec)), detail: [media.video?.codec, media.video?.profile, media.video?.level && `level ${media.video.level}`].filter(Boolean).join(" · ") || "unknown" },
-    { label: "Check video codec compatibility", result: result(Boolean(decision.videoCompatible)), detail: decision.videoCompatible ? "Browser reports support" : "Browser reports no native support" },
+    { label: "Check video codec compatibility", result: media.video?.codec ? result(Boolean(decision.videoCompatible)) : "Unknown", detail: media.video?.codec ? (decision.videoCompatible ? "Browser reports support for this codec" : "Browser reports no native support") : `The probe found no video codec; backend selected ${backendHlsStrategy}.` },
     { label: "Probe audio codec", result: media.audio?.codec ? "Passed" : "No audio", detail: media.audio?.codec || "No audio track" },
     { label: "Check audio codec compatibility", result: media.audio?.codec ? result(Boolean(decision.audioCompatible)) : "Passed", detail: media.audio?.codec ? (decision.audioCompatible ? "Browser reports support" : "Browser reports no native support") : "No audio decoding required" },
     { label: "Direct strategy enabled", result: result(decision.directEnabled !== false), detail: decision.directEnabled !== false ? "Enabled in RH Player Control Panel" : "Disabled in RH Player Control Panel" },
-    { label: "Direct browser acceptance test", result: webDirectTestResult.value, detail: directSelected ? "Waiting for a decoded frame or native media error; the browser gives no final answer while silent" : "The browser did not present a Direct video frame" },
+    { label: "Direct browser acceptance test", result: directNotAttempted ? "Not selected" : webDirectTestResult.value, detail: directSelected ? "Waiting for a decoded frame or native media error; the browser gives no final answer while silent" : directNotAttempted ? `Not selected; the backend chose checked ${backendHlsStrategy} because the video codec is unknown.` : "Direct playback was rejected; the backend-selected HLS strategy is active." },
     { label: "Copy-only HLS eligibility", result: result(Boolean(decision.remuxCompatible)), detail: decision.remuxCompatible ? "No video or audio transcode required" : "A codec transcode would be required" },
     { label: "HLS Remux strategy enabled", result: result(Boolean(decision.enabledStrategies?.HLS_REMUX)), detail: decision.enabledStrategies?.HLS_REMUX ? "Checked in RH Player Control Panel" : "Unchecked in RH Player Control Panel" },
     ...[["HLS_VIDEO_TRANSCODE", "HLS Video Transcode"], ["HLS_AUDIO_TRANSCODE", "HLS Audio Transcode"], ["HLS_FULL_TRANSCODE", "HLS Full Transcode"]].map(([key, label]) => ({
       label: `${label} enabled`, result: result(Boolean(decision.enabledStrategies?.[key])),
       detail: decision.enabledStrategies?.[key] ? "Checked in RH Player Control Panel" : "Unchecked in RH Player Control Panel",
     })),
-    { label: "Selected HLS playback test", result: webHlsTestResult.value, detail: webForceHls.value ? `Testing ${describeEncodeStrategy(decision.transport) || decision.transport}` : "Used only if Direct is rejected" },
+    { label: "Backend-selected strategy playback", result: webForceHls.value ? webHlsTestResult.value : "Not selected", detail: webForceHls.value ? `Backend selected checked ${backendHlsStrategy}; playback is verified by the browser's decoded frame.` : "Direct was selected by the backend; HLS remains the checked fallback." },
     { label: "Streaming strategy", result: webEncodeStrategy.value || webPendingEncodeStrategy.value || decision.transport || "Pending", detail: decision.reason || "" },
   ];
 });
