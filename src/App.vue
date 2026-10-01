@@ -1192,11 +1192,10 @@ async function decideWebPlayback(item) {
   const { providerURL: _providerURL, providerUrl: _providerUrl, ...safeNowPlaying } = webNowPlaying.value || {};
   webNowPlaying.value = { ...safeNowPlaying, ...(transport.transport.startsWith("DIRECT") && decision.providerURL ? { providerURL: decision.providerURL } : {}), playbackStrategy: decision.playbackStrategy };
   const useDirect = transport.transport.startsWith("DIRECT");
-  const useTimingRepair = serverRequiresTimingRepair && compatibility.videoCompatible && compatibility.audioCompatible;
-  webForceHls.value = useTimingRepair || transport.transport.startsWith("HLS");
+  webForceHls.value = transport.transport.startsWith("HLS");
   webPendingEncodeStrategy.value = useDirect
     ? 'DIRECT'
-    : useTimingRepair ? 'TIMING REPAIR → HLS' : describeEncodeStrategy(transport.transport) || 'UNSUPPORTED';
+    : describeEncodeStrategy(transport.transport) || 'UNSUPPORTED';
   if (transport.transport === "UNSUPPORTED") {
     webEncodeStrategy.value = "UNSUPPORTED";
     throw Object.assign(new Error(`Unsupported media. ${transport.reason}`), { incompatible: true });

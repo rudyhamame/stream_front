@@ -17,7 +17,7 @@ test('delivery protocol changes only the delivery method for compatible media', 
   assert.equal(decideBrowserTransport(source('matroska'), supported, 'http:').transport, 'DIRECT_PROXY');
 });
 
-test('server timing decision gates Direct even when Browser reports MKV support', () => {
+test('server playback decision applies Direct and HLS policy', () => {
   const local = decideBrowserTransport(source(), supported, 'http:');
   assert.equal(local.transport, 'DIRECT_PROXY');
   const policy = applyServerPlaybackPolicy(local, { directEnabled: false, directCompatible: false, playbackStrategy: 'HLS_REMUX', playable: true, reason: 'Direct disabled in RH control panel.' });
@@ -26,16 +26,7 @@ test('server timing decision gates Direct even when Browser reports MKV support'
   assert.equal(policy.playable, true);
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'HLS_REMUX', playable: true }).transport, 'HLS_REMUX');
   assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', playable: true, hlsFallbackStrategy: 'HLS_REMUX' }).transport, 'HLS_REMUX');
-  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', sourceProtocol: 'http:', media: { timing: { checked: true, decodedPtsMonotonic: true } } }).transport, 'DIRECT_PROXY');
-});
-
-test('timing repair is selected only when the backend flags decoded PTS regressions and Browser codecs work', () => {
-  const direct = decideBrowserTransport(source('mp4'), supported, 'https:');
-  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: false, playbackStrategy: 'DIRECT', sourceProtocol: 'https:', media: { timing: { checked: true, decodedPtsMonotonic: true } } }).transport, 'DIRECT_PROVIDER');
-  assert.equal(applyServerPlaybackPolicy(direct, { timingRepair: true }).transport, 'HLS_TIMING_REPAIR');
-  assert.equal(applyServerPlaybackPolicy(direct, { playbackStrategy: 'HLS_TIMING_REPAIR', directEnabled: true }).transport, 'HLS_TIMING_REPAIR');
-  const brokenAudio = decideBrowserTransport(source('mp4', 'dts'), supported, 'https:');
-  assert.equal(applyServerPlaybackPolicy(brokenAudio, { timingRepair: true }).transport, 'UNSUPPORTED');
+  assert.equal(applyServerPlaybackPolicy(local, { directEnabled: true, playbackStrategy: 'DIRECT', sourceProtocol: 'http:' }).transport, 'DIRECT_PROXY');
 });
 
 test('HTTP does not turn incompatible containers or codecs into transport failures', () => {

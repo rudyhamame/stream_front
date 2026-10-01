@@ -21,6 +21,5 @@ test('playback time and duration formatting preserves UI behavior', () => {
 test('streaming strategies have stable user-facing labels', () => {
   assert.equal(describeEncodeStrategy('DIRECT'), 'DIRECT');
   assert.equal(describeEncodeStrategy('HLS_AUDIO_TRANSCODE'), 'HLS AUDIO TRANSCODE');
-  assert.equal(describeEncodeStrategy('HLS_TIMING_REPAIR'), 'TIMING REPAIR → HLS');
   assert.equal(describeEncodeStrategy('UNKNOWN'), '');
 });
