@@ -20,6 +20,7 @@ import EditIcon from "./components/icons/EditIcon.vue";
 import TrashIcon from "./components/icons/TrashIcon.vue";
 import DotsVerticalRoundedIcon from "./components/icons/DotsVerticalRoundedIcon.vue";
 import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
+import { compareCatalogTitles, describeEncodeStrategy, formatTime, normalizeSearchText, parseDuration } from "./catalog-format.js";
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -864,30 +865,6 @@ let wwpHostState = null, wwpUserPaused = false, wwpLastFollowSeek = 0;
 const selectedCount = computed(() => selectedKeys.value.length);
 const isPairingSignup = computed(() => pairingMode.value === "signup");
 const savedKeys = computed(() => new Set(savedItems.value.map(item => item.key)));
-function normalizeSearchText(value) {
-  return String(value || "")
-    .normalize("NFKC")
-    .replace(/[\u064B-\u065F\u0670\u06D6-\u06ED]/g, "")
-    .replace(/[\u0640]/g, "")
-    .replace(/[أإآٱ]/g, "ا")
-    .replace(/[ى]/g, "ي")
-    .replace(/[ة]/g, "ه")
-    .replace(/[ؤ]/g, "و")
-    .replace(/[ئ]/g, "ي")
-    .replace(/[پ]/g, "ب")
-    .replace(/[چ]/g, "ج")
-    .replace(/[ڤ]/g, "ف")
-    .replace(/[گ]/g, "ك")
-    .replace(/[٠-٩]/g, digit => String(digit.charCodeAt(0) - 0x0660))
-    .replace(/[۰-۹]/g, digit => String(digit.charCodeAt(0) - 0x06F0))
-    .toLocaleLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
-}
-function compareCatalogTitles(a, b) {
-  return String(a?.title || '').trim().localeCompare(String(b?.title || '').trim(), undefined, { numeric: true, sensitivity: 'base' })
-    || String(a?.key || '').localeCompare(String(b?.key || ''));
-}
 const visibleItems = computed(() => {
   const filtered = items.value.filter(item => selectionFilter.value === "all"
     || (selectionFilter.value === "selected" && savedKeys.value.has(item.key))
@@ -1238,26 +1215,6 @@ async function decideWebPlayback(item) {
   }
   if (Number(decision.durationSeconds) > 0) webDuration.value = Number(decision.durationSeconds);
   return { ...decision, ...transport, transport: transport.transport };
-}
-
-function formatTime(value) {
-  const seconds = Math.max(0, Math.floor(Number(value) || 0));
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const tail = `${String(minutes).padStart(hours ? 2 : 1, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-  return hours ? `${hours}:${tail}` : tail;
-}
-
-function parseDuration(value) {
-  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, value);
-  const text = String(value || "").trim();
-  if (!text) return 0;
-  if (/^\d+(?::\d{1,2}){1,2}$/.test(text)) {
-    const parts = text.split(":").map(Number);
-    return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
-  }
-  const numeric = Number(text);
-  return Number.isFinite(numeric) && numeric > 0 ? numeric : 0;
 }
 
 function handleWebMetadata(event) {
@@ -1887,17 +1844,6 @@ function unmuteWebPlayback() {
 // viewer's quality rung) and reports it as response headers on the manifest.
 // A plain independent fetch is the simplest way to read them without hooking
 // hls.js's own loader - the manifest is tiny, so the extra request is cheap.
-function describeEncodeStrategy(strategy, videoMode) {
-  if (strategy === "DIRECT") return "DIRECT";
-  if (strategy === "HLS_REMUX") return "HLS REMUX";
-  if (strategy === "HLS_AUDIO_TRANSCODE") return "HLS AUDIO TRANSCODE";
-  if (strategy === "HLS_VIDEO_TRANSCODE") return "HLS VIDEO TRANSCODE";
-  if (strategy === "HLS_FULL_TRANSCODE") return "HLS FULL TRANSCODE";
-  if (strategy === "HLS_TIMING_REPAIR") return "TIMING REPAIR → HLS";
-  if (strategy === "UNSUPPORTED") return "UNSUPPORTED";
-  void videoMode;
-  return "";
-}
 async function configureMoviePlayback(startSeconds = 0) {
   // A rejected native Direct decoder can retain a media error even after its
   // src changes to a MediaSource blob. A fresh element gives HLS its own
