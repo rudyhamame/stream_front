@@ -1161,7 +1161,7 @@ async function decideWebPlayback(item) {
   url.searchParams.set('client', 'browser');
   url.searchParams.set('playbackClientId', browserPlaybackClientId);
   url.searchParams.set('traceId', webPlaybackTraceId);
-  if (capabilities.mkvVerified && ['chrome', 'edge'].includes(capabilities.browser.name) && capabilities.browser.version >= 145) {
+  if (capabilities.mkvVerified && capabilities.browser.name === 'edge' && capabilities.browser.version >= 145) {
     url.searchParams.set('caps', 'mkv-direct');
   }
   if (item.extension) url.searchParams.set('ext', item.extension);
