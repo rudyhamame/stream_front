@@ -7,6 +7,7 @@ const listener = app.slice(app.indexOf('function stopPartnerInvites()'), app.ind
 function context(request) {
   const c = vm.createContext({ request, AbortController, onBeforeUnmount() {}, window: { clearTimeout() {}, setTimeout() {} },
     deviceToken: { value: 'profile-a' }, pendingPartnerInvite: { value: null },
+    handledPartnerInviteIds: new Set(), webWwpSessionId: { value: '' }, partnerInviteError: { value: '' },
     partnerInviteRevision: 0, partnerInviteController: null, partnerInviteRetryTimer: null });
   vm.runInContext(listener, c);
   return c;
@@ -42,9 +43,9 @@ test('fresh profile selection starts the invite listener', () => {
 
 function playbackContext(overrides = {}) {
   const names = [...new Set([...app.matchAll(/\b(\w+)\.value\b/g)].map(match => match[1]))];
-  const c = vm.createContext({ Object, Number, Math, URL, AbortSignal, crypto: { randomUUID: () => 'invitation-trace' },
+  const c = vm.createContext({ Object, Number, Math, URL, AbortSignal, AbortController, crypto: { randomUUID: () => 'invitation-trace' },
     webPlaybackSessionId: 0, webPlaybackTraceId: '', stopWwpSync() {}, stopWebStartupPoll() {},
-    setWebStartupProgress() {}, showWebControls() {}, loadWwpGuestDuration() {},
+    setWebStartupProgress() {}, showWebControls() {}, loadWwpGuestDuration() {}, acknowledgePartnerInvite: async () => true,
     ...Object.fromEntries(names.map(name => [name, { value: null }])), ...overrides });
   vm.runInContext(app.slice(app.indexOf('async function joinPartnerInvite('), app.indexOf('function toggleWebMute()')), c);
   return c;
@@ -99,4 +100,45 @@ test('a Direct-only policy cannot invent an HLS strategy for an invitation', asy
   c.webPlaybackTraceId = 'trace'; c.webWwpSessionId.value = 'host-session'; c.webIsWwpGuest.value = true;
   vm.runInContext(app.slice(app.indexOf('async function decideWebPlayback('), app.indexOf('function handleWebMetadata(')), c);
   await assert.rejects(c.decideWebPlayback(invite), /No checked compatible HLS strategy/);
+});
+
+function actionContext(request) {
+  const c = playbackContext({ request, handledPartnerInviteIds: new Set() });
+  vm.runInContext(app.slice(app.indexOf('async function acknowledgePartnerInvite('), app.indexOf('async function joinPartnerInvite(')), c);
+  c.deviceToken.value = 'guest-profile';
+  c.pendingPartnerInvite.value = invite;
+  return c;
+}
+test('dismissal waits for server confirmation and ignores any stale poll replay', async () => {
+  const c = actionContext(async (path, options) => {
+    assert.equal(path, '/api/partner/invite/ack');
+    assert.equal(JSON.parse(options.body).wwpSessionId, 'host-session');
+    return { confirmed: true };
+  });
+  await c.dismissPartnerInvite(invite);
+  assert.equal(c.pendingPartnerInvite.value, null);
+  assert.equal(c.handledPartnerInviteIds.has('host-session'), true);
+  let calls = 0;
+  c.request = async () => ++calls === 1 ? { revision: 3, invite } : new Promise(() => {});
+  c.partnerInviteRevision = 0; c.partnerInviteController = null; c.partnerInviteRetryTimer = null;
+  c.window = { clearTimeout() {}, setTimeout() {} }; c.onBeforeUnmount = () => {};
+  vm.runInContext(listener, c);
+  await c.watchPartnerInvite();
+  assert.equal(c.pendingPartnerInvite.value, null);
+});
+test('an unconfirmed acknowledgment leaves the invitation available for retry', async () => {
+  const c = actionContext(async () => ({ confirmed: false }));
+  assert.equal(await c.acknowledgePartnerInvite(invite, 'join'), false);
+  assert.equal(c.pendingPartnerInvite.value.wwpSessionId, 'host-session');
+  assert.equal(c.handledPartnerInviteIds.size, 0);
+  assert.match(c.partnerInviteError.value, /try again/i);
+});
+test('acknowledging an older invitation does not hide a newer arrival', async () => {
+  let resolve;
+  const c = actionContext(() => new Promise(done => { resolve = done; }));
+  const action = c.acknowledgePartnerInvite(invite, 'dismiss');
+  c.pendingPartnerInvite.value = { wwpSessionId: 'new-session' };
+  resolve({ confirmed: true });
+  await action;
+  assert.equal(c.pendingPartnerInvite.value.wwpSessionId, 'new-session');
 });

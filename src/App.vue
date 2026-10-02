@@ -251,6 +251,10 @@ const webPlayerMenuOpen = ref(false);
 const webDirectTestResult = ref("pending");
 const webHlsTestResult = ref("not started");
 const pendingPartnerInvite = ref(null);
+const partnerInviteActionId = ref("");
+const partnerInviteAction = ref("");
+const partnerInviteError = ref("");
+const handledPartnerInviteIds = new Set();
 // Watch with Partner voice call (WebRTC, runs inside an <iframe> served by the
 // streamer). webCall* only ever matter while a WWP session is live.
 const webCallActive = ref(false);
@@ -2703,8 +2707,40 @@ async function sendPartnerInvite() {
   }
 }
 
+async function acknowledgePartnerInvite(invite, action) {
+  const id = invite?.wwpSessionId;
+  if (!id || partnerInviteActionId.value) return false;
+  const token = deviceToken.value;
+  partnerInviteActionId.value = id;
+  partnerInviteAction.value = action;
+  partnerInviteError.value = "";
+  try {
+    const result = await request("/api/partner/invite/ack", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ wwpSessionId: id }),
+    });
+    if (deviceToken.value !== token) return false;
+    if (result?.confirmed !== true) throw new Error("The invitation could not be updated. Please try again.");
+    handledPartnerInviteIds.add(id);
+    if (handledPartnerInviteIds.size > 128) handledPartnerInviteIds.delete(handledPartnerInviteIds.values().next().value);
+    if (pendingPartnerInvite.value?.wwpSessionId === id) pendingPartnerInvite.value = null;
+    return true;
+  } catch (error) {
+    if (deviceToken.value === token) partnerInviteError.value = error?.message || "The invitation could not be updated. Please try again.";
+    return false;
+  } finally {
+    if (partnerInviteActionId.value === id) {
+      partnerInviteActionId.value = "";
+      partnerInviteAction.value = "";
+    }
+  }
+}
+async function dismissPartnerInvite(invite) {
+  await acknowledgePartnerInvite(invite, "dismiss");
+}
+
 async function joinPartnerInvite(invite, { retry = false } = {}) {
   if (!invite?.wwpSessionId) return;
+  if (!retry && !await acknowledgePartnerInvite(invite, "join")) return;
   // A second tap on "Join" (or a re-delivered invite) must not spin up a
   // second HLS.js on the same element and a second sync long-poll.
   if (!retry && webWwpSessionId.value === invite.wwpSessionId && webNowPlaying.value) { pendingPartnerInvite.value = null; return; }
@@ -3173,7 +3209,12 @@ async function watchPartnerInvite() {
     const changed = partnerInviteRevision === 0 || nextRevision !== partnerInviteRevision;
     partnerInviteRevision = nextRevision;
     partnerInviteController = null;
-    if (changed && data.invite) pendingPartnerInvite.value = data.invite;
+    if (changed) {
+      const invite = data.invite;
+      pendingPartnerInvite.value = invite && !handledPartnerInviteIds.has(invite.wwpSessionId)
+        && invite.wwpSessionId !== webWwpSessionId.value ? invite : null;
+      partnerInviteError.value = "";
+    }
     watchPartnerInvite();
   } catch (error) {
     if (partnerInviteController === controller) partnerInviteController = null;
@@ -3952,7 +3993,22 @@ onMounted(async () => {
       <footer class="download-footer"><span>© RH IPTV Player</span><nav aria-label="Footer"><a href="/android/privacy">Privacy</a><a href="mailto:rudyhamameca@gmail.com">Contact</a></nav></footer>
     </section>
     <div v-if="!legalPage && !downloadPage" class="app-content">
-    <div v-if="pendingPartnerInvite" class="partner-invite-banner" role="alert"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt="" class="partner-invite-avatar"><p><strong>{{ pendingPartnerInvite.hostName }}</strong> invited you to watch <strong>{{ pendingPartnerInvite.title || 'something' }}</strong> together.</p><div><button type="button" class="primary-action" @click="joinPartnerInvite(pendingPartnerInvite)">Join</button><button type="button" @click="pendingPartnerInvite = null">Dismiss</button></div></div>
+    <aside v-if="pendingPartnerInvite" class="partner-invite-banner" role="region" aria-label="Watch with Partner invitation" aria-live="polite">
+      <div class="partner-invite-identity">
+        <span class="partner-invite-avatar"><img v-if="pendingPartnerInvite.hostAvatar" :src="pendingPartnerInvite.hostAvatar" alt=""><span v-else>{{ (pendingPartnerInvite.hostName || 'P').trim().slice(0, 1).toUpperCase() }}</span><span class="partner-invite-avatar-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="m9 5 11 7-11 7V5Z"/></svg></span></span>
+        <div class="partner-invite-copy">
+          <span class="partner-invite-eyebrow">Watch with Partner</span>
+          <strong class="partner-invite-heading">{{ pendingPartnerInvite.hostName || 'Your partner' }} saved you a seat.</strong>
+          <p class="partner-invite-title">{{ pendingPartnerInvite.title || 'Join your partner’s stream' }}</p>
+          <span class="partner-invite-detail">One stream. Watch together.</span>
+        </div>
+      </div>
+      <div class="partner-invite-actions">
+        <button type="button" class="partner-invite-join" :disabled="Boolean(partnerInviteActionId)" @click="joinPartnerInvite(pendingPartnerInvite)"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="m9 5 11 7-11 7V5Z"/></svg>{{ partnerInviteAction === 'join' ? 'Joining…' : 'Join stream' }}</button>
+        <button type="button" class="partner-invite-dismiss" :disabled="Boolean(partnerInviteActionId)" @click="dismissPartnerInvite(pendingPartnerInvite)">{{ partnerInviteAction === 'dismiss' ? 'Dismissing…' : 'Not now' }}</button>
+      </div>
+      <p v-if="partnerInviteError" class="partner-invite-error" role="alert">{{ partnerInviteError }}</p>
+    </aside>
     <section v-if="pairing" class="rh-auth">
       <div class="rh-auth-inner">
         <div class="rh-auth-brand" aria-label="RH IPTV PLAYER"><img src="/login/rh-snow-logo.png" alt="RH"><span>IPTV PLAYER</span></div>

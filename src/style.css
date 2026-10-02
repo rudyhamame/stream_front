@@ -574,12 +574,36 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
  .wwp-call-ring button { border:0; border-radius:999px; padding:9px 18px; cursor:pointer; font:700 13px 'DM Sans'; background:#2a2f24; color:#eef1e6; }
  .wwp-call-ring button.primary-action { background:#8fe3c8; color:#08241d; }
  .wwp-call-frame { position:absolute; left:56px; right:12px; top:10px; z-index:65; width:auto; max-width:420px; height:56px; border:0; border-radius:12px; background:#10182a; box-shadow:0 10px 34px rgba(0,0,0,.5); }
- .partner-invite-banner { position:sticky; top:0; z-index:50; display:flex; align-items:center; justify-content:space-between; gap:14px; padding:12px 18px; background:#1c2a14; border-bottom:1px solid #ffc10755; color:#f3f4f1; }
- .partner-invite-banner p { margin:0; font:400 13px/1.4 'DM Sans'; flex:1 1 auto; }
- .partner-invite-avatar { flex:0 0 auto; width:38px; height:38px; border-radius:50%; object-fit:cover; border:2px solid #ffc10755; }
- .partner-invite-banner div { display:flex; gap:8px; flex:0 0 auto; }
- .partner-invite-banner button { border:1px solid #2a3752; border-radius:8px; padding:7px 14px; background:#10182a; color:#e7ece0; cursor:pointer; font:600 12px 'DM Sans'; }
- .partner-invite-banner button.primary-action { border-color:#ffc107; background:#ffc107; color:#0d1420; }
+ /* Watch with Partner: a quiet invitation card using the player's dark/yellow palette. */
+.partner-invite-banner { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:22px; position:relative; z-index:30; width:calc(100% - 40px); max-width:1000px; margin:20px auto; padding:24px 28px; border:1px solid rgba(255,196,61,.24); border-radius:24px; background:radial-gradient(ellipse at 0 0,rgba(255,196,61,.07),transparent 60%),linear-gradient(135deg,#191824,#11121b); box-shadow:0 14px 40px rgba(0,0,0,.24); color:#f5f4ef; font-family:'DM Sans',sans-serif; }
+.partner-invite-identity { display:flex; align-items:center; gap:20px; min-width:0; flex:1 1 340px; }
+.partner-invite-avatar { display:grid; place-items:center; position:relative; flex:0 0 64px; width:64px; height:64px; border:1px solid rgba(255,196,61,.26); border-radius:50%; background:linear-gradient(140deg,#343045,#252333); color:#ffcf54; font-size:26px; font-weight:700; }
+.partner-invite-avatar>img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
+.partner-invite-avatar-mark { display:grid; place-items:center; position:absolute; right:-4px; bottom:-3px; width:25px; height:25px; border:3px solid #181822; border-radius:50%; background:#ffc43d; color:#19150d; }
+.partner-invite-avatar-mark svg { width:15px; height:15px; }
+.partner-invite-copy { display:flex; flex-direction:column; gap:5px; min-width:0; }
+.partner-invite-eyebrow { color:#ffce57; font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; }
+.partner-invite-heading { font-size:clamp(16px,1.6vw,20px); font-weight:700; line-height:1.3; overflow-wrap:anywhere; }
+.partner-invite-title { margin:0; color:#dedee6; font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.partner-invite-detail { margin-top:2px; color:#9393a4; font-size:12px; }
+.partner-invite-actions { display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+.partner-invite-actions button { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:44px; border-radius:999px; padding:11px 20px; font:700 13px/1.2 'DM Sans',sans-serif; cursor:pointer; transition:background .15s,box-shadow .15s; }
+.partner-invite-join { border:1px solid #ffc43d; background:#ffc43d; color:#19150d; box-shadow:0 5px 18px #ffc43d20; }
+.partner-invite-join svg { width:17px; height:17px; }
+.partner-invite-join:hover:not(:disabled) { background:#ffd264; box-shadow:0 6px 22px #ffc43d35; }
+.partner-invite-dismiss { border:1px solid #ffffff20; background:transparent; color:#babac8; }
+.partner-invite-dismiss:hover:not(:disabled) { color:#fff; background:#ffffff08; }
+.partner-invite-actions button:focus-visible { outline:2px solid #ffdd80; outline-offset:4px; }
+.partner-invite-actions button:disabled { opacity:.6; cursor:wait; }
+.partner-invite-error { flex-basis:100%; margin:0; color:#ffb6a8; font-size:12px; line-height:1.5; }
+@media(max-width:600px) {
+  .partner-invite-banner { width:calc(100% - 24px); margin:12px auto; padding:20px; border-radius:22px; gap:18px; }
+  .partner-invite-identity { flex-basis:100%; align-items:flex-start; gap:14px; }
+  .partner-invite-avatar { flex-basis:50px; width:50px; height:50px; font-size:22px; }
+  .partner-invite-actions { width:100%; }
+  .partner-invite-actions button { flex:1; }
+}
+
  .web-strategy-badge { display:inline-flex; flex:0 0 auto; width:max-content; align-items:center; border:1px solid #fff; border-radius:8px; padding:5px 8px; color:#9aa192; font:600 11px 'DM Sans'; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; opacity:.85; }
  .web-quality-menu { position:absolute; top:calc(100% + 6px); right:0; z-index:8; margin:0; padding:6px; list-style:none; min-width:132px; border:1px solid #2a3752; border-radius:12px; background:#10182a; box-shadow:0 14px 34px #000a; }
  .web-quality-menu li { margin:0; }
