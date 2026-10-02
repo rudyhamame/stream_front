@@ -646,7 +646,7 @@ button.live-tv-table-row.selected { background:rgba(184,255,57,.13); color:#ffc1
 @media(max-width:600px) { .ep-hero { gap:14px; } .ep-poster { width:88px; } .ep-thumb { width:104px; } .ep-row { gap:12px; } .ep-format { display:none; } .ep-copy strong { font-size:15px; } }
 /* Episodes are a document-length page: let the browser own the scroll instead
    of trapping the season list inside the viewport shell. */
-html:has(.safari-episodes-page), body:has(.safari-episodes-page) { height:auto; min-height:100%; overflow:auto !important; overscroll-behavior:auto; }
+html:has(.safari-app-mode:not(.login-shell) .safari-episodes-page), body:has(.safari-app-mode:not(.login-shell) .safari-episodes-page) { height:auto; min-height:100%; overflow:auto !important; overscroll-behavior:auto; }
 .safari-app-mode:has(.safari-episodes-page),
 .safari-app-mode:has(.safari-episodes-page) .browser-app-shell,
 .safari-app-mode:has(.safari-episodes-page) .browser-main,
@@ -1401,8 +1401,13 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 @keyframes homeRailClip { from, to { overflow:hidden; } }
 @media (prefers-reduced-motion: reduce) { .home-rail, .home-rail > .home-rail-inner { animation:none; } }
 
-/* Compact desktop UI: scale ONLY the pages to 90%. The app root, sidebar, dialogs and the media player keep true viewport size
-   (a root-level zoom shrank the fixed player to 90% of the window). Percent sizes are not scaled by zoom, so the page still fills its area. */
+/* Compact desktop interface. Keep viewport containers and the media player
+   unscaled so fullscreen video and mini-player positioning retain their size. */
 @media (min-width:701px) {
-  .safari-app-mode:not(.login-shell) .browser-main > .safari-page-shell { zoom:.9; }
+  .safari-app-mode:not(.login-shell) .browser-main > .safari-page-shell,
+  .safari-app-mode:not(.login-shell) .browser-sidebar,
+  .safari-app-mode:not(.login-shell) .partner-invite-banner,
+  .safari-app-mode:not(.login-shell) .profile-crop-modal { zoom:.85; }
+  .shell.safari-app-mode .browser-app-shell .browser-main,
+  .shell.safari-app-mode .browser-app-shell:not(.nav-open) .browser-main { margin-left:71.4px; }
 }
