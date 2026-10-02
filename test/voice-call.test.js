@@ -18,3 +18,20 @@ test('host voice call uses its durable device token rather than an invitation ti
 test('guest voice call uses the host-issued invite without its own account token', () => {
   assert.equal(callUrl(true).searchParams.get('t'), 'host-issued-invite');
 });
+
+test('only the active call iframe and session can change player ducking', () => {
+  const code = app.slice(app.indexOf('function onWwpCallMessage('), app.indexOf('function openCategoryItems('));
+  const frame = {}, updates = [];
+  const context = vm.createContext({ URL, webCallFrame: { value: { contentWindow: frame } },
+    webCallUrl: { value: 'https://iptv-stream.mctoshs.ca/call' }, webWwpSessionId: { value: 'session' },
+    webCallActive: { value: true }, webAudioDucking: { setSpeaking: value => updates.push(value) } });
+  vm.runInContext(code, context);
+  const event = { source: frame, origin: 'https://iptv-stream.mctoshs.ca', data: { wwpCall: 'speaking', sessionId: 'session', speaking: true } };
+  context.onWwpCallMessage({ ...event, source: {} });
+  context.onWwpCallMessage({ ...event, origin: 'https://foreign.invalid' });
+  context.onWwpCallMessage({ ...event, data: { ...event.data, sessionId: 'old-session' } });
+  assert.deepEqual(updates, []);
+  context.onWwpCallMessage(event); assert.deepEqual(updates, [true]);
+  context.webCallActive.value = false;
+  context.onWwpCallMessage(event); assert.deepEqual(updates, [true]);
+});

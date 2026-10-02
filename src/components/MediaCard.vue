@@ -14,13 +14,18 @@ const cardClass = computed(() => ({ home: 'home-content-card', playlist: 'playli
 const artClass = computed(() => ({ home: 'home-card-art', playlist: 'playlist-card-art', browse: 'browse-poster-art' })[props.variant]);
 const saveLabel = computed(() => props.saved ? 'Remove from library' : 'Add to library');
 function activate() { emit(browse.value ? 'play' : 'toggle'); }
+function handleKeydown(event) {
+  if (browse.value || event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  activate();
+}
 </script>
 
 <template>
   <component :is="browse ? 'button' : 'div'" :type="browse ? 'button' : undefined"
     class="media-card" :class="[cardClass, { 'is-open': open, enabled: saved && variant === 'playlist', focused }]"
     :role="browse ? undefined : 'group'" :tabindex="browse ? undefined : 0" :aria-label="item.title"
-    @click="activate" @keydown.enter.self.prevent="!browse && activate()" @keydown.space.self.prevent="!browse && activate()"
+    @click="activate" @keydown="handleKeydown"
     @focus="emit('focus', $event)" @mouseenter="emit('hover', $event)">
     <span :class="artClass">
       <img v-if="imageSrc" :src="imageSrc" :alt="item.title" loading="lazy" @error="emit('image-error')">

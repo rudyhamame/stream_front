@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { createAudioDucking } from './audio-ducking.js';
 import BrowserPage from './components/BrowserPage.vue';
 import PageHeading from './components/PageHeading.vue';
 import MediaCard from './components/MediaCard.vue';
@@ -261,6 +262,10 @@ const handledPartnerInviteIds = new Set();
 // Watch with Partner voice call (WebRTC, runs inside an <iframe> served by the
 // streamer). webCall* only ever matter while a WWP session is live.
 const webCallActive = ref(false);
+const webAudioDucking = createAudioDucking();
+watch(webVideo, video => webAudioDucking.setMedia(video), { flush: 'post' });
+watch(webCallActive, active => { if (!active) webAudioDucking.reset(); }, { flush: 'sync' });
+onBeforeUnmount(() => webAudioDucking.destroy());
 const webCallRole = ref("caller");
 const webCallIncoming = ref(false);
 const webCallFrame = ref(null);
@@ -3394,7 +3399,14 @@ function endWebCall() {
   webCallActive.value = false;
 }
 function onWwpCallMessage(event) {
-  if (event?.data?.wwpCall === "ended") webCallActive.value = false;
+  if (event?.source !== webCallFrame.value?.contentWindow || !webCallUrl.value
+    || event.origin !== new URL(webCallUrl.value).origin) return;
+  if (event.data?.sessionId && event.data.sessionId !== webWwpSessionId.value) return;
+  if (event.data?.wwpCall === "ended") webCallActive.value = false;
+  else if (event.data?.wwpCall === "speaking" && webCallActive.value
+    && event.data.sessionId === webWwpSessionId.value) {
+    webAudioDucking.setSpeaking(event.data.speaking === true);
+  }
 }
 
 function openCategoryItems(category) {
@@ -4182,7 +4194,7 @@ onMounted(async () => {
         </template>
       </BrowserPage>
 
-      <BrowserPage v-if="safariPage === 'episodes'" class="safari-episodes-page">
+      <BrowserPage v-if="safariPage === 'episodes'" class="safari-episodes-page" contained>
         <header class="ep-hero">
           <button type="button" class="episodes-back" :aria-label="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" :title="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" @click="openSafariPage(episodesFrom)">
             <svg v-if="episodesFrom === 'welcome'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
@@ -4217,7 +4229,7 @@ onMounted(async () => {
         <p v-else class="web-empty">No episodes are available for this series.</p>
       </BrowserPage>
 
-      <BrowserPage v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-library-page" :class="{ 'safari-browse-page': safariPage !== 'channels' }" :style="browseSelectedItem?.logo ? { '--browse-art': `url(${JSON.stringify(imageUrl(browseSelectedItem.logo))})` } : null">
+      <BrowserPage v-if="['series', 'movies', 'channels'].includes(safariPage)" :contained="safariPage === 'channels'" class="safari-library-page" :class="{ 'safari-browse-page': safariPage !== 'channels' }" :style="browseSelectedItem?.logo ? { '--browse-art': `url(${JSON.stringify(imageUrl(browseSelectedItem.logo))})` } : null">
         <PageHeading :title="safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab)"><div class="library-heading-actions"><span>{{ managedItemsForTab.length }} items</span></div></PageHeading>
         <section v-if="categoryManagerOpen" class="library-category-manager">
           <header><div><p class="eyebrow">LIBRARY RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control what appears in your Library.</span></header>
