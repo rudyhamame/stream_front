@@ -1,5 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import BrowserPage from './components/BrowserPage.vue';
+import PageHeading from './components/PageHeading.vue';
+import MediaCard from './components/MediaCard.vue';
 import HomeIcon from "./components/icons/HomeIcon.vue";
 import FilmRollAltIcon from "./components/icons/FilmRollAltIcon.vue";
 import MovieIcon from "./components/icons/MovieIcon.vue";
@@ -4082,7 +4085,7 @@ onMounted(async () => {
         <button type="button" class="browser-sidebar-logout" aria-label="Log out" title="Log out" @click="logout"><span class="browser-sidebar-icon"><DoorOpenAltIcon /></span><span class="browser-sidebar-label">Log out</span></button>
       </aside>
       <div class="browser-main"><div class="safari-page-shell">
-      <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
+      <BrowserPage v-if="safariPage === 'welcome'" class="safari-welcome-page">
         <header class="welcome-page-heading">
           <div><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1></div>
           <div class="welcome-identity-cluster" :class="partnerEmail ? `is-${partnerStatus.state}` : ''">
@@ -4129,27 +4132,20 @@ onMounted(async () => {
           <button type="button" class="home-rail-arrow is-prev" aria-label="Scroll left" :disabled="!homeRailCanScroll(rail.id, -1)" @click="scrollHomeRail($event, -1)"><CaretLeftIcon /></button>
           <button type="button" class="home-rail-arrow is-next" aria-label="Scroll right" :disabled="!homeRailCanScroll(rail.id, 1)" @click="scrollHomeRail($event, 1)"><CaretLeftIcon /></button>
           <div class="home-rail-track" :data-rail-id="rail.id" @scroll.passive="updateHomeRailScrollState(rail.id, $event)">
-            <div v-for="item in rail.items" :key="homeItemKey(item)" class="home-content-card" :class="{ 'is-open': openCardKey === homeItemKey(item) }" @click="toggleCardActions(homeItemKey(item))">
-              <span class="home-card-art">
-                <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
-                <span v-else class="home-card-fallback"><b>RH</b><em>{{ item.title }}</em></span>
-                <transition name="card-fade">
-                  <span v-if="openCardKey === homeItemKey(item)" class="card-actions">
-                    <button type="button" class="card-action-btn" aria-label="Play" title="Play" @click.stop="playLibraryItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-                    <button type="button" class="card-action-btn" :class="{on:welcomeItemEnabled(item)}" :aria-label="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" :title="welcomeItemEnabled(item) ? 'Remove from library' : 'Add to library'" @click.stop="toggleWelcomeItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path :d="welcomeItemEnabled(item) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"/></svg></button>
-                  </span>
-                </transition>
-              </span>
-              <strong>{{ item.title }}</strong><small>{{ item.category || typeLabel(item.kind) }}</small>
-            </div>
+            <MediaCard v-for="item in rail.items" :key="homeItemKey(item)" :item="item"
+              :image-src="item.logo && !failedLogoUrls.has(item.logo) ? imageUrl(item.logo) : ''"
+              :subtitle="item.category || typeLabel(item.kind)" :kind-label="typeLabel(item.kind)"
+              :open="openCardKey === homeItemKey(item)" :saved="welcomeItemEnabled(item)"
+              @toggle="toggleCardActions(homeItemKey(item))" @play="playLibraryItem(item)"
+              @save="toggleWelcomeItem(item)" @image-error="markLogoFailed(item.logo)" />
           </div>
           </div>
         </div></section>
         <p v-if="!welcomeCatalogBusy && sources.length && !Object.values(welcomeProviderItems).some(items => items.length)" class="welcome-provider-empty">This provider has no catalog items yet.</p>
-      </article>
+      </BrowserPage>
 
-      <article v-else-if="safariPage === 'playlist'" class="safari-page safari-playlist-page web-playlist-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Manage playlist</h1></div></div>
+      <BrowserPage v-else-if="safariPage === 'playlist'" class="safari-playlist-page web-playlist-page" contained>
+        <PageHeading title="Manage playlist" />
         <template v-if="sources.length">
           <div class="playlist-toolbar">
             <div class="playlist-toolbar-left">
@@ -4174,26 +4170,19 @@ onMounted(async () => {
           </p>
           <div v-if="loading" class="browser-playlist-loading" role="status" aria-live="polite"><span class="loading-ring" aria-hidden="true"></span><span>Loading {{ typeLabel(kind).toLowerCase() }}…</span></div>
           <div v-else-if="visibleItems.length" class="playlist-grid" :class="{'is-channel-grid':kind === 'channel'}" @scroll="handlePlaylistScroll">
-            <div v-for="item in visibleItems" :key="item.key" class="playlist-card" :class="{enabled:savedKeys.has(item.key), 'is-open': openCardKey === item.key}" @click="toggleCardActions(item.key)">
-              <span class="playlist-card-art">
-                <img v-if="item.logo && !failedLogoUrls.has(item.logo)" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy" @error="markLogoFailed(item.logo)">
-                <span v-else class="playlist-card-fallback" :data-kind="kind"><span class="fallback-mark">RH</span><span class="fallback-name">{{ item.title }}</span><span class="fallback-kind">{{ typeLabel(kind) }}</span></span>
-                <transition name="card-fade">
-                  <span v-if="openCardKey === item.key" class="card-actions">
-                    <button type="button" class="card-action-btn" aria-label="Play" title="Play" @click.stop="playLibraryItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
-                    <button type="button" class="card-action-btn" :class="{on:savedKeys.has(item.key)}" :aria-label="savedKeys.has(item.key) ? 'Remove from library' : 'Add to library'" :title="savedKeys.has(item.key) ? 'Remove from library' : 'Add to library'" @click.stop="toggleWelcomeItem(item)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path :d="savedKeys.has(item.key) ? 'M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z' : 'M11 5v6H5v2h6v6h2v-6h6v-2h-6V5z'"></path></svg></button>
-                  </span>
-                </transition>
-              </span>
-              <span class="playlist-card-copy"><strong>{{ item.title }}</strong><small>{{ item.category || 'Uncategorized' }}</small></span>
-            </div>
+            <MediaCard v-for="item in visibleItems" :key="item.key" :item="item" variant="playlist"
+              :image-src="item.logo && !failedLogoUrls.has(item.logo) ? imageUrl(item.logo) : ''"
+              :subtitle="item.category || 'Uncategorized'" :kind-label="typeLabel(kind)"
+              :open="openCardKey === item.key" :saved="savedKeys.has(item.key)"
+              @toggle="toggleCardActions(item.key)" @play="playLibraryItem(item)"
+              @save="toggleWelcomeItem(item)" @image-error="markLogoFailed(item.logo)" />
             <div v-if="loadingMore" class="playlist-grid-more">Loading more…</div>
           </div>
           <p v-else class="web-empty">No matching {{ typeLabel(kind).toLowerCase() }} found.</p>
         </template>
-      </article>
+      </BrowserPage>
 
-      <article v-if="safariPage === 'episodes'" class="safari-page safari-episodes-page">
+      <BrowserPage v-if="safariPage === 'episodes'" class="safari-episodes-page">
         <header class="ep-hero">
           <button type="button" class="episodes-back" :aria-label="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" :title="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" @click="openSafariPage(episodesFrom)">
             <svg v-if="episodesFrom === 'welcome'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
@@ -4226,10 +4215,10 @@ onMounted(async () => {
           </div>
         </div>
         <p v-else class="web-empty">No episodes are available for this series.</p>
-      </article>
+      </BrowserPage>
 
-      <article v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-page safari-library-page" :class="{ 'safari-browse-page': safariPage !== 'channels' }" :style="browseSelectedItem?.logo ? { '--browse-art': `url(${JSON.stringify(imageUrl(browseSelectedItem.logo))})` } : null">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>{{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }}</h1></div><div class="library-heading-actions"><span>{{ managedItemsForTab.length }} items</span></div></div>
+      <BrowserPage v-if="['series', 'movies', 'channels'].includes(safariPage)" class="safari-library-page" :class="{ 'safari-browse-page': safariPage !== 'channels' }" :style="browseSelectedItem?.logo ? { '--browse-art': `url(${JSON.stringify(imageUrl(browseSelectedItem.logo))})` } : null">
+        <PageHeading :title="safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab)"><div class="library-heading-actions"><span>{{ managedItemsForTab.length }} items</span></div></PageHeading>
         <section v-if="categoryManagerOpen" class="library-category-manager">
           <header><div><p class="eyebrow">LIBRARY RAILS</p><h2>Manage {{ safariLibraryTab === 'channel' ? 'Live TV' : typeLabel(safariLibraryTab) }} categories</h2></div><span>Playlist categories are imported automatically. Your changes control what appears in your Library.</span></header>
           <form class="library-category-create" @submit.prevent="createManagedCategory"><input v-model="newCategoryName" required maxlength="120" placeholder="New category name"><button type="submit" class="primary-action" :disabled="categoryBusy">Add category</button></form>
@@ -4259,17 +4248,20 @@ onMounted(async () => {
             <button v-for="entry in browseCategories" :key="entry.id" type="button" :class="{active:browseCategoryId === entry.id}" @click="selectBrowseCategory(entry.id)">{{ entry.name }}</button>
           </nav>
           <div class="browse-carousel" tabindex="0" :aria-label="`${typeLabel(safariLibraryTab)} posters`">
-            <button v-for="(item,index) in browseItems" :key="item.libraryKey || `${item.sourceId}:${item.kind}:${item.id}`" type="button" class="browse-poster" :class="{focused:index === browseFocusIndex}" :aria-label="item.title" @focus="focusBrowseItem($event,index)" @mouseenter="browseFocusIndex = index" @click="playLibraryItem(item)">
-              <span class="browse-poster-art"><img v-if="item.logo" :src="imageUrl(item.logo)" :alt="item.title" loading="lazy"><span v-else class="safari-library-fallback"><b>{{ typeIcon(safariLibraryTab) }}</b></span></span><strong>{{ item.title }}</strong><small>{{ item.category || typeLabel(safariLibraryTab) }}</small>
-            </button>
+            <MediaCard v-for="(item,index) in browseItems" :key="item.libraryKey || `${item.sourceId}:${item.kind}:${item.id}`"
+              :item="item" variant="browse" :focused="index === browseFocusIndex"
+              :image-src="item.logo && !failedLogoUrls.has(item.logo) ? imageUrl(item.logo) : ''"
+              :subtitle="item.category || typeLabel(safariLibraryTab)" :kind-label="typeLabel(safariLibraryTab)"
+              @focus="focusBrowseItem($event,index)" @hover="browseFocusIndex = index"
+              @play="playLibraryItem(item)" @image-error="markLogoFailed(item.logo)" />
           </div>
         </div>
         <p v-else class="web-empty safari-library-empty">No {{ typeLabel(safariLibraryTab).toLowerCase() }} are enabled yet. Add them from Playlist.</p>
-      </article>
+      </BrowserPage>
 
 
-      <article v-if="safariPage === 'settings'" class="safari-page safari-settings-page">
-        <div class="safari-compact-heading"><div><p class="eyebrow">RH Library Manager</p><h1>Settings</h1></div></div>
+      <BrowserPage v-if="safariPage === 'settings'" class="safari-settings-page">
+        <PageHeading title="Settings" />
         <nav class="settings-tabs" aria-label="Settings sections">
           <button type="button" :class="{ active: settingsTab === 'profile' }" :aria-selected="settingsTab === 'profile'" @click="settingsTab = 'profile'">PROFILE</button>
           <button type="button" :class="{ active: settingsTab === 'playlists' }" :aria-selected="settingsTab === 'playlists'" @click="settingsTab = 'playlists'">PLAYLISTS</button>
@@ -4315,7 +4307,7 @@ onMounted(async () => {
             <button type="button" class="rh-switch" role="switch" :aria-checked="backdropEnabled ? 'true' : 'false'" :class="{ on: backdropEnabled }" @click="setBackdropEnabled(!backdropEnabled)"><span class="rh-switch-knob"></span></button>
           </div>
         </section>
-      </article>
+      </BrowserPage>
       <div v-if="profileCropOpen" class="profile-crop-backdrop" role="dialog" aria-modal="true" aria-label="Crop profile picture"><section class="profile-crop-modal"><div class="settings-section-heading"><div><p class="eyebrow">PROFILE PHOTO</p><h2>Frame your picture</h2></div><button type="button" class="close" @click="profileCropOpen=false">×</button></div><div class="profile-crop-window"><img :src="profileCropSource" alt="Crop preview" :style="{transform:`translate(${(50-profileCropX)/4}%, ${(50-profileCropY)/4}%) scale(${profileCropZoom})`}" @load="cropImageLoaded"></div><label class="crop-control">Zoom <input v-model.number="profileCropZoom" type="range" min="1" max="3" step="0.05"></label><label class="crop-control">Horizontal position <input v-model.number="profileCropX" type="range" min="0" max="100"></label><label class="crop-control">Vertical position <input v-model.number="profileCropY" type="range" min="0" max="100"></label><div class="profile-crop-actions"><button type="button" class="source-action" @click="profileCropOpen=false">Cancel</button><button type="button" class="primary-action" :disabled="profileBusy" @click="saveProfileImage">Save picture</button></div></section></div>
 
       <nav class="safari-bottom-menu" aria-label="Main menu"><button v-for="item in safariMenuItems" :key="item.id" type="button" :class="{active:safariPage === item.id}" @click="openSafariPage(item.id)"><span><img v-if="typeof item.icon === 'string'" :src="item.icon" alt=""><component v-else :is="item.icon" /></span><small>{{ item.label }}</small></button></nav>
