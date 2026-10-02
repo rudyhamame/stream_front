@@ -21,6 +21,7 @@ import TrashIcon from "./components/icons/TrashIcon.vue";
 import DotsVerticalRoundedIcon from "./components/icons/DotsVerticalRoundedIcon.vue";
 import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 import { compareCatalogTitles, describeEncodeStrategy, formatTime, normalizeSearchText, parseDuration } from "./catalog-format.js";
+import { describePartnerStatus } from './partner-status.js';
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -175,9 +176,13 @@ const playlistPreviewError = ref("");
 const webNowPlaying = ref(null);
 let browserBuildCheckTimer = null;
 let browserBuildCheckRunning = false;
+function canRefreshBrowserBuild() {
+  return !document.hidden && !webNowPlaying.value && !legalPage.value && !downloadPage.value
+    && !pairing.value && safariPage.value !== 'settings' && !partnerEmailOpen.value
+    && !document.activeElement?.matches?.('input, textarea, select, [contenteditable]');
+}
 async function checkBrowserBuild() {
-  if (browserBuildCheckRunning || document.hidden || webNowPlaying.value || legalPage.value || downloadPage.value
-      || document.activeElement?.matches?.('input, textarea, select, [contenteditable]')) return;
+  if (browserBuildCheckRunning || !canRefreshBrowserBuild()) return;
   const loadedScript = document.querySelector('script[type="module"][src*="/assets/index-"]')?.src;
   if (!loadedScript) return;
   browserBuildCheckRunning = true;
@@ -187,7 +192,7 @@ async function checkBrowserBuild() {
     const currentDocument = new DOMParser().parseFromString(await response.text(), 'text/html');
     const currentScript = currentDocument.querySelector('script[type="module"][src*="/assets/index-"]')?.getAttribute('src');
     if (currentScript && new URL(currentScript, location.origin).pathname !== new URL(loadedScript).pathname
-        && !webNowPlaying.value) location.reload();
+        && canRefreshBrowserBuild()) location.reload();
   } catch { /* The existing page stays usable during a temporary network error. */ }
   finally { browserBuildCheckRunning = false; }
 }
@@ -394,6 +399,10 @@ const partnerLinked = ref(false);
 const partnerOnline = ref(false);
 const partnerName = ref("");
 const partnerAvatar = ref("");
+const partnerStatusChecked = ref(false);
+const partnerStatusError = ref(false);
+const partnerStatus = computed(() => describePartnerStatus({ checked: partnerStatusChecked.value,
+  error: partnerStatusError.value, linked: partnerLinked.value, online: partnerOnline.value }));
 const failedLogoUrls = ref(new Set());
 const brandLogoReady = ref(false);
 {
@@ -495,6 +504,11 @@ async function chooseProfile(profile) {
       window.history.replaceState({ appPage: "welcome" }, "", "/home");
     }
     appReady.value = true;
+    partnerEmailOpen.value = false;
+    partnerEmail.value = '';
+    partnerStatusChecked.value = false;
+    partnerStatusError.value = false;
+    startBrowserPresence();
     // The profile is active as soon as the server returns its token. Show
     // Welcome immediately; provider and weather requests must not hold the
     // chooser open or leave the user on the profile screen.
@@ -721,17 +735,27 @@ async function changePassword() {
 
 async function loadPartnerSettings() {
   if (!deviceToken.value) return;
+  const token = deviceToken.value;
   try {
     const data = await request("/api/account/partner");
+    if (deviceToken.value !== token) return;
     partnerEmail.value = data.partnerEmail || "";
-    partnerEmailInput.value = partnerEmail.value;
     partnerProfileCode.value = data.partnerProfileCode || "";
-    partnerProfileCodeInput.value = partnerProfileCode.value;
+    // Presence polling must not replace an unsaved partner draft, including
+    // when the editor was opened while this request was in flight.
+    if (!partnerEmailOpen.value) {
+      partnerEmailInput.value = partnerEmail.value;
+      partnerProfileCodeInput.value = partnerProfileCode.value;
+    }
     partnerLinked.value = Boolean(data.linked);
     partnerOnline.value = Boolean(data.online);
     partnerName.value = data.name || "";
     partnerAvatar.value = data.avatarImage || "";
-  } catch { /* Settings page just shows the field empty on a transient failure. */ }
+    partnerStatusChecked.value = true;
+    partnerStatusError.value = false;
+  } catch {
+    if (deviceToken.value === token) partnerStatusError.value = true;
+  }
 }
 async function savePartnerEmail() {
   partnerMessage.value = "";
@@ -744,6 +768,8 @@ async function savePartnerEmail() {
     partnerEmailOpen.value = false;
     partnerMessageType.value = "success";
     partnerMessage.value = partnerEmail.value ? `Partner set to ${partnerEmail.value} (${partnerProfileCode.value}).` : "Partner cleared.";
+    partnerStatusChecked.value = false;
+    void loadPartnerSettings();
   } catch (error) {
     partnerMessageType.value = "error";
     partnerMessage.value = error.message;
@@ -3639,6 +3665,15 @@ function toggle(item) { if (savedKeys.value.has(item.key)) return; rememberItems
 
 let searchTimer;
 let deviceStatusTimer;
+function refreshBrowserPresence() {
+  if (pairing.value || profileChooser.value || !deviceToken.value) return;
+  void sendBrowserHeartbeat();
+  void loadPartnerSettings();
+}
+function startBrowserPresence() {
+  refreshBrowserPresence();
+  if (!deviceStatusTimer) deviceStatusTimer = window.setInterval(refreshBrowserPresence, 10_000);
+}
 watch(safariPage, value => window.localStorage.setItem("rh-safari-page", value === "episodes" ? "series" : value));
 watch(safariLibraryTab, value => window.localStorage.setItem("rh-safari-library-tab", value));
 watch(safariPage, value => {
@@ -3750,7 +3785,8 @@ onMounted(async () => {
     online.value = true;
     appReady.value = true;
     if (initialRoute.page === "episodes") void syncPageFromLocation();
-    void Promise.all([loadWeatherSettings(), sendBrowserHeartbeat(), loadPartnerSettings()]).catch(() => {});
+    void loadWeatherSettings().catch(() => {});
+    startBrowserPresence();
     void request("/api/account/profiles").then(data => {
       profiles.value = data.items || [];
       if (!activeProfileId.value && activeProfile.value) { activeProfileId.value = activeProfile.value.id; window.localStorage.setItem("rh-profile-id", activeProfileId.value); }
@@ -3765,9 +3801,6 @@ onMounted(async () => {
     });
     watchLibraryRevision();
     watchPartnerInvite();
-    deviceStatusTimer = window.setInterval(() => {
-      if (!pairing.value && deviceToken.value) { sendBrowserHeartbeat(); loadPartnerSettings().catch(() => {}); }
-    }, 10_000);
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
 </script>
@@ -3946,10 +3979,11 @@ onMounted(async () => {
       <article v-if="safariPage === 'welcome'" class="safari-page safari-welcome-page">
         <header class="welcome-page-heading">
           <div><p class="eyebrow">WELCOME</p><h1>Your library,<br><em>ready to watch.</em></h1></div>
-          <div class="welcome-identity-cluster" :class="partnerEmail ? (partnerLinked ? (partnerOnline ? 'is-online' : 'is-offline') : 'is-unknown') : ''">
+          <div class="welcome-identity-cluster" :class="partnerEmail ? `is-${partnerStatus.state}` : ''">
             <template v-if="partnerEmail">
               <button type="button" class="welcome-profile-button" :aria-label="'Watch partner: ' + (partnerName || partnerEmail)" :title="partnerName || partnerEmail" @click="openSafariPage('settings')"><span class="profile-avatar welcome-partner-avatar"><img v-if="partnerAvatar" :src="partnerAvatar" alt=""><template v-else>{{ (partnerName || partnerEmail).slice(0, 1).toUpperCase() }}</template></span></button>
-              <button type="button" class="welcome-partner-link" :aria-label="partnerLinked ? ((partnerName || partnerEmail) + (partnerOnline ? ' is online' : ' is offline')) : ('Watch partner not found: ' + partnerEmail)" :title="partnerLinked ? ((partnerName || partnerEmail) + (partnerOnline ? ' · online' : ' · offline')) : ('Watch partner not found: ' + partnerEmail)" @click="openSafariPage('settings')">
+              <span class="welcome-partner-status" role="status" :title="partnerStatus.detail"><span class="welcome-partner-name">{{ partnerName || partnerEmail }}</span><span class="partner-status-label" :class="`is-${partnerStatus.state}`"><span class="partner-status-dot" aria-hidden="true"></span>{{ partnerStatus.label }}</span></span>
+              <button type="button" class="welcome-partner-link" :aria-label="`${partnerName || partnerEmail}: ${partnerStatus.label}. Open partner settings`" :title="partnerStatus.detail" @click="openSafariPage('settings')">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M17 7h-3v2h3c1.65 0 3 1.35 3 3s-1.35 3-3 3h-3v2h3c2.76 0 5-2.24 5-5s-2.24-5-5-5M7 17h3v-2H7c-1.65 0-3-1.35-3-3s1.35-3 3-3h3V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5"/><path d="M6 11h12v2H6z"/></svg>
               </button>
             </template>
@@ -4150,6 +4184,7 @@ onMounted(async () => {
           <div class="profile-password-divider"></div>
           <div class="profile-password-divider"></div>
           <div class="profile-password-heading"><div><p class="eyebrow">WATCH WITH PARTNER</p><h3>{{ partnerEmail ? `${partnerEmail} (${partnerProfileCode})` : 'No partner set' }}</h3><p class="profile-picture-help">Your profile code is <code class="profile-code-badge">{{ activeProfile.code }}</code> - give it to whoever adds you as their partner.</p></div><button type="button" class="source-action" @click="partnerEmailOpen = !partnerEmailOpen; partnerEmailInput = partnerEmail; partnerProfileCodeInput = partnerProfileCode">{{ partnerEmailOpen ? 'Cancel' : (partnerEmail ? 'Change' : 'Set partner') }}</button></div>
+          <div v-if="partnerEmail" class="partner-settings-status" role="status"><span class="partner-status-label" :class="`is-${partnerStatus.state}`"><span class="partner-status-dot" aria-hidden="true"></span>{{ partnerStatus.label }}</span><p>{{ partnerStatus.detail }}</p></div>
           <form v-if="partnerEmailOpen" class="web-password-form profile-password-form" @submit.prevent="savePartnerEmail"><label>Partner's RH account email<input v-model="partnerEmailInput" type="email" placeholder="partner@example.com" autocomplete="off"></label><label>Partner's profile code<input v-model="partnerProfileCodeInput" type="text" placeholder="e.g. R1" maxlength="6" autocomplete="off" style="text-transform:uppercase"></label><button type="submit" class="primary-action" :disabled="busy">Save partner</button><p v-if="partnerMessage" :class="['web-password-message', `is-${partnerMessageType}`]">{{ partnerMessage }}</p></form>
         </section>
         <section v-if="settingsTab === 'playlists'" class="settings-playlists">

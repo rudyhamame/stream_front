@@ -813,6 +813,16 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .welcome-identity-cluster.is-online .welcome-partner-avatar { box-shadow:0 0 0 2px rgba(52,211,153,.6); }
 .welcome-identity-cluster.is-offline .welcome-partner-avatar { opacity:.5; filter:grayscale(.4); }
 .welcome-identity-cluster.is-unknown .welcome-partner-avatar { opacity:.6; color:#2b1b05; background:linear-gradient(145deg,#ffe8a3,#e39b21); }
+.welcome-identity-cluster.is-unlinked .welcome-partner-link { color:#fbbf24; }
+.welcome-partner-status { display:flex; flex-direction:column; gap:5px; min-width:0; max-width:190px; }
+.welcome-partner-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f3f4f1; font:600 13px 'DM Sans'; }
+.partner-status-label { display:inline-flex; align-items:center; gap:7px; color:#cbd5e1; font:600 12px 'DM Sans'; }
+.partner-status-label.is-online { color:#34d399; }
+.partner-status-label.is-unlinked,.partner-status-label.is-unknown { color:#fbbf24; }
+.partner-status-dot { width:8px; height:8px; flex:0 0 8px; border-radius:50%; background:currentColor; }
+.partner-status-label.is-online .partner-status-dot { box-shadow:0 0 8px rgba(52,211,153,.55); }
+.partner-settings-status { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:12px 0; }
+.partner-settings-status p { margin:0; color:#cbd5e1; font:400 13px/1.5 'DM Sans'; }
 .home-hero { display:grid; grid-template-columns:minmax(0,1fr) minmax(250px,.55fr); align-items:end; justify-content:space-between; gap:30px; min-height:250px; padding:18px 0 28px; }
 .home-hero-copy { max-width:650px; }
 .home-hero-copy .welcome-profile-button { position:static; margin:0 0 30px 18px; padding:0; border:0; background:transparent; }
