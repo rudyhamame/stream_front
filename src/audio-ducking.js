@@ -1,10 +1,11 @@
-export function createAudioDucking({ requestFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame, now = () => performance.now() } = {}) {
+export function createAudioDucking({ requestFrame = requestAnimationFrame, cancelFrame = cancelAnimationFrame, now = () => performance.now(), onVolume = () => {} } = {}) {
   let media = null, baseVolume = 1, writtenVolume = null, speaking = false, frame = null;
   function cancel() { if (frame !== null) cancelFrame(frame); frame = null; }
   function write(volume) {
     if (!media) return;
     writtenVolume = Math.min(1, Math.max(0, volume));
     media.volume = writtenVolume;
+    onVolume(media);
   }
   function fade() {
     cancel();
@@ -20,6 +21,7 @@ export function createAudioDucking({ requestFrame = requestAnimationFrame, cance
     frame = requestFrame(step);
   }
   function volumeChanged() {
+    if (media) onVolume(media);
     if (!media || (writtenVolume !== null && Math.abs(media.volume - writtenVolume) < 0.00001)) return;
     baseVolume = media.volume;
     if (speaking) fade();

@@ -24,7 +24,8 @@ test('only the active call iframe and session can change player ducking', () => 
   const frame = {}, updates = [];
   const context = vm.createContext({ URL, webCallFrame: { value: { contentWindow: frame } },
     webCallUrl: { value: 'https://iptv-stream.mctoshs.ca/call' }, webWwpSessionId: { value: 'session' },
-    webCallActive: { value: true }, webAudioDucking: { setSpeaking: value => updates.push(value) } });
+    webCallActive: { value: true }, webIosAudioOutput: false,
+    webAudioDucking: { setSpeaking: value => updates.push(value) } });
   vm.runInContext(code, context);
   const event = { source: frame, origin: 'https://iptv-stream.mctoshs.ca', data: { wwpCall: 'speaking', sessionId: 'session', speaking: true } };
   context.onWwpCallMessage({ ...event, source: {} });
@@ -32,6 +33,8 @@ test('only the active call iframe and session can change player ducking', () => 
   context.onWwpCallMessage({ ...event, data: { ...event.data, sessionId: 'old-session' } });
   assert.deepEqual(updates, []);
   context.onWwpCallMessage(event); assert.deepEqual(updates, [true]);
+  context.webIosAudioOutput = true;
+  context.onWwpCallMessage(event); assert.deepEqual(updates, [true, false]);
   context.webCallActive.value = false;
-  context.onWwpCallMessage(event); assert.deepEqual(updates, [true]);
+  context.onWwpCallMessage(event); assert.deepEqual(updates, [true, false]);
 });

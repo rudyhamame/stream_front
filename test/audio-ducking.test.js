@@ -40,3 +40,19 @@ test('a replaced Video node does not leave the previous player attenuated', () =
   c.tick(220); assert.ok(Math.abs(next.volume - 0.125) < 1e-9);
   c.ducking.destroy(); assert.equal(next.volume, 0.5); assert.equal(c.frames.size, 0);
 });
+
+test('fade reports the applied volume without relying on native volumechange events', () => {
+  let tick, time = 0;
+  const reported = [];
+  const media = { volume: 1, muted: false, addEventListener() {}, removeEventListener() {} };
+  const ducking = createAudioDucking({ now: () => time, requestFrame: fn => { tick = fn; return 1; }, cancelFrame() {}, onVolume: video => reported.push(video.volume) });
+  ducking.setMedia(media);
+  ducking.setSpeaking(true);
+  time = 110; tick();
+  assert.equal(reported.at(-1), media.volume);
+  assert.ok(reported.at(-1) < 1 && reported.at(-1) > 0.25);
+  time = 220; tick();
+  assert.equal(reported.at(-1), 0.25);
+  ducking.reset();
+  assert.equal(reported.at(-1), 1);
+});

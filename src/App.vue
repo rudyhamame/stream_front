@@ -216,10 +216,22 @@ onBeforeUnmount(() => {
 });
 const webPlaying = ref(false);
 const webMuted = ref(false);
-// Set when the browser's autoplay policy forced a muted start (the common case
-// for a Watch-with-Partner joiner, whose click gesture has expired by the time
-// HLS.js is ready). Drives the "Tap to unmute" pill.
-const webAutoplayBlocked = ref(false);
+const webVolumePercent = ref(100);
+const webVolumeFeedbackVisible = ref(false);
+let webVolumeFeedbackTimer = null;
+function syncWebVolume(video, showFeedback = false) {
+  clearTimeout(webVolumeFeedbackTimer);
+  if (showFeedback) webMuted.value = Boolean(video?.muted);
+  webVolumePercent.value = video ? Math.round((video.muted ? 0 : video.volume) * 100) : 100;
+  webVolumeFeedbackVisible.value = Boolean(video && showFeedback);
+  if (webVolumeFeedbackVisible.value) {
+    webVolumeFeedbackTimer = setTimeout(() => { webVolumeFeedbackVisible.value = false; }, 1400);
+  }
+}
+function onWebVolumeChange(event) {
+  if (event.target === webVideo.value) syncWebVolume(event.target, true);
+}
+onBeforeUnmount(() => clearTimeout(webVolumeFeedbackTimer));
 const webCurrentTime = ref(0);
 const webDuration = ref(0);
 const webPlaybackOffset = ref(0);
@@ -267,8 +279,21 @@ const handledPartnerInviteIds = new Set();
 // Watch with Partner voice call (WebRTC, runs inside an <iframe> served by the
 // streamer). webCall* only ever matter while a WWP session is live.
 const webCallActive = ref(false);
-const webAudioDucking = createAudioDucking();
-watch(webVideo, video => webAudioDucking.setMedia(video), { flush: 'post' });
+const webIosAudioOutput = /iPad|iPhone|iPod/.test(navigator.userAgent)
+  || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const webVolumeIsDeviceControlled = computed(() => webIosAudioOutput && webCallActive.value
+  && !webMuted.value && webVolumePercent.value === 100);
+const webVolumeLabel = computed(() => webVolumeIsDeviceControlled.value
+  ? 'Device volume: Safari controls call output and does not report its level'
+  : `Player volume ${webVolumePercent.value}%${webMuted.value ? ', muted' : ''}`);
+
+const webAudioDucking = createAudioDucking({ onVolume: video => {
+  if (video === webVideo.value) {
+    const percent = Math.round((video.muted ? 0 : video.volume) * 100);
+    syncWebVolume(video, percent !== webVolumePercent.value || webVolumeFeedbackVisible.value);
+  }
+} });
+watch(webVideo, video => { webAudioDucking.setMedia(video); syncWebVolume(video); }, { flush: 'post' });
 watch(webCallActive, active => { if (!active) webAudioDucking.reset(); }, { flush: 'sync' });
 onBeforeUnmount(() => webAudioDucking.destroy());
 const webCallRole = ref("caller");
@@ -1515,9 +1540,8 @@ async function applyRemoteWwpControl(data) {
       video.pause();
       webPlaying.value = false;
     } else {
-      // Following the partner's "play" is not a user gesture - a muted retry
-      // (inside startWebPlayback) is what keeps the follower from silently
-      // staying paused while the other side plays on.
+      // Preserve sound when following the partner. If autoplay is blocked,
+      // the existing Play control lets the viewer start with a gesture.
       await startWebPlayback(video);
     }
     showWebControls();
@@ -1892,16 +1916,15 @@ function isHlsPlaybackUrl(source) {
   } catch { return String(source || '').includes('/api/xtream/hls/'); }
 }
 
-// A Direct -> HLS switch happens after the original click has expired. When
-// autoplay blocks that delayed play(), start muted and let the viewer restore
-// sound with an explicit tap. Keep genuine media errors on the recovery path.
+// Preserve the user's mute choice on every playback attempt. If the browser
+// requires a gesture, leave playback paused with the Play control visible.
 async function startWebPlayback(video, retries = 3) {
   if (!video) return false;
   const playbackToken = webPlaybackToken;
   try {
     await video.play();
     webPlaying.value = true;
-    if (!video.muted) { webMuted.value = false; webAutoplayBlocked.value = false; }
+    webMuted.value = video.muted;
     return true;
   } catch (error) {
     if (error?.name !== "NotAllowedError") {
@@ -1916,28 +1939,11 @@ async function startWebPlayback(video, retries = 3) {
       return false;
     }
   }
-  try {
-    video.muted = true;
-    webMuted.value = true;
-    webAutoplayBlocked.value = true;
-    await video.play();
-    webPlaying.value = true;
-    return true;
-  } catch {
-    webPlaying.value = false;
-    webBuffering.value = false;
-    showWebControls();
-    return false;
-  }
-}
-
-function unmuteWebPlayback() {
-  const video = webVideo.value;
-  if (!video) return;
-  video.muted = false;
-  webMuted.value = false;
-  webAutoplayBlocked.value = false;
-  if (video.paused) startWebPlayback(video);
+  if (playbackToken !== webPlaybackToken || video !== webVideo.value) return false;
+  webPlaying.value = false;
+  webBuffering.value = false;
+  showWebControls();
+  return false;
 }
 
 // The server picks copy vs. transcode per file (a probe decision, not the
@@ -1979,8 +1985,7 @@ async function configureMoviePlayback(startSeconds = 0) {
   // source: doing so starts an extra resource selection during MSE attach.
   // Keep video renderable while observing its first frame.
   video.style.opacity = "1";
-  // Carry the current mute choice onto the (re)loaded element so a pre-muted
-  // auto-play start (WWP joiner) is not fighting an un-muted element.
+  // Preserve manual mute across source changes and recovery.
   video.muted = webMuted.value;
   // Let the browser itself start playback as soon as data is ready, unless the
   // viewer paused on purpose; startWebPlayback below is only the backstop.
@@ -2189,7 +2194,6 @@ async function playWebMovie(item) {
   if (webWwpSessionId.value) stopWwpSync();
   webIsWwpGuest.value = false;
   webMuted.value = false;
-  webAutoplayBlocked.value = false;
   // A bounded server probe selects Direct or the exact HLS codec matrix before
   // assigning a source to the browser media element.
   webForceHls.value = false;
@@ -2540,9 +2544,31 @@ function browserPlaybackReleaseUrl(item, includeMedia = false) {
   return `${browserStreamer}/api/xtream/playback/release?${params}`;
 }
 
+async function notifyWwpPlayerClosed({ unloading = false } = {}) {
+  if (!webWwpSessionId.value || wwpRemoteEnded) return;
+  const q = new URLSearchParams();
+  if (webStreamTicket.value) q.set("streamTicket", webStreamTicket.value);
+  if (!webIsWwpGuest.value && deviceToken.value) q.set("deviceToken", deviceToken.value);
+  const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
+  if (unloading) {
+    try { if (navigator.sendBeacon(endUrl)) return; } catch { /* Use keepalive below. */ }
+  }
+  // A normal close checks delivery rather than relying on beacon queueing.
+  // Capture the URL before local teardown clears the session and credentials.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(endUrl, { method: "POST", keepalive: true });
+      if (response.ok && (await response.json()).ended === true) return;
+      if (response.status === 401 || response.status === 403) return;
+    } catch { /* Retry a transient delivery failure, with a bounded count. */ }
+  }
+  console.warn("Watch with Partner close notification could not be confirmed.");
+}
+
 function releaseBrowserPlaybackOnPageHide() {
+  if (webWwpSessionId.value) { void notifyWwpPlayerClosed({ unloading: true }); return; }
   const item = webNowPlaying.value;
-  if (!item || webWwpSessionId.value) return;
+  if (!item) return;
   // Query metadata keeps this a simple sendBeacon request, which browsers
   // allow to finish when the tab or window itself is closed.
   try { navigator.sendBeacon(browserPlaybackReleaseUrl(item, true)); } catch { /* tab is already closing */ }
@@ -2551,14 +2577,10 @@ window.addEventListener("pagehide", releaseBrowserPlaybackOnPageHide);
 onBeforeUnmount(() => window.removeEventListener("pagehide", releaseBrowserPlaybackOnPageHide));
 
 async function closeWebPlayer() {
-  // Watch with Partner: tell the other participant to close too (unless it was
-  // them closing that brought us here). sendBeacon so it survives a tab close.
+  // End this shared session before clearing local state. The partner's sync
+  // long-poll wakes immediately and closes their player without echoing back.
   if (webWwpSessionId.value && !wwpRemoteEnded) {
-    const q = new URLSearchParams();
-    if (webStreamTicket.value) q.set("streamTicket", webStreamTicket.value);
-    if (!webIsWwpGuest.value && deviceToken.value) q.set("deviceToken", deviceToken.value);
-    const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
-    try { navigator.sendBeacon(endUrl); } catch { fetch(endUrl, { method: "POST", keepalive: true }).catch(() => {}); }
+    void notifyWwpPlayerClosed();
   } else if (webNowPlaying.value) {
     // Detach this tab from its HLS job. Other tabs may still be watching the
     // same generation, so the server stops it only after the last viewer leaves.
@@ -2770,11 +2792,8 @@ async function joinPartnerInvite(invite, { retry = false } = {}) {
   webForceHls.value = true;
   webNowPlaying.value = { sourceId: invite.sourceId, kind: invite.kind, id: invite.id, extension: invite.extension || "", title: invite.title || "Watch with partner" };
   webPlaying.value = false;
-  // The Join click's user-gesture is spent by the time HLS.js is ready, so the
-  // first play() will be an auto-play and must start muted; the unmute pill
-  // (and any tap on the video) restores sound.
-  webMuted.value = true;
-  webAutoplayBlocked.value = true;
+  // Start partner playback with sound, just like a normal title.
+  webMuted.value = false;
   const joinAt = Math.max(0, Number(invite.start) || 0);
   webCurrentTime.value = joinAt;
   // A WWP partner does not own the host's source. The invite carries the
@@ -2817,7 +2836,6 @@ function toggleWebMute() {
   if (!webVideo.value) return;
   webVideo.value.muted = !webVideo.value.muted;
   webMuted.value = webVideo.value.muted;
-  if (!webMuted.value) webAutoplayBlocked.value = false;
   if (!webMuted.value && webVideo.value.paused) startWebPlayback(webVideo.value);
 }
 
@@ -3410,7 +3428,8 @@ function onWwpCallMessage(event) {
   if (event.data?.wwpCall === "ended") webCallActive.value = false;
   else if (event.data?.wwpCall === "speaking" && webCallActive.value
     && event.data.sessionId === webWwpSessionId.value) {
-    webAudioDucking.setSpeaking(event.data.speaking === true);
+    // iPad/iPhone calls must preserve the user's player volume.
+    webAudioDucking.setSpeaking(!webIosAudioOutput && event.data.speaking === true);
   }
 }
 
@@ -4220,9 +4239,12 @@ onMounted(async () => {
         <div v-if="seriesEpisodesLoading" class="home-loading" role="status"><span class="loading-ring"></span><span>Loading episodes…</span></div>
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }} <button type="button" @click="openSeriesEpisodes(selectedSeries)">Retry</button></p>
         <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
-          <nav class="series-season-selector" aria-label="Select season">
-            <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" :aria-pressed="selectedSeasonNumber === season.number" @click="selectedSeasonNumber = season.number">{{ season.title }} <span class="ep-season-count">{{ season.episodes.length }}</span></button>
-          </nav>
+          <div class="series-season-selector">
+            <label for="episode-season">Season</label>
+            <select id="episode-season" v-model="selectedSeasonNumber">
+              <option v-for="season in seriesEpisodeSeasons" :key="season.number" :value="season.number">{{ season.title }} · {{ season.episodes.length }} episodes</option>
+            </select>
+          </div>
           <div class="series-seasons">
             <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season" :aria-label="season.title">
               <div class="ep-list-heading"><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episodes</span></div>
@@ -4336,7 +4358,11 @@ onMounted(async () => {
       </div></div>
     </section>
       <section v-if="webNowPlaying" class="web-player" :class="{'is-fullscreen': webFullscreen, 'is-mini': webMini}" :style="webMini && webMiniPos ? {left: webMiniPos.left + 'px', top: webMiniPos.top + 'px', right: 'auto', bottom: 'auto'} : null" @pointerdown="startMiniDrag" role="dialog" aria-label="Media player">
-      <div class="web-video-frame" @click="webFrameClick($event)"><video :key="webVideoElementKey" ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="webMuted = $event.target.muted" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError && (webForceHls || webWwpSessionId)" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+      <div class="web-video-frame" @click="webFrameClick($event)"><video :key="webVideoElementKey" ref="webVideo" playsinline preload="metadata" @webkitendfullscreen="handleFullscreenChange" @loadedmetadata="handleWebMetadata" @timeupdate="onWebTimeUpdate" @progress="refreshWebBuffered" @play="onWebPlay" @pause="onWebPause" @playing="onWebReady" @waiting="onWebWaiting" @canplay="onWebReady" @loadeddata="onWebReady" @volumechange="onWebVolumeChange" @ended="onWebEnded" @error="handleWebVideoError"></video><div v-if="!webMediaReady && !webPlayerError && (webForceHls || webWwpSessionId)" class="web-video-placeholder"></div><div v-if="webCallIncoming" class="wwp-call-ring"><span>📞 {{ partnerName || 'Your partner' }} is calling…</span><div><button type="button" class="primary-action" @click.stop="answerWebCall">Answer</button><button type="button" @click.stop="declineWebCall">Decline</button></div></div><iframe v-if="webCallActive" ref="webCallFrame" :src="webCallUrl" class="wwp-call-frame" allow="microphone; autoplay" title="Watch with Partner voice call"></iframe>
+        <div v-if="webVolumeFeedbackVisible" class="web-volume-feedback" aria-label="Audio volume" @click.stop>
+          <span>{{ webMuted ? 'Muted' : webVolumeIsDeviceControlled ? 'Call audio' : 'Player volume' }}</span><strong>{{ webVolumeIsDeviceControlled ? 'Device volume' : webVolumePercent + '%' }}</strong>
+          <span v-if="!webVolumeIsDeviceControlled" class="web-volume-meter" aria-hidden="true"><i :style="{ width: webVolumePercent + '%' }"></i></span>
+        </div>
         <div v-if="webMini" class="web-mini-bar">
           <button type="button" class="web-pl-btn" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <strong>{{ webNowPlaying.title }}</strong>
@@ -4382,10 +4408,10 @@ onMounted(async () => {
             <input type="range" class="web-player-scrub" min="0" :max="webDuration || 0" :value="webCurrentTime" :style="webTimelineStyle" aria-label="Seek" @pointerdown="showWebControls" @input="seekWebMovie"></template><span v-else class="web-player-live-spacer"></span>
             <button type="button" class="web-pl-btn" aria-label="Skip to next" :disabled="!webUpNext" @click.stop="webUpNext && playWebMovie(webUpNext)"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5v14l9-7zM16 5h2.4v14H16z"/></svg></button>
             <button type="button" class="web-pl-btn" :aria-label="webMuted ? 'Unmute' : 'Mute'" @click.stop="toggleWebMute"><svg v-if="webMuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM23 9l-6 6M17 9l6 6"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4zM15.5 8.5a5 5 0 0 1 0 7M18.5 6a9 9 0 0 1 0 12"/></svg></button>
+            <output class="web-volume-value" :title="webVolumeLabel" :aria-label="webVolumeLabel">{{ webVolumeIsDeviceControlled ? 'Device volume' : webVolumePercent + '%' }}</output>
             <button type="button" class="web-pl-btn" :aria-label="webFullscreen ? 'Exit fullscreen' : 'Fullscreen'" @click.stop="fullscreenWebMovie"><svg v-if="webFullscreen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3v3a3 3 0 0 1-3 3H3M21 9h-3a3 3 0 0 1-3-3V3M3 15h3a3 3 0 0 1 3 3v3M15 21v-3a3 3 0 0 1 3-3h3"/></svg><svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M21 8V3h-5M3 16v5h5M16 21h5v-5"/></svg></button>
           </footer>
         </div>
-        <button v-if="webAutoplayBlocked && webMuted" type="button" class="web-unmute-prompt" @click.stop="unmuteWebPlayback">Tap to unmute</button>
         <div v-if="webPlayerError" class="web-player-error">
           <div class="web-player-error-card">
             <span class="web-player-error-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h16.9a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg></span>
