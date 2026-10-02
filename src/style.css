@@ -814,8 +814,11 @@ html:has(.login-gate),body:has(.login-gate) { width:100%; min-height:100%; overf
 .welcome-identity-cluster.is-offline .welcome-partner-avatar { opacity:.5; filter:grayscale(.4); }
 .welcome-identity-cluster.is-unknown .welcome-partner-avatar { opacity:.6; color:#2b1b05; background:linear-gradient(145deg,#ffe8a3,#e39b21); }
 .welcome-identity-cluster.is-unlinked .welcome-partner-link { color:#fbbf24; }
-.welcome-partner-status { display:flex; flex-direction:column; gap:5px; min-width:0; max-width:190px; }
-.welcome-partner-name { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#f3f4f1; font:600 13px 'DM Sans'; }
+.welcome-page-heading .welcome-partner-button { position:relative; }
+.welcome-partner-border-dot { position:absolute; right:1px; bottom:1px; width:12px; height:12px; border:2px solid #10180f; border-radius:50%; background:#94a3b8; pointer-events:none; }
+.welcome-partner-border-dot.is-online { background:#34d399; box-shadow:0 0 6px rgba(52,211,153,.5); }
+.welcome-partner-border-dot.is-unlinked,.welcome-partner-border-dot.is-unknown { background:#fbbf24; }
+.welcome-partner-border-dot.is-checking { background:#cbd5e1; }
 .partner-status-label { display:inline-flex; align-items:center; gap:7px; color:#cbd5e1; font:600 12px 'DM Sans'; }
 .partner-status-label.is-online { color:#34d399; }
 .partner-status-label.is-unlinked,.partner-status-label.is-unknown { color:#fbbf24; }
