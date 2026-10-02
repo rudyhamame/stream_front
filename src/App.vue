@@ -22,6 +22,7 @@ import DotsVerticalRoundedIcon from "./components/icons/DotsVerticalRoundedIcon.
 import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, decideBrowserTransport, detectBrowserCapabilities, shouldFallbackFromDirect } from "./browser-transport.js";
 import { compareCatalogTitles, describeEncodeStrategy, formatTime, normalizeSearchText, parseDuration } from "./catalog-format.js";
 import { describePartnerStatus } from './partner-status.js';
+import { partnerPlaybackAdjustment } from './partner-playback-sync.js';
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -3283,7 +3284,7 @@ function stopWwpFollowing() {
 function followWwpHost() {
   const video = webVideo.value;
   if (!webIsWwpGuest.value || !video || !webNowPlaying.value || !wwpHostState) return;
-  if (wwpApplyingRemote || webSeekTimer || webBuffering.value || webPlayerError.value) return;
+  if (wwpApplyingRemote || webSeekTimer || webPendingSeek.value >= 0 || webBuffering.value || webPlayerError.value) return;
   if (wwpHostState.paused) {
     if (!video.paused) { wwpApplyingRemote = true; video.pause(); webPlaying.value = false; setTimeout(() => { wwpApplyingRemote = false; }, 300); }
     return;
@@ -3294,17 +3295,17 @@ function followWwpHost() {
   }
   const serverNow = Date.now() + wwpClockOffset;
   const expected = wwpHostState.posMs / 1000 + Math.max(0, serverNow - wwpHostState.atServerMs) / 1000;
-  const drift = (webPlaybackOffset.value + (video.currentTime || 0)) - expected;   // >0 = guest ahead
-  const abs = Math.abs(drift);
-  if (abs > 1.5 && Date.now() - wwpLastFollowSeek > 3500) {
-    wwpLastFollowSeek = Date.now();
-    try { video.currentTime = Math.max(0, (video.currentTime || 0) - drift); } catch { /* not seekable yet */ }
-    video.playbackRate = 1;
-  } else if (abs > 0.35) {
-    video.playbackRate = drift > 0 ? 0.93 : 1.07;
-  } else if (video.playbackRate !== 1) {
-    video.playbackRate = 1;
+  const ranges = [];
+  for (let i = 0; i < video.buffered.length; i += 1) ranges.push([video.buffered.start(i), video.buffered.end(i)]);
+  const adjustment = partnerPlaybackAdjustment(video.currentTime || 0, expected - webPlaybackOffset.value,
+    ranges, Date.now() - wwpLastFollowSeek > 3500);
+  if (adjustment.seek !== undefined) {
+    try {
+      video.currentTime = adjustment.seek;
+      wwpLastFollowSeek = Date.now();
+    } catch { /* Keep playing until the native seek is available. */ }
   }
+  if (video.playbackRate !== adjustment.rate) video.playbackRate = adjustment.rate;
 }
 
 function stopWwpSync() {
@@ -4303,7 +4304,7 @@ onMounted(async () => {
               </div>
             </div>
           </header>
-          <div v-if="webBuffering && !webPlayerError" class="web-startup-status web-startup-status-centered"><strong>{{ webStartupPercent }}%</strong><small>{{ webStartupHint }}</small></div>
+          <div v-if="webBuffering && !webPlayerError" class="web-startup-status web-startup-status-centered"><strong v-if="!webMediaReady">{{ webStartupPercent }}%</strong><small>{{ webMediaReady ? "Rebuffering…" : webStartupHint }}</small></div>
           <button v-else-if="!webPlaying" type="button" class="web-center-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
           <footer class="web-player-bottombar">
             <button type="button" class="web-pl-btn web-pl-play" aria-label="Play or pause" @click.stop="toggleWebPlayback"><PauseIcon v-if="webPlaying" /><PlayIcon v-else /></button>
