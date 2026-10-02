@@ -258,7 +258,7 @@ const webCallIncoming = ref(false);
 const webCallFrame = ref(null);
 const webCallUrl = computed(() => {
   if (!webWwpSessionId.value) return "";
-  const token = webStreamTicket.value || deviceToken.value || "";
+  const token = webIsWwpGuest.value ? webStreamTicket.value : deviceToken.value || webStreamTicket.value || "";
   const p = new URLSearchParams({
     s: webWwpSessionId.value, t: token, role: webCallRole.value,
     name: partnerName.value || "Partner",
@@ -3340,7 +3340,7 @@ function declineWebCall() {
   webCallIncoming.value = false;
   const sessionId = webWwpSessionId.value;
   if (!sessionId) return;
-  const token = webStreamTicket.value || deviceToken.value || "";
+  const token = webIsWwpGuest.value ? webStreamTicket.value : deviceToken.value || webStreamTicket.value || "";
   fetch(`${browserStreamer}/api/xtream/wwp-call/${encodeURIComponent(sessionId)}/ring?ringing=0&streamTicket=${encodeURIComponent(token)}&deviceToken=${encodeURIComponent(token)}`, { cache: "no-store" }).catch(() => {});
 }
 function endWebCall() {
