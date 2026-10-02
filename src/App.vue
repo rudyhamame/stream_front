@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { trackBrowserViewport } from './browser-viewport.js';
 import { createAudioDucking } from './audio-ducking.js';
 import BrowserPage from './components/BrowserPage.vue';
 import PageHeading from './components/PageHeading.vue';
@@ -27,6 +28,10 @@ import { applyServerPlaybackPolicy, browserCodecSupportFromMediaCapabilities, de
 import { compareCatalogTitles, describeEncodeStrategy, formatTime, normalizeSearchText, parseDuration } from "./catalog-format.js";
 import { describePartnerStatus } from './partner-status.js';
 import { partnerPlaybackAdjustment } from './partner-playback-sync.js';
+
+let stopBrowserViewport = null;
+onMounted(() => { stopBrowserViewport = trackBrowserViewport(window, document.documentElement); });
+onBeforeUnmount(() => stopBrowserViewport?.());
 
 const browserOrigin = window.location.origin;
 const legalPage = computed(() => {
@@ -4194,15 +4199,19 @@ onMounted(async () => {
         </template>
       </BrowserPage>
 
-      <BrowserPage v-if="safariPage === 'episodes'" class="safari-episodes-page" contained>
-        <header class="ep-hero">
+      <BrowserPage v-if="safariPage === 'episodes'" class="safari-episodes-page">
+        <div class="ep-toolbar">
           <button type="button" class="episodes-back" :aria-label="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" :title="episodesFrom === 'welcome' ? 'Back to Welcome' : 'Back'" @click="openSafariPage(episodesFrom)">
             <svg v-if="episodesFrom === 'welcome'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M9.5 21v-6h5v6"/></svg>
             <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
           </button>
+          <span>Series / Episodes</span>
+        </div>
+        <header class="ep-hero" :class="{ 'ep-hero--with-poster': selectedSeries?.logo && !failedLogoUrls.has(selectedSeries.logo) }">
           <img v-if="selectedSeries?.logo && !failedLogoUrls.has(selectedSeries.logo)" class="ep-poster" :src="imageUrl(selectedSeries.logo)" alt="" @error="markLogoFailed(selectedSeries.logo)">
           <div class="ep-hero-copy">
-            <h1>{{ selectedSeries?.title || 'Series' }}</h1>
+            <p class="eyebrow">EPISODES</p>
+            <h1 dir="auto">{{ selectedSeries?.title || 'Series' }}</h1>
             <p v-if="seriesEpisodes.length" class="ep-meta">{{ seriesEpisodeSeasons.length }} {{ seriesEpisodeSeasons.length === 1 ? 'season' : 'seasons' }} · {{ seriesEpisodes.length }} episodes</p>
 
           </div>
@@ -4212,14 +4221,15 @@ onMounted(async () => {
         <p v-else-if="seriesEpisodesError" class="home-error" role="status">{{ seriesEpisodesError }} <button type="button" @click="openSeriesEpisodes(selectedSeries)">Retry</button></p>
         <div v-else-if="seriesEpisodeSeasons.length" class="series-episodes-content">
           <nav class="series-season-selector" aria-label="Select season">
-            <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" @click="selectedSeasonNumber = season.number">{{ season.title }}</button>
+            <button v-for="season in seriesEpisodeSeasons" :key="season.number" type="button" :class="{active:selectedSeasonNumber === season.number}" :aria-pressed="selectedSeasonNumber === season.number" @click="selectedSeasonNumber = season.number">{{ season.title }} <span class="ep-season-count">{{ season.episodes.length }}</span></button>
           </nav>
           <div class="series-seasons">
-            <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season">
+            <section v-for="season in displayedSeriesEpisodeSeasons" :key="season.number" class="series-season" :aria-label="season.title">
+              <div class="ep-list-heading"><h2>{{ season.title }}</h2><span>{{ season.episodes.length }} episodes</span></div>
               <div class="ep-list">
                 <button v-for="episode in season.episodes" :key="episode.key" type="button" class="ep-row" :aria-label="`Play ${episode.title}`" @click="playSeriesEpisode(episode)">
                   <span class="ep-thumb"><img v-if="episode.logo && !failedLogoUrls.has(episode.logo)" :src="imageUrl(episode.logo)" alt="" loading="lazy" @error="markLogoFailed(episode.logo)"><b v-else>{{ episode.episodeNumber }}</b><span class="ep-thumb-play" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.52.85l12-7.5a1 1 0 0 0 0-1.7l-12-7.5A1 1 0 0 0 7 4.5Z"/></svg></span></span>
-                  <span class="ep-copy"><strong>{{ episode.title }}</strong><small>Episode {{ episode.episodeNumber }}<template v-if="episode.duration"> · {{ episode.duration }}</template></small></span>
+                  <span class="ep-copy"><strong dir="auto">{{ episode.title }}</strong><small>Episode {{ episode.episodeNumber }}<template v-if="episode.duration"> · {{ episode.duration }}</template></small></span>
                   <span v-if="episode.extension || episode.streamFormat" class="ep-format">{{ streamFormatLabel(episode) }}</span>
                 </button>
               </div>
