@@ -509,6 +509,7 @@ async function chooseProfile(profile) {
     partnerStatusChecked.value = false;
     partnerStatusError.value = false;
     startBrowserPresence();
+    startPartnerInvites();
     // The profile is active as soon as the server returns its token. Show
     // Welcome immediately; provider and weather requests must not hold the
     // chooser open or leave the user on the profile screen.
@@ -699,6 +700,7 @@ function beginLogin() {
 }
 
 function logout() {
+  stopPartnerInvites();
   deviceToken.value = "";
   appReady.value = true;
   window.localStorage.removeItem("rh-device-token");
@@ -1191,16 +1193,25 @@ async function decideWebPlayback(item) {
     url.searchParams.set('caps', 'mkv-direct');
   }
   if (item.extension) url.searchParams.set('ext', item.extension);
-  if (deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
+  if (!webIsWwpGuest.value && deviceToken.value) url.searchParams.set('deviceToken', deviceToken.value);
   if (webStreamTicket.value) url.searchParams.set('streamTicket', webStreamTicket.value);
-  const headers = deviceToken.value ? { 'x-device-token': deviceToken.value } : {};
+  const headers = !webIsWwpGuest.value && deviceToken.value ? { 'x-device-token': deviceToken.value } : {};
   // The shared compatibility scan can take 15s + 65s before network/queue time.
   const response = await fetch(url, { cache: 'no-store', headers, signal: AbortSignal.timeout(120_000) });
-  const decision = await response.json().catch(() => ({}));
+  let decision = await response.json().catch(() => ({}));
   if (sessionId !== webPlaybackSessionId) return null;
   if (!response.ok || !decision.ok) throw new Error(decision.error || 'Could not determine browser playback compatibility.');
   if (decision.traceId !== webPlaybackTraceId || !decision.playbackUrl) {
     throw new Error('The streamer returned an incomplete or mismatched playback decision.');
+  }
+  if (webWwpSessionId.value) {
+    const checkedHls = ["HLS_REMUX", "HLS_VIDEO_TRANSCODE", "HLS_AUDIO_TRANSCODE", "HLS_FULL_TRANSCODE"];
+    const sharedStrategy = checkedHls.includes(decision.playbackStrategy)
+      ? decision.playbackStrategy : decision.hlsFallbackStrategy;
+    if (!checkedHls.includes(sharedStrategy)) {
+      throw Object.assign(new Error("No checked compatible HLS strategy is available for Watch with Partner."), { incompatible: true });
+    }
+    decision = { ...decision, playbackStrategy: sharedStrategy };
   }
   const sourceExtension = item.extension || String(decision.providerURL || '').match(/\.([a-z0-9]+)(?:\?|$)/i)?.[1] || '';
   const mediaForBrowser = { ...(decision.media || {}), extension: sourceExtension };
@@ -1301,7 +1312,7 @@ async function loadWwpGuestDuration(invite) {
     const url = new URL(api(`/api/xtream/media-duration/${encodeURIComponent(invite.sourceId)}/${encodeURIComponent(invite.kind)}/${encodeURIComponent(invite.id)}`), base);
     url.searchParams.set("streamTicket", invite.streamTicket);
     if (invite.extension) url.searchParams.set("ext", invite.extension);
-    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    if (!webIsWwpGuest.value && deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
     const res = await fetch(url, { cache: "no-store", headers: deviceToken.value ? { "x-device-token": deviceToken.value } : {} });
     const data = await res.json().catch(() => ({}));
     const seconds = Number(data.seconds) || 0;
@@ -1467,7 +1478,7 @@ async function sendWwpControl(paused) {
     // Send BOTH credentials: the host's own stream ticket is short-lived (5 min)
     // and would otherwise silently 401 mid-session, but their device token does
     // not expire. The server accepts whichever resolves.
-    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    if (!webIsWwpGuest.value && deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
     if (webStreamTicket.value) url.searchParams.set("streamTicket", webStreamTicket.value);
     const response = await fetch(url, { cache: "no-store" });
     if (!response.ok) console.warn(`[WWP] control relay ${response.status}`);
@@ -2245,6 +2256,10 @@ async function playLibraryItem(item) {
 }
 
 async function retryWebPlayback() {
+  if (webIsWwpGuest.value && webWwpSessionId.value) {
+    return joinPartnerInvite({ ...webNowPlaying.value, wwpSessionId: webWwpSessionId.value,
+      streamTicket: webStreamTicket.value, start: webAbsolutePosition(), durationSeconds: webDuration.value }, { retry: true });
+  }
   const item = webNowPlaying.value;
   if (!item) return;
   const playbackTask = playWebMovie(item);
@@ -2523,7 +2538,7 @@ async function closeWebPlayer() {
   if (webWwpSessionId.value && !wwpRemoteEnded) {
     const q = new URLSearchParams();
     if (webStreamTicket.value) q.set("streamTicket", webStreamTicket.value);
-    if (deviceToken.value) q.set("deviceToken", deviceToken.value);
+    if (!webIsWwpGuest.value && deviceToken.value) q.set("deviceToken", deviceToken.value);
     const endUrl = `${browserStreamer}/api/xtream/wwp-end/${encodeURIComponent(webWwpSessionId.value)}?${q}`;
     try { navigator.sendBeacon(endUrl); } catch { fetch(endUrl, { method: "POST", keepalive: true }).catch(() => {}); }
   } else if (webNowPlaying.value) {
@@ -2687,11 +2702,17 @@ async function sendPartnerInvite() {
   }
 }
 
-async function joinPartnerInvite(invite) {
+async function joinPartnerInvite(invite, { retry = false } = {}) {
   if (!invite?.wwpSessionId) return;
   // A second tap on "Join" (or a re-delivered invite) must not spin up a
   // second HLS.js on the same element and a second sync long-poll.
-  if (webWwpSessionId.value === invite.wwpSessionId && webNowPlaying.value) { pendingPartnerInvite.value = null; return; }
+  if (!retry && webWwpSessionId.value === invite.wwpSessionId && webNowPlaying.value) { pendingPartnerInvite.value = null; return; }
+  const sessionId = ++webPlaybackSessionId;
+  webPlaybackTraceId = crypto.randomUUID().slice(0, 12);
+  webCompatibility.value = null;
+  webServerPlaybackUrl.value = "";
+  webPlaybackSourceHash.value = "";
+  stopWwpSync();
   pendingPartnerInvite.value = null;
   webStreamTicket.value = invite.streamTicket || "";
   webWwpSessionId.value = invite.wwpSessionId;
@@ -2725,8 +2746,21 @@ async function joinPartnerInvite(invite) {
   webControlsVisible.value = true;
   webPlayerError.value = "";
   webPlaybackRetryCount.value = 0;
-  await configureMoviePlayback(joinAt);
-  watchWwpSync();
+  try {
+    setWebStartupProgress(10, "Fetching item url from provider");
+    const decision = await decideWebPlayback(webNowPlaying.value);
+    if (sessionId !== webPlaybackSessionId) return;
+    await runWebCompatibilitySteps(decision);
+    if (sessionId !== webPlaybackSessionId) return;
+    await configureMoviePlayback(joinAt);
+    watchWwpSync();
+  } catch (error) {
+    if (sessionId !== webPlaybackSessionId) return;
+    webBuffering.value = false;
+    stopWebStartupPoll();
+    webPlayerError.value = error?.message || "Could not join your partner's stream.";
+    showWebControls();
+  }
 }
 
 function toggleWebMute() {
@@ -3112,22 +3146,37 @@ async function watchLibraryRevision() {
 
 // Watch with Partner: always-on long-poll for an invite arriving from the
 // partner set in Settings, mirroring watchLibraryRevision exactly.
+function stopPartnerInvites() {
+  partnerInviteController?.abort();
+  partnerInviteController = null;
+  if (partnerInviteRetryTimer) window.clearTimeout(partnerInviteRetryTimer);
+  partnerInviteRetryTimer = null;
+  partnerInviteRevision = 0;
+  pendingPartnerInvite.value = null;
+}
+function startPartnerInvites() {
+  stopPartnerInvites();
+  void watchPartnerInvite();
+}
+onBeforeUnmount(stopPartnerInvites);
+
 async function watchPartnerInvite() {
   if (!deviceToken.value || partnerInviteController) return;
+  const token = deviceToken.value;
   partnerInviteController = new AbortController();
   const controller = partnerInviteController;
   try {
     const data = await request(`/api/partner/invite?since=${partnerInviteRevision}`, { cache: "no-store", signal: controller.signal });
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted || deviceToken.value !== token) return;
     const nextRevision = Number(data.revision) || 1;
-    const changed = partnerInviteRevision > 0 && nextRevision !== partnerInviteRevision;
+    const changed = partnerInviteRevision === 0 || nextRevision !== partnerInviteRevision;
     partnerInviteRevision = nextRevision;
     partnerInviteController = null;
     if (changed && data.invite) pendingPartnerInvite.value = data.invite;
     watchPartnerInvite();
   } catch (error) {
     if (partnerInviteController === controller) partnerInviteController = null;
-    if (error.name !== "AbortError") partnerInviteRetryTimer = window.setTimeout(watchPartnerInvite, 1500);
+    if (error.name !== "AbortError" && deviceToken.value === token) partnerInviteRetryTimer = window.setTimeout(watchPartnerInvite, 1500);
   }
 }
 
@@ -3146,7 +3195,7 @@ async function watchWwpSync() {
     url.searchParams.set("since", wwpSyncToken);
     // Both credentials - see sendWwpControl. The host's 5-minute stream ticket
     // must not be the only key or their follow-the-partner sync dies at 5 min.
-    if (deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
+    if (!webIsWwpGuest.value && deviceToken.value) url.searchParams.set("deviceToken", deviceToken.value);
     if (webStreamTicket.value) url.searchParams.set("streamTicket", webStreamTicket.value);
     const response = await fetch(url, { cache: "no-store", signal: controller.signal });
     if (controller.signal.aborted || webWwpSessionId.value !== sessionId) return;
@@ -3800,7 +3849,7 @@ onMounted(async () => {
       message.value = error.message;
     });
     watchLibraryRevision();
-    watchPartnerInvite();
+    startPartnerInvites();
   } catch (error) { online.value = false; messageType.value = "error"; message.value = error.message; appReady.value = true; }
 });
 </script>
